@@ -6,23 +6,37 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:funnel": "tsx lib/__tests__/quant-funnel-v2.test.ts"
   },
   "dependencies": {
+    "@prisma/adapter-pg": "7.8.0",
+    "@prisma/client": "7.8.0",
+    "@upstash/redis": "^1.38.0",
+    "axios": "^1.18.0",
+    "cheerio": "^1.2.0",
     "clsx": "^2.1.1",
+    "fast-xml-parser": "^5.9.3",
     "lucide-react": "^1.21.0",
     "next": "16.2.9",
+    "pg": "8.22.0",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "rss-parser": "^3.13.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "autoprefixer": "^10.5.0",
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
-    "tailwindcss": "^4",
+    "postcss": "^8.5.15",
+    "prisma": "7.8.0",
+    "tailwindcss": "^4.3.1",
+    "tsx": "^4.22.4",
     "typescript": "^5"
   }
 }

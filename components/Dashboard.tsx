@@ -47,35 +47,40 @@ import { runFullFunnel } from "@/lib/funnel";
 import {
   TickerItem,
   UniverseStock,
-  ConfluenceStock,
   ChatMessage,
   TabId,
   SelectedStockView,
   RebalanceLogEntry,
   KellyCalculation,
   ValuationRow,
+  RrgSector,
 } from "@/lib/types";
+
+type QuantRadarTab = "golden" | "beartrap" | "foreign";
 
 // ============================================================
 // SMALL VISUAL HELPERS
 // ============================================================
 
-function renderSpiderChart(radar: {
+interface RadarValues {
   macro: number;
   flow: number;
   tech: number;
   sentiment: number;
-}) {
-  const axes = [
+}
+
+function renderSpiderChart(radar: RadarValues) {
+  const axes: { key: keyof RadarValues; label: string }[] = [
     { key: "macro", label: "Vĩ mô" },
     { key: "flow", label: "Dòng tiền" },
     { key: "tech", label: "Kỹ thuật" },
     { key: "sentiment", label: "Tâm lý" },
-  ] as const;
-  const cx = 100,
-    cy = 100,
-    maxR = 68;
+  ];
+  const cx = 100;
+  const cy = 100;
+  const maxR = 68;
   const angleStep = (Math.PI * 2) / axes.length;
+
   const points = axes.map((axis, i) => {
     const angle = -Math.PI / 2 + i * angleStep;
     const value = radar[axis.key] / 100;
@@ -89,6 +94,7 @@ function renderSpiderChart(radar: {
       label: axis.label,
     };
   });
+
   const gridLevels = [0.25, 0.5, 0.75, 1];
   const polygonPoints = points.map((p) => `${p.x},${p.y}`).join(" ");
 
@@ -161,9 +167,9 @@ function renderSpiderChart(radar: {
 }
 
 function renderFearGreedGauge(value: number) {
-  const cx = 110,
-    cy = 100,
-    r = 80;
+  const cx = 110;
+  const cy = 100;
+  const r = 80;
   const startAngle = Math.PI;
   const valueAngle = startAngle - (value / 100) * Math.PI;
   const polarToCartesian = (angle: number) => ({
@@ -253,30 +259,30 @@ function FunnelBadge({
 
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<TabId>("scanner");
-  const [scannerProgress, setScannerProgress] = useState(0);
-  const [isScanning, setIsScanning] = useState(false);
-  const [scanStep, setScanStep] = useState("");
+  const [scannerProgress, setScannerProgress] = useState<number>(0);
+  const [isScanning, setIsScanning] = useState<boolean>(false);
+  const [scanStep, setScanStep] = useState<string>("");
 
   const [marketBias, setMarketBias] = useState<"Bullish" | "Bearish">("Bullish");
-  const [focusSector, setFocusSector] = useState("All");
+  const [focusSector, setFocusSector] = useState<string>("All");
 
-  const [aiReport, setAiReport] = useState("");
-  const [isAiLoading, setIsAiLoading] = useState(false);
-  const [aiError, setAiError] = useState("");
+  const [aiReport, setAiReport] = useState<string>("");
+  const [isAiLoading, setIsAiLoading] = useState<boolean>(false);
+  const [aiError, setAiError] = useState<string>("");
 
-  const [selectedStockId, setSelectedStockId] = useState("FPT");
-  const [taMode, setTaMode] = useState("VCP");
-  const [quantRadarTab, setQuantRadarTab] = useState<"golden" | "beartrap" | "foreign">("golden");
-  const [selectedRrgSector, setSelectedRrgSector] = useState("Công nghệ");
+  const [selectedStockId, setSelectedStockId] = useState<string>("FPT");
+  const [taMode, setTaMode] = useState<string>("VCP");
+  const [quantRadarTab, setQuantRadarTab] = useState<QuantRadarTab>("golden");
+  const [selectedRrgSector, setSelectedRrgSector] = useState<string>("Công nghệ");
 
-  const [totalCapital, setTotalCapital] = useState(1000000000);
-  const [expectedWinRate, setExpectedWinRate] = useState(55);
-  const [kellyFraction, setKellyFraction] = useState(0.5);
+  const [totalCapital, setTotalCapital] = useState<number>(1000000000);
+  const [expectedWinRate, setExpectedWinRate] = useState<number>(55);
+  const [kellyFraction, setKellyFraction] = useState<number>(0.5);
 
-  const [activeNewsId, setActiveNewsId] = useState(1);
+  const [activeNewsId, setActiveNewsId] = useState<number>(1);
 
   const [tickerData, setTickerData] = useState<TickerItem[]>(initialTickerData);
-  const [tickerPaused, setTickerPaused] = useState(false);
+  const [tickerPaused, setTickerPaused] = useState<boolean>(false);
 
   const [updatingTab, setUpdatingTab] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Record<string, Date>>({
@@ -290,23 +296,24 @@ export default function Dashboard() {
   const [universe, setUniverse] = useState<UniverseStock[]>(stockUniverse);
   const [daysInEliteMap] = useState<Record<string, number>>(() => {
     const init: Record<string, number> = {};
-    ["FPT", "PVS", "TCB", "HAH", "DGC", "GVR", "MWG", "STB", "NLG", "HPG"].forEach((tk, idx) => {
+    const seedTickers = ["FPT", "PVS", "TCB", "HAH", "DGC", "GVR", "MWG", "STB", "NLG", "HPG"];
+    seedTickers.forEach((tk, idx) => {
       init[tk] = 45 - idx * 3;
     });
     return init;
   });
   const [rebalanceLog, setRebalanceLog] = useState<RebalanceLogEntry[]>([]);
 
-  const [chatOpen, setChatOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState<boolean>(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     {
       role: "assistant",
       text: "Xin chào! Tôi là trợ lý CIO AI. Bạn có thể hỏi tôi về dữ liệu đang hiển thị, chiến lược đầu tư, hoặc tin tức thị trường mới nhất.",
     },
   ]);
-  const [chatInput, setChatInput] = useState("");
-  const [chatLoading, setChatLoading] = useState(false);
-  const chatScrollRef = useRef<HTMLDivElement>(null);
+  const [chatInput, setChatInput] = useState<string>("");
+  const [chatLoading, setChatLoading] = useState<boolean>(false);
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
 
   // ===== Funnel computation (memoized) =====
   const funnel = useMemo(() => runFullFunnel(universe), [universe]);
@@ -326,18 +333,15 @@ export default function Dashboard() {
           (l) => l.removed === broken.ticker && l.added === reserve11.ticker
         );
         if (alreadyLogged) return prev;
-        return [
-          {
-            time: new Date().toLocaleTimeString(),
-            removed: broken.ticker,
-            added: reserve11.ticker,
-            reason: "Vi phạm hỗ trợ kỹ thuật MA50",
-          },
-          ...prev,
-        ].slice(0, 5);
+        const entry: RebalanceLogEntry = {
+          time: new Date().toLocaleTimeString(),
+          removed: broken.ticker,
+          added: reserve11.ticker,
+          reason: "Vi phạm hỗ trợ kỹ thuật MA50",
+        };
+        return [entry, ...prev].slice(0, 5);
       });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eliteTop10, reserve11]);
 
   const commodityFavoredTickers = useMemo(() => {
@@ -362,20 +366,23 @@ export default function Dashboard() {
     const conf = confluence.find((s) => s.ticker === selectedStockId);
     const detail = eliteDetailMap[selectedStockId];
     if (!conf && !detail) return null;
+
+    const fallbackUniverseStock = universe.find((u) => u.ticker === selectedStockId);
+
     return {
       ticker: selectedStockId,
-      sector: conf?.sector || universe.find((u) => u.ticker === selectedStockId)?.sector || "—",
-      score: conf?.finalScore ?? 0,
-      matchCount: conf?.matchCount ?? 0,
+      sector: conf ? conf.sector : fallbackUniverseStock ? fallbackUniverseStock.sector : "—",
+      score: conf ? conf.finalScore : 0,
+      matchCount: conf ? conf.matchCount : 0,
       entry: detail ? detail.entry.toLocaleString() : "—",
       target: detail ? detail.target.toLocaleString() : "—",
       stoploss: detail ? detail.stoploss.toLocaleString() : "—",
-      weight: detail?.weight ?? "—",
-      radar: detail?.radar ?? { macro: 70, flow: 70, tech: 70, sentiment: 70 },
-      reason:
-        detail?.reason ??
-        "Cổ phiếu đang trong danh sách theo dõi mở rộng, chưa có đầy đủ luận điểm chi tiết.",
-      pattern: conf?.taData?.pattern ?? "—",
+      weight: detail ? detail.weight : "—",
+      radar: detail ? detail.radar : { macro: 70, flow: 70, tech: 70, sentiment: 70 },
+      reason: detail
+        ? detail.reason
+        : "Cổ phiếu đang trong danh sách theo dõi mở rộng, chưa có đầy đủ luận điểm chi tiết.",
+      pattern: conf?.taData ? conf.taData.pattern : "—",
       rr: detail ? ((detail.target - detail.entry) / (detail.entry - detail.stoploss)).toFixed(2) : "—",
     };
   }, [selectedStockId, confluence, universe]);
@@ -400,23 +407,23 @@ export default function Dashboard() {
   }, [marketBias, eliteTop10]);
 
   const activeNewsDetails =
-    liveMacroNewsSentiment.find((n) => n.id === activeNewsId) || liveMacroNewsSentiment[0];
+    liveMacroNewsSentiment.find((n) => n.id === activeNewsId) ?? liveMacroNewsSentiment[0];
 
-  const actionableSignals = eliteTop10.slice(0, 4).map((s) => ({
-    ticker: s.ticker,
-    action: s.taData?.breakout ? "MUA TÍCH LŨY" : "QUAN SÁT TẠO ĐÁY",
-    confidence: `${Math.min(96, Math.round(60 + s.finalScore / 3))}%`,
-    zone: eliteDetailMap[s.ticker]
-      ? `${(eliteDetailMap[s.ticker].entry * 0.98).toLocaleString()} - ${eliteDetailMap[
-          s.ticker
-        ].entry.toLocaleString()}`
-      : "—",
-    status: s.taData?.breakout ? "Kích hoạt" : "Đợi xác nhận",
-  }));
+  const actionableSignals = eliteTop10.slice(0, 4).map((s) => {
+    const detail = eliteDetailMap[s.ticker];
+    return {
+      ticker: s.ticker,
+      action: s.taData?.breakout ? "MUA TÍCH LŨY" : "QUAN SÁT TẠO ĐÁY",
+      confidence: `${Math.min(96, Math.round(60 + s.finalScore / 3))}%`,
+      zone: detail ? `${Math.round(detail.entry * 0.98).toLocaleString()} - ${detail.entry.toLocaleString()}` : "—",
+      status: s.taData?.breakout ? "Kích hoạt" : "Đợi xác nhận",
+    };
+  });
 
   const kellyCalculation: KellyCalculation = useMemo(() => {
-    if (!selectedStock || selectedStock.entry === "—")
+    if (!selectedStock || selectedStock.entry === "—") {
       return { rrRatio: "0", rawKelly: "0", allocatedPercentage: "0", allocatedCapital: 0, shares: 0, maxRiskCapital: 0 };
+    }
     const entry = parseFloat(selectedStock.entry.replace(/,/g, ""));
     const target = parseFloat(selectedStock.target.replace(/,/g, ""));
     const stoploss = parseFloat(selectedStock.stoploss.replace(/,/g, ""));
@@ -482,7 +489,7 @@ export default function Dashboard() {
     }, 900);
   };
 
-  const getMockCioReport = (bias: string, sector: string) => {
+  const getMockCioReport = (bias: string, sector: string): string => {
     const top4 = eliteTop10.slice(0, 4);
     const lines = top4
       .map((s, i) => {
@@ -491,7 +498,16 @@ export default function Dashboard() {
         return `${i + 1}. ${s.ticker}* (${s.sector} - Tỷ trọng ${d.weight}): Khớp ${s.matchCount}/4 tầng lọc, điểm hợp lưu ${s.finalScore}
    Điểm mua: ${Math.round(d.entry * 0.98).toLocaleString()} - ${d.entry.toLocaleString()} | Chốt lời: ${d.target.toLocaleString()} | Dừng lỗ: ${d.stoploss.toLocaleString()}`;
       })
+      .filter((line) => line.length > 0)
       .join("\n");
+
+    const eliteSummary = eliteTop10
+      .map((s) => `- ${s.ticker}: khop ${s.matchCount}/4 tang, diem cuoi ${s.finalScore}`)
+      .join("\n");
+
+    const reserveLine = reserve11
+      ? `Ma du phong #11: ${reserve11.ticker} (diem ${reserve11.finalScore}) - san sang thay the neu co ma trong Top 10 vi pham MA50.`
+      : "";
 
     return `[BAO CAO CIO CHIEN LUOC] GLOBAL QUANT-MACRO & MARKET SCANNER
 Tac gia: Dinh Cong Tuan (CIO)
@@ -506,13 +522,9 @@ Tang 4 (TA VN-Index - Breakout/Pullback/Volume + Dong tien ngoai): ${tang4.lengt
 
 === CONFLUENCE SCORING ===
 Cac ma xuat hien dong thoi trong ca 4 tang duoc cong diem thuong toi da +25 diem hop luu. Danh sach Elite 10 hien tai:
-${eliteTop10.map((s) => `- ${s.ticker}: khop ${s.matchCount}/4 tang, diem cuoi ${s.finalScore}`).join("\n")}
+${eliteSummary}
 
-${
-  reserve11
-    ? `Ma du phong #11: ${reserve11.ticker} (diem ${reserve11.finalScore}) - san sang thay the neu co ma trong Top 10 vi pham MA50.`
-    : ""
-}
+${reserveLine}
 
 === TOP 4 KHUYEN NGHI HANH DONG ===
 ${lines}
@@ -526,7 +538,7 @@ ${lines}
     setIsScanning(true);
     setScannerProgress(5);
     setScanStep("Mở giao thức Real-Time: Quét vũ trụ 60 mã, chỉ số thế giới, hàng hóa, tin tức vĩ mô...");
-    const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
+    const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
     await delay(600);
     setScannerProgress(20);
@@ -583,7 +595,7 @@ ${lines}
         }),
       });
 
-      const data = await response.json();
+      const data: { reply?: string } = await response.json();
       const replyText = data.reply || "Xin lỗi, tôi không nhận được phản hồi hợp lệ. Vui lòng thử lại.";
       setChatMessages((prev) => [...prev, { role: "assistant", text: replyText }]);
     } catch (err) {
@@ -602,13 +614,29 @@ ${lines}
     }
   }, [chatMessages, chatOpen]);
 
-  const formatTimeAgo = (date: Date) => {
+  const formatTimeAgo = (date: Date): string => {
     const secs = Math.round((Date.now() - date.getTime()) / 1000);
     if (secs < 60) return `${secs}s trước`;
     const mins = Math.round(secs / 60);
     if (mins < 60) return `${mins} phút trước`;
     return date.toLocaleTimeString();
   };
+
+  const selectedRrgSectorDetails: RrgSector =
+    rrgSectors.find((s) => s.name === selectedRrgSector) ?? rrgSectors[0];
+
+  const goldenFilterRows = tang4.slice(0, 6);
+  const bearTrapRows = tang4
+    .filter((s) => s.taData !== null && s.taData.foreignNet < 0)
+    .slice(0, 4);
+  const foreignAccumRows = tang4
+    .filter((s) => s.taData !== null && s.taData.foreignNet > 0)
+    .sort((a, b) => {
+      const an = a.taData ? a.taData.foreignNet : 0;
+      const bn = b.taData ? b.taData.foreignNet : 0;
+      return bn - an;
+    })
+    .slice(0, 4);
 
   return (
     <div style={{ background: "#070b14" }} className="min-h-screen text-slate-100 font-sans flex flex-col antialiased relative">
@@ -644,9 +672,9 @@ ${lines}
               <div key={i} className="flex items-center gap-2 px-5 text-xs shrink-0">
                 <span className="text-slate-400 font-semibold">{t.name}</span>
                 <span className="text-slate-100 font-mono font-bold">
-                  {t.prefix || ""}
+                  {t.prefix ?? ""}
                   {t.value.toLocaleString()}
-                  {t.suffix || ""}
+                  {t.suffix ?? ""}
                 </span>
                 <span
                   className={`font-mono font-bold flex items-center gap-0.5 ${
@@ -860,13 +888,15 @@ ${lines}
             style={{ background: "rgba(14,22,38,0.7)", border: "1px solid rgba(148,163,184,0.1)" }}
             className="flex p-1 rounded-2xl flex-wrap"
           >
-            {[
-              { id: "scanner" as TabId, label: "Siêu quét AI", icon: Cpu },
-              { id: "commodity" as TabId, label: "Kết nối thế giới", icon: Globe },
-              { id: "sectors" as TabId, label: "Bộ lọc Ngành (T1 & T2)", icon: Layers },
-              { id: "ta" as TabId, label: "TA VN-Index (T3)", icon: Activity },
-              { id: "elite" as TabId, label: "Elite 10 (T4)", icon: Award },
-            ].map((tab) => {
+            {(
+              [
+                { id: "scanner", label: "Siêu quét AI", icon: Cpu },
+                { id: "commodity", label: "Kết nối thế giới", icon: Globe },
+                { id: "sectors", label: "Bộ lọc Ngành (T1 & T2)", icon: Layers },
+                { id: "ta", label: "TA VN-Index (T3)", icon: Activity },
+                { id: "elite", label: "Elite 10 (T4)", icon: Award },
+              ] as { id: TabId; label: string; icon: typeof Cpu }[]
+            ).map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
               return (
@@ -1635,43 +1665,38 @@ ${lines}
                     style={{ background: "rgba(2,6,15,0.6)", border: "1px solid rgba(148,163,184,0.1)" }}
                     className="rounded-2xl p-5 flex flex-col justify-between"
                   >
-                    {(() => {
-                      const sel = rrgSectors.find((s) => s.name === selectedRrgSector) || rrgSectors[0];
-                      return (
-                        <div>
-                          <div className="flex items-center gap-2 mb-3 border-b border-slate-800/60 pb-3">
-                            <span className="w-3.5 h-3.5 rounded-full" style={{ backgroundColor: sel.color }}></span>
-                            <h4 className="font-black text-sm text-slate-100 uppercase">Ngành: {sel.name}</h4>
-                          </div>
-                          <div className="grid grid-cols-2 gap-3 text-xs">
-                            <div style={{ background: "rgba(14,22,38,0.7)", border: "1px solid rgba(148,163,184,0.1)" }} className="p-3 rounded-lg">
-                              <span className="text-slate-500 block uppercase text-[9px] font-bold">RS</span>
-                              <span className="text-slate-200 font-mono font-bold block mt-0.5">{sel.rs}</span>
-                            </div>
-                            <div style={{ background: "rgba(14,22,38,0.7)", border: "1px solid rgba(148,163,184,0.1)" }} className="p-3 rounded-lg">
-                              <span className="text-slate-500 block uppercase text-[9px] font-bold">Momentum</span>
-                              <span className="text-slate-200 font-mono font-bold block mt-0.5">{sel.momentum}</span>
-                            </div>
-                          </div>
-                          <div style={{ background: "rgba(14,22,38,0.7)", border: "1px solid rgba(148,163,184,0.1)" }} className="p-3.5 rounded-xl text-xs mt-3">
-                            <span className="text-slate-400 block font-bold mb-1">Góc phần tư chu kỳ:</span>
-                            <span
-                              className={`font-black uppercase text-xs ${
-                                sel.quadrant === "Leading"
-                                  ? "text-emerald-400"
-                                  : sel.quadrant === "Improving"
-                                  ? "text-sky-400"
-                                  : sel.quadrant === "Lagging"
-                                  ? "text-red-400"
-                                  : "text-amber-500"
-                              }`}
-                            >
-                              {sel.quadrant}
-                            </span>
-                          </div>
+                    <div>
+                      <div className="flex items-center gap-2 mb-3 border-b border-slate-800/60 pb-3">
+                        <span className="w-3.5 h-3.5 rounded-full" style={{ backgroundColor: selectedRrgSectorDetails.color }}></span>
+                        <h4 className="font-black text-sm text-slate-100 uppercase">Ngành: {selectedRrgSectorDetails.name}</h4>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3 text-xs">
+                        <div style={{ background: "rgba(14,22,38,0.7)", border: "1px solid rgba(148,163,184,0.1)" }} className="p-3 rounded-lg">
+                          <span className="text-slate-500 block uppercase text-[9px] font-bold">RS</span>
+                          <span className="text-slate-200 font-mono font-bold block mt-0.5">{selectedRrgSectorDetails.rs}</span>
                         </div>
-                      );
-                    })()}
+                        <div style={{ background: "rgba(14,22,38,0.7)", border: "1px solid rgba(148,163,184,0.1)" }} className="p-3 rounded-lg">
+                          <span className="text-slate-500 block uppercase text-[9px] font-bold">Momentum</span>
+                          <span className="text-slate-200 font-mono font-bold block mt-0.5">{selectedRrgSectorDetails.momentum}</span>
+                        </div>
+                      </div>
+                      <div style={{ background: "rgba(14,22,38,0.7)", border: "1px solid rgba(148,163,184,0.1)" }} className="p-3.5 rounded-xl text-xs mt-3">
+                        <span className="text-slate-400 block font-bold mb-1">Góc phần tư chu kỳ:</span>
+                        <span
+                          className={`font-black uppercase text-xs ${
+                            selectedRrgSectorDetails.quadrant === "Leading"
+                              ? "text-emerald-400"
+                              : selectedRrgSectorDetails.quadrant === "Improving"
+                              ? "text-sky-400"
+                              : selectedRrgSectorDetails.quadrant === "Lagging"
+                              ? "text-red-400"
+                              : "text-amber-500"
+                          }`}
+                        >
+                          {selectedRrgSectorDetails.quadrant}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               ) : (
@@ -1748,11 +1773,13 @@ ${lines}
                     Terminal Tín Hiệu Định Lượng (Tầng 4)
                   </h4>
                   <div style={{ background: "rgba(14,22,38,0.7)", border: "1px solid rgba(148,163,184,0.1)" }} className="flex p-1 rounded-xl text-[10px] font-bold">
-                    {[
-                      { id: "golden" as const, label: "Golden Filter" },
-                      { id: "beartrap" as const, label: "Bẫy Giảm Giá" },
-                      { id: "foreign" as const, label: "Quỹ Ngoại Gom" },
-                    ].map((t) => (
+                    {(
+                      [
+                        { id: "golden", label: "Golden Filter" },
+                        { id: "beartrap", label: "Bẫy Giảm Giá" },
+                        { id: "foreign", label: "Quỹ Ngoại Gom" },
+                      ] as { id: QuantRadarTab; label: string }[]
+                    ).map((t) => (
                       <button
                         key={t.id}
                         onClick={() => setQuantRadarTab(t.id)}
@@ -1779,7 +1806,7 @@ ${lines}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-800/30">
-                        {tang4.slice(0, 6).map((item, idx) => (
+                        {goldenFilterRows.map((item, idx) => (
                           <tr
                             key={idx}
                             onClick={() => {
@@ -1793,7 +1820,7 @@ ${lines}
                             <td className="py-2.5 text-slate-300">
                               {item.taData?.leader ? "Mạnh hơn rõ rệt (Outperform)" : "Ổn định tích lũy"}
                             </td>
-                            <td className="py-2.5 text-right font-bold text-slate-100">{item.taData?.pattern ?? "—"}</td>
+                            <td className="py-2.5 text-right font-bold text-slate-100">{item.taData ? item.taData.pattern : "—"}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -1811,23 +1838,20 @@ ${lines}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-800/30">
-                        {tang4
-                          .filter((s) => s.taData && s.taData.foreignNet < 0)
-                          .slice(0, 4)
-                          .map((item, idx) => (
-                            <tr
-                              key={idx}
-                              onClick={() => {
-                                setSelectedStockId(item.ticker);
-                                setActiveTab("elite");
-                              }}
-                              className="hover:bg-slate-900/30 transition cursor-pointer"
-                            >
-                              <td className="py-2.5 font-black text-amber-400">{item.ticker}</td>
-                              <td className="py-2.5 text-red-400 font-mono">{item.taData?.foreignNet} tỷ</td>
-                              <td className="py-2.5 text-right text-slate-300">{item.taData?.pattern}</td>
-                            </tr>
-                          ))}
+                        {bearTrapRows.map((item, idx) => (
+                          <tr
+                            key={idx}
+                            onClick={() => {
+                              setSelectedStockId(item.ticker);
+                              setActiveTab("elite");
+                            }}
+                            className="hover:bg-slate-900/30 transition cursor-pointer"
+                          >
+                            <td className="py-2.5 font-black text-amber-400">{item.ticker}</td>
+                            <td className="py-2.5 text-red-400 font-mono">{item.taData ? item.taData.foreignNet : 0} tỷ</td>
+                            <td className="py-2.5 text-right text-slate-300">{item.taData ? item.taData.pattern : "—"}</td>
+                          </tr>
+                        ))}
                       </tbody>
                     </table>
                   </div>
@@ -1843,24 +1867,20 @@ ${lines}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-800/30">
-                        {tang4
-                          .filter((s) => s.taData && s.taData.foreignNet > 0)
-                          .sort((a, b) => (b.taData?.foreignNet ?? 0) - (a.taData?.foreignNet ?? 0))
-                          .slice(0, 4)
-                          .map((item, idx) => (
-                            <tr
-                              key={idx}
-                              onClick={() => {
-                                setSelectedStockId(item.ticker);
-                                setActiveTab("elite");
-                              }}
-                              className="hover:bg-slate-900/30 transition cursor-pointer"
-                            >
-                              <td className="py-2.5 font-black text-amber-400">{item.ticker}</td>
-                              <td className="py-2.5 text-emerald-400 font-mono font-black">+{item.taData?.foreignNet} tỷ</td>
-                              <td className="py-2.5 text-right text-slate-300">{item.taData?.pattern}</td>
-                            </tr>
-                          ))}
+                        {foreignAccumRows.map((item, idx) => (
+                          <tr
+                            key={idx}
+                            onClick={() => {
+                              setSelectedStockId(item.ticker);
+                              setActiveTab("elite");
+                            }}
+                            className="hover:bg-slate-900/30 transition cursor-pointer"
+                          >
+                            <td className="py-2.5 font-black text-amber-400">{item.ticker}</td>
+                            <td className="py-2.5 text-emerald-400 font-mono font-black">+{item.taData ? item.taData.foreignNet : 0} tỷ</td>
+                            <td className="py-2.5 text-right text-slate-300">{item.taData ? item.taData.pattern : "—"}</td>
+                          </tr>
+                        ))}
                       </tbody>
                     </table>
                   </div>
@@ -1936,7 +1956,7 @@ ${lines}
                       </thead>
                       <tbody className="divide-y divide-slate-800/30">
                         {eliteTop10.map((stk, idx) => {
-                          const ma50 = stk.taData?.ma50Status ?? "safe";
+                          const ma50 = stk.taData ? stk.taData.ma50Status : "safe";
                           return (
                             <tr
                               key={idx}

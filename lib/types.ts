@@ -97,21 +97,25 @@ export interface GlobalIndexSector {
   rationale: string;
 }
 
+export type CommodityTrend = "Up" | "Down" | "Neutral";
+
 export interface CommodityImpact {
   id: string;
   name: string;
   category: string;
   price: string;
   change: string;
-  trend: "Up" | "Down" | "Neutral";
+  trend: CommodityTrend;
   sectorFavored: string;
   transmission: string;
 }
 
+export type SectorStatus = "Strong Positive" | "Positive" | "Neutral";
+
 export interface SectorCatalyst {
   name: string;
   catalyst: string;
-  status: "Strong Positive" | "Positive" | "Neutral";
+  status: SectorStatus;
   strength: number;
   flow: string;
 }
@@ -160,8 +164,10 @@ export interface RebalanceLogEntry {
   reason: string;
 }
 
+export type ChatRole = "user" | "assistant";
+
 export interface ChatMessage {
-  role: "user" | "assistant";
+  role: ChatRole;
   text: string;
 }
 
@@ -182,4 +188,14 @@ export interface ValuationRow {
   fairValue: string;
   mos: string;
   status: string;
+}
+
+export interface FunnelResult {
+  tang1: Tang1Stock[];
+  tang2: Tang2Stock[];
+  tang3: Tang3Stock[];
+  tang4: Tang4Stock[];
+  confluence: ConfluenceStock[];
+  eliteTop10: ConfluenceStock[];
+  reserve11: ConfluenceStock | null;
 }

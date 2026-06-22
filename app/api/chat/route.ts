@@ -1,28 +1,38 @@
 import { NextRequest, NextResponse } from "next/server";
 
-// This route runs server-side only. The ANTHROPIC_API_KEY never reaches the browser.
-// Set it in Vercel: Project Settings -> Environment Variables -> ANTHROPIC_API_KEY
+// Next.js API Route (Serverless Function) - tuan thu nguyen tac:
+// - Khong hardcode API key, luon doc tu process.env
+// - Khong dieu khien tu client, key khong bao gio gui ve browser
+//
+// Yeu cau bien moi truong trong .env (KHONG commit file nay):
+//   ANTHROPIC_API_KEY=sk-ant-...
 
-export async function POST(req: NextRequest) {
+export const maxDuration = 30;
+
+export async function POST(request: NextRequest) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+
+  if (!apiKey) {
+    console.error("[api/chat] Thieu bien moi truong ANTHROPIC_API_KEY");
+    return NextResponse.json(
+      { error: "Server chua duoc cau hinh API key. Vui long lien he quan tri vien." },
+      { status: 500 }
+    );
+  }
+
+  let body: { message?: string; contextSummary?: string };
   try {
-    const { message, context } = await req.json();
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Du lieu gui len khong hop le." }, { status: 400 });
+  }
 
-    if (!message || typeof message !== "string") {
-      return NextResponse.json({ error: "Missing 'message' field" }, { status: 400 });
-    }
+  const { message, contextSummary } = body;
+  if (!message || typeof message !== "string" || !message.trim()) {
+    return NextResponse.json({ error: "Thieu noi dung tin nhan." }, { status: 400 });
+  }
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json(
-        { reply: "Server chưa cấu hình ANTHROPIC_API_KEY. Vui lòng thêm biến môi trường này trong Vercel." },
-        { status: 200 }
-      );
-    }
-
-    const systemPrompt = `Bạn là trợ lý CIO AI cho app Global Quant-Macro & Market Scanner, hỗ trợ nhà đầu tư Việt Nam. Trả lời ngắn gọn, chuyên nghiệp, dùng tiếng Việt. ${
-      context ? `Bối cảnh hiện tại: ${context}` : ""
-    } Khi cần thông tin tin tức hoặc giá mới nhất, hãy dùng công cụ web_search.`;
-
+  try {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -33,36 +43,26 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify({
         model: "claude-sonnet-4-6",
         max_tokens: 1000,
-        system: systemPrompt,
+        system: `Ban la tro ly CIO AI cho app Global Quant-Macro & Market Scanner, ho tro nha dau tu Viet Nam. Tra loi ngan gon, chuyen nghiep, dung tieng Viet. ${contextSummary ?? ""}`,
         messages: [{ role: "user", content: message }],
-        tools: [{ type: "web_search_20250305", name: "web_search" }],
       }),
     });
 
     if (!response.ok) {
       const errText = await response.text();
-      console.error("Anthropic API error:", response.status, errText);
-      return NextResponse.json(
-        { reply: "Dịch vụ AI hiện không phản hồi. Vui lòng thử lại sau ít phút." },
-        { status: 200 }
-      );
+      console.error("[api/chat] Anthropic API loi:", response.status, errText);
+      return NextResponse.json({ error: "Dich vu AI tam thoi khong phan hoi. Vui long thu lai." }, { status: 502 });
     }
 
     const data = await response.json();
-
-    type ContentBlock = { type: string; text?: string };
-    const textBlocks: string[] = (data.content || [])
-      .filter((b: ContentBlock) => b.type === "text")
-      .map((b: ContentBlock) => b.text || "");
-
-    const replyText = textBlocks.join("\n").trim() || "Xin lỗi, tôi không nhận được phản hồi hợp lệ.";
+    const textBlocks = (data.content || [])
+      .filter((b: { type: string }) => b.type === "text")
+      .map((b: { text: string }) => b.text);
+    const replyText = textBlocks.join("\n").trim() || "Xin loi, toi khong nhan duoc phan hoi hop le.";
 
     return NextResponse.json({ reply: replyText });
   } catch (err) {
-    console.error("Chat API route error:", err);
-    return NextResponse.json(
-      { reply: "Đã xảy ra lỗi khi xử lý yêu cầu. Vui lòng thử lại." },
-      { status: 200 }
-    );
+    console.error("[api/chat] Loi khong xac dinh:", err);
+    return NextResponse.json({ error: "Khong the ket noi toi dich vu AI luc nay." }, { status: 500 });
   }
 }

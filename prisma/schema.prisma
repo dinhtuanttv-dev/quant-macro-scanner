@@ -1,0 +1,34 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  // KHÔNG khai báo url ở đây trong Prisma v7 — connection string giờ
+  // sống ở prisma.config.ts (cho CLI) và trong code app (cho driver adapter).
+  // Khai báo url ở đây sẽ gây lỗi P1012: "url is no longer supported in schema files".
+}
+
+model MacroNewsRecord {
+  id          String   @id @default(cuid())
+  headline    String
+  summary     String?
+  url         String
+  type        String
+  scope       String
+  sourceId    String
+  sourceName  String
+  rawImpact   Float
+  severity    String
+  affectedSectors String[]
+  relatedTickers  String[]
+  contentHash String   @unique
+  publishedAt DateTime
+  fetchedAt   DateTime @default(now())
+
+  @@index([scope])
+  @@index([severity])
+  @@index([publishedAt])
+  @@index([sourceId])
+}
