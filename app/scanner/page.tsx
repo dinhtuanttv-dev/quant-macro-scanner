@@ -20,6 +20,8 @@ import {
 import {
   computeTang1, computeTang2, computeTang3, computeTang4, computeConfluence,
 } from "@/lib/quant-funnel";
+import { overrideTang4WithRealData } from "@/lib/quant-funnel-override";
+import { useMarketData } from "@/lib/market-data/useMarketData";
 
 const liveMacroNewsSentiment = [
   { id: 1, headline: "Ngan hang Nha nuoc giam lai suat lien ngan hang them 0.25%", impact: 8, affectedSectors: "Tat ca cac nganh", relatedTicker: "TCB", type: "Chinh sach SBV" },
@@ -66,7 +68,14 @@ export default function ScannerPage() {
   const tang1Result = useMemo(() => computeTang1(universe), [universe]);
   const tang2Result = useMemo(() => computeTang2(tang1Result, universe), [tang1Result, universe]);
   const tang3Result = useMemo(() => computeTang3(tang2Result), [tang2Result]);
-  const tang4Result = useMemo(() => computeTang4(tang3Result), [tang3Result]);
+
+  const tang4ResultBase = useMemo(() => computeTang4(tang3Result), [tang3Result]);
+  const { marketData } = useMarketData(10);
+  const tang4Result = useMemo(
+    () => overrideTang4WithRealData(tang4ResultBase, marketData),
+    [tang4ResultBase, marketData]
+  );
+
   const confluenceResult = useMemo(
     () => computeConfluence(tang1Result, tang2Result, tang3Result, tang4Result, universe),
     [tang1Result, tang2Result, tang3Result, tang4Result, universe]
