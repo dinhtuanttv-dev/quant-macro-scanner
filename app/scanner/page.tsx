@@ -5,6 +5,7 @@ import { Cpu, Sparkles, SlidersHorizontal, Filter, Layers, Globe, Activity, Tren
 
 import TickerMarquee from "@/components/quant/TickerMarquee";
 import MarketStructureBar from "@/components/quant/MarketStructureBar";
+import RealMarketDataPanel from "@/components/quant/RealMarketDataPanel";
 import ChatPanel from "@/components/quant/ChatPanel";
 import ScannerTab from "@/components/quant/ScannerTab";
 import CommodityTab from "@/components/quant/CommodityTab";
@@ -264,8 +265,9 @@ ${lines}`;
         </div>
       </header>
 
-      <div className="max-w-7xl w-full mx-auto px-4 md:px-6 pt-6">
+      <div className="max-w-7xl w-full mx-auto px-4 md:px-6 pt-6 space-y-6">
         <MarketStructureBar />
+        <RealMarketDataPanel limit={10} />
       </div>
 
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-4 gap-6">
