@@ -3,7 +3,7 @@
 import { AlertCircle, TrendingUp, TrendingDown, RefreshCw } from "lucide-react";
 import { useMarketData } from "@/lib/market-data/useMarketData";
 
-export default function RealMarketDataPanel({ limit = 10 }: { limit?: number }) {
+export default function RealMarketDataPanel({ limit = 60 }: { limit?: number }) {
   const { marketData, isLoading, error, refresh } = useMarketData(limit);
 
   if (isLoading && !marketData) {
@@ -46,9 +46,9 @@ export default function RealMarketDataPanel({ limit = 10 }: { limit?: number }) 
         </p>
       )}
 
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
         <table className="w-full text-left text-xs border-collapse">
-          <thead>
+          <thead className="sticky top-0 bg-[#0e1626]">
             <tr className="border-b border-slate-800/60 text-slate-400 text-[10px] uppercase">
               <th className="pb-2">Ma</th>
               <th className="pb-2 text-right">Gia Dong Cua</th>

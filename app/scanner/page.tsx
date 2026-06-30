@@ -45,7 +45,7 @@ export default function ScannerPage() {
   const [aiError, setAiError] = useState("");
 
   const [selectedStockId, setSelectedStockId] = useState("FPT");
-  const [taMode, setTaMode] = useState("VCP");
+  const [taMode, setTaMode] = useState("Nen Thuc");
   const [quantRadarTab, setQuantRadarTab] = useState("golden");
   const [selectedRrgSector, setSelectedRrgSector] = useState("Cong nghe");
 
@@ -70,7 +70,7 @@ export default function ScannerPage() {
   const tang3Result = useMemo(() => computeTang3(tang2Result), [tang2Result]);
 
   const tang4ResultBase = useMemo(() => computeTang4(tang3Result), [tang3Result]);
-  const { marketData } = useMarketData(10);
+  const { marketData } = useMarketData(60);
   const tang4Result = useMemo(
     () => overrideTang4WithRealData(tang4ResultBase, marketData),
     [tang4ResultBase, marketData]
@@ -276,7 +276,7 @@ ${lines}`;
 
       <div className="max-w-7xl w-full mx-auto px-4 md:px-6 pt-6 space-y-6">
         <MarketStructureBar />
-        <RealMarketDataPanel limit={10} />
+        <RealMarketDataPanel limit={60} />
       </div>
 
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -387,7 +387,7 @@ ${lines}`;
             <SectorsTab sectorsData={sectorsData} blackSwans={blackSwans} tang3Result={tang3Result} setSelectedStockId={setSelectedStockId} setActiveTab={setActiveTab} />
           )}
           {activeTab === "ta" && (
-            <TaTab taMode={taMode} setTaMode={setTaMode} rrgSectors={rrgSectors} selectedRrgSector={selectedRrgSector} setSelectedRrgSector={setSelectedRrgSector} quantRadarTab={quantRadarTab} setQuantRadarTab={setQuantRadarTab} tang4Result={tang4Result} setSelectedStockId={setSelectedStockId} setActiveTab={setActiveTab} />
+            <TaTab taMode={taMode} setTaMode={setTaMode} rrgSectors={rrgSectors} selectedRrgSector={selectedRrgSector} setSelectedRrgSector={setSelectedRrgSector} quantRadarTab={quantRadarTab} setQuantRadarTab={setQuantRadarTab} tang4Result={tang4Result} selectedStockId={selectedStockId} setSelectedStockId={setSelectedStockId} setActiveTab={setActiveTab} />
           )}
           {activeTab === "elite" && (
             <EliteTab

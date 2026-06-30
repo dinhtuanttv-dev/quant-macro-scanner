@@ -1,7 +1,8 @@
 "use client";
 
-import { Activity, Zap } from "lucide-react";
+import { Activity, Zap, RefreshCw, AlertCircle } from "lucide-react";
 import type { Tang4Stock } from "@/lib/quant-funnel";
+import { useOhlcvData } from "@/lib/market-data/useOhlcvData";
 
 interface RrgSector {
   name: string;
@@ -24,13 +25,81 @@ interface TaTabProps {
   quantRadarTab: string;
   setQuantRadarTab: (tab: string) => void;
   tang4Result: Tang4Stock[];
+  selectedStockId: string;
   setSelectedStockId: (ticker: string) => void;
   setActiveTab: (tab: string) => void;
 }
 
+function RealCandlestickChart({ ticker }: { ticker: string }) {
+  const { bars, isLoading, error } = useOhlcvData(ticker, "3mo");
+
+  if (isLoading) {
+    return (
+      <div className="h-64 flex items-center justify-center gap-2 text-xs text-slate-400">
+        <RefreshCw className="w-4 h-4 animate-spin" />
+        Dang tai du lieu nen thuc cho {ticker}...
+      </div>
+    );
+  }
+
+  if (error || bars.length === 0) {
+    return (
+      <div className="h-64 flex items-center justify-center gap-2 text-xs text-red-300">
+        <AlertCircle className="w-4 h-4" />
+        Khong co du lieu nen thuc cho {ticker} (co the do niem yet tren HNX).
+      </div>
+    );
+  }
+
+  const highs = bars.map((b) => b.high);
+  const lows = bars.map((b) => b.low);
+  const maxPrice = Math.max(...highs);
+  const minPrice = Math.min(...lows);
+  const priceRange = maxPrice - minPrice || 1;
+
+  const toPct = (price: number) => ((price - minPrice) / priceRange) * 100;
+
+  const lastClose = bars[bars.length - 1].close;
+  const firstClose = bars[0].close;
+  const periodChangePct = (((lastClose - firstClose) / firstClose) * 100).toFixed(1);
+
+  return (
+    <div className="relative">
+      <div className="absolute top-0 right-0 text-[10px] font-mono text-slate-500 space-y-0.5 text-right z-10">
+        <div>Ma: <b className="text-amber-400">{ticker}</b></div>
+        <div>3 thang: <b className={Number(periodChangePct) >= 0 ? "text-emerald-400" : "text-red-400"}>{periodChangePct}%</b></div>
+        <div>Cao nhat: <b className="text-slate-300">{maxPrice.toLocaleString()}</b></div>
+        <div>Thap nhat: <b className="text-slate-300">{minPrice.toLocaleString()}</b></div>
+      </div>
+      <div className="h-64 flex items-end justify-between gap-[2px] border-b border-slate-800/60 pb-3 pt-12">
+        {bars.map((bar, i) => {
+          const isGreen = bar.close >= bar.open;
+          const bodyTop = toPct(Math.max(bar.open, bar.close));
+          const bodyBottom = toPct(Math.min(bar.open, bar.close));
+          const wickTop = toPct(bar.high);
+          const wickBottom = toPct(bar.low);
+          return (
+            <div key={i} className="flex-1 flex flex-col items-center h-full justify-end relative" title={`${bar.date}: O${bar.open} H${bar.high} L${bar.low} C${bar.close}`}>
+              <div
+                className="w-[1.5px] bg-slate-600 absolute"
+                style={{ height: `${wickTop - wickBottom}%`, bottom: `${wickBottom}%` }}
+              ></div>
+              <div
+                className={`w-full rounded-sm relative ${isGreen ? "bg-emerald-500/80" : "bg-red-500/80"}`}
+                style={{ height: `${Math.max(1, bodyTop - bodyBottom)}%`, position: "absolute", bottom: `${bodyBottom}%` }}
+              ></div>
+            </div>
+          );
+        })}
+      </div>
+      <p className="text-[9px] text-slate-600 mt-2">Du lieu thuc tu Yahoo Finance, {bars.length} phien gan nhat.</p>
+    </div>
+  );
+}
+
 export default function TaTab({
   taMode, setTaMode, rrgSectors, selectedRrgSector, setSelectedRrgSector,
-  quantRadarTab, setQuantRadarTab, tang4Result, setSelectedStockId, setActiveTab,
+  quantRadarTab, setQuantRadarTab, tang4Result, selectedStockId, setSelectedStockId, setActiveTab,
 }: TaTabProps) {
   const selectedRrgSectorDetails = rrgSectors.find((s) => s.name === selectedRrgSector) || rrgSectors[0];
 
@@ -54,12 +123,12 @@ export default function TaTab({
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800/60 pb-4">
         <div>
           <h3 className="text-sm font-bold uppercase text-slate-100 flex items-center gap-1.5"><Activity className="w-4 h-4 text-emerald-400" />Truc Quan Hoa Do Thi & Phan Tich Da Chieu</h3>
-          <p className="text-xs text-slate-400 mt-1">Do thi nen ky thuat truyen thong hoac Ban do luan chuyen dong tien RRG.</p>
+          <p className="text-xs text-slate-400 mt-1">Do thi nen thuc tu Yahoo Finance hoac Ban do luan chuyen dong tien RRG.</p>
         </div>
         <div style={{ background: "rgba(2,6,15,0.7)", border: "1px solid rgba(148,163,184,0.1)" }} className="flex flex-wrap gap-1 p-1 rounded-xl">
-          {["VCP", "Wyckoff", "Elliott", "VSA", "RRG"].map((mode) => (
+          {["Nen Thuc", "RRG"].map((mode) => (
             <button key={mode} onClick={() => setTaMode(mode)} style={taMode === mode ? { background: "linear-gradient(135deg, #fbbf24, #f59e0b)" } : {}} className={`px-3 py-1.5 text-[10px] font-black rounded-lg transition ${taMode === mode ? "text-slate-950" : "text-slate-400 hover:text-slate-200"}`}>
-              {mode === "RRG" ? "Ban Do RRG" : `${mode} Mode`}
+              {mode === "RRG" ? "Ban Do RRG" : "Do Thi Nen Thuc"}
             </button>
           ))}
         </div>
@@ -68,7 +137,7 @@ export default function TaTab({
       {taMode === "RRG" ? (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div style={{ background: "rgba(2,6,15,0.6)", border: "1px solid rgba(148,163,184,0.1)" }} className="lg:col-span-2 rounded-2xl p-6 relative flex flex-col items-center">
-            <div className="absolute top-3 left-3 text-[10px] font-mono text-slate-500">RRG Benchmark: <b className="text-amber-500">VN-Index</b></div>
+            <div className="absolute top-3 left-3 text-[10px] font-mono text-slate-500">RRG Benchmark: <b className="text-amber-500">VN-Index</b> (du lieu minh hoa)</div>
             <div className="w-full flex justify-between text-[11px] font-bold text-slate-400 px-2 mb-2"><span className="text-sky-400">IMPROVING</span><span className="text-emerald-400">LEADING</span></div>
             <div style={{ border: "1px solid rgba(148,163,184,0.12)" }} className="w-full max-w-[360px] h-[320px] relative rounded-2xl">
               <svg width="100%" height="100%" viewBox="0 0 320 320" className="overflow-visible">
@@ -89,6 +158,7 @@ export default function TaTab({
               </svg>
             </div>
             <div className="w-full flex justify-between text-[11px] font-bold text-slate-400 px-2 mt-2"><span className="text-red-400">LAGGING</span><span className="text-amber-500">WEAKENING</span></div>
+            <p className="text-[9px] text-slate-600 mt-3">Luu y: ban do RRG dang dung du lieu minh hoa, chua noi nguon RS thuc theo nganh.</p>
           </div>
 
           <div style={{ background: "rgba(2,6,15,0.6)", border: "1px solid rgba(148,163,184,0.1)" }} className="rounded-2xl p-5 flex flex-col justify-between">
@@ -110,28 +180,7 @@ export default function TaTab({
         </div>
       ) : (
         <div style={{ background: "rgba(2,6,15,0.6)", border: "1px solid rgba(148,163,184,0.1)" }} className="rounded-2xl p-5 relative overflow-hidden">
-          <div className="absolute top-3 right-3 text-[10px] font-mono text-slate-500 space-y-0.5 text-right">
-            <div>RSI (14): <b className="text-emerald-400">62.4</b></div>
-            <div>MACD: <b className="text-emerald-400">12.5</b></div>
-            <div>MFI: <b className="text-emerald-400">65.8</b></div>
-          </div>
-          <div className="h-64 flex items-end justify-between gap-1 border-b border-slate-800/60 pb-3">
-            {[{ h: 30, o: 35, c: 45, l: 28 }, { h: 48, o: 45, c: 50, l: 40 }, { h: 52, o: 50, c: 42, l: 40 }, { h: 46, o: 42, c: 38, l: 35 }, { h: 42, o: 38, c: 44, l: 34 }, { h: 58, o: 44, c: 54, l: 42 }, { h: 62, o: 54, c: 60, l: 52 }, { h: 68, o: 60, c: 56, l: 55 }, { h: 64, o: 56, c: 62, l: 54 }, { h: 74, o: 62, c: 72, l: 60 }].map((bar, i) => {
-              const isGreen = bar.c >= bar.o;
-              return (
-                <div key={i} className="flex-1 flex flex-col items-center h-full justify-end relative">
-                  <div className="w-[1.5px] bg-slate-600" style={{ height: `${bar.h - bar.l}%`, transform: `translateY(${100 - bar.h}%)` }}></div>
-                  <div className={`w-full rounded-sm relative ${isGreen ? "bg-emerald-500/80" : "bg-red-500/80"}`} style={{ height: `${Math.max(4, Math.abs(bar.c - bar.o))}%`, bottom: `${Math.min(bar.o, bar.c)}%` }}></div>
-                </div>
-              );
-            })}
-          </div>
-          <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 flex items-center justify-center pointer-events-none">
-            {taMode === "VCP" && (<div style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)" }} className="text-amber-400 px-4 py-2 rounded-xl text-xs font-bold text-center">MO HINH VCP DANG TAO VONG THU HEP THU 3</div>)}
-            {taMode === "Wyckoff" && (<div style={{ background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.3)" }} className="text-emerald-400 px-4 py-2 rounded-xl text-xs font-bold text-center">WYCKOFF PHASE C: HOAN THANH SPRING & SOS</div>)}
-            {taMode === "Elliott" && (<div style={{ background: "rgba(56,189,248,0.1)", border: "1px solid rgba(56,189,248,0.3)" }} className="text-sky-400 px-4 py-2 rounded-xl text-xs font-bold text-center">CHAN SONG 3 TANG TRUONG CHU DAO</div>)}
-            {taMode === "VSA" && (<div style={{ background: "rgba(167,139,250,0.1)", border: "1px solid rgba(167,139,250,0.3)" }} className="text-purple-300 px-4 py-2 rounded-xl text-xs font-bold text-center">VSA: DANG QUET DIEM NO-SUPPLY BAR</div>)}
-          </div>
+          <RealCandlestickChart ticker={selectedStockId} />
         </div>
       )}
 

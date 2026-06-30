@@ -11,7 +11,8 @@
     "test:indicators": "tsx lib/__tests__/technical-indicators.test.ts",
     "check:tcbs": "tsx lib/__tests__/tcbs-adapter.manual-check.ts",
     "check:yahoo": "tsx lib/__tests__/yahoo-finance-adapter.manual-check.ts",
-    "test:override": "tsx lib/__tests__/quant-funnel-override.test.ts"
+    "test:override": "tsx lib/__tests__/quant-funnel-override.test.ts",
+    "experiment:quotesummary": "tsx lib/__tests__/yahoo-quotesummary.experiment.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "7.8.0",
