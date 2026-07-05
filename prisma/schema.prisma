@@ -5,30 +5,100 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  // KHÔNG khai báo url ở đây trong Prisma v7 — connection string giờ
-  // sống ở prisma.config.ts (cho CLI) và trong code app (cho driver adapter).
-  // Khai báo url ở đây sẽ gây lỗi P1012: "url is no longer supported in schema files".
 }
 
 model MacroNewsRecord {
-  id          String   @id @default(cuid())
-  headline    String
-  summary     String?
-  url         String
-  type        String
-  scope       String
-  sourceId    String
-  sourceName  String
-  rawImpact   Float
-  severity    String
+  id              String   @id @default(cuid())
+  headline        String
+  summary         String?
+  url             String
+  type            String
+  scope           String
+  sourceId        String
+  sourceName      String
+  rawImpact       Float
+  severity        String
   affectedSectors String[]
   relatedTickers  String[]
-  contentHash String   @unique
-  publishedAt DateTime
-  fetchedAt   DateTime @default(now())
+  contentHash     String   @unique
+  publishedAt     DateTime
+  fetchedAt       DateTime @default(now())
 
   @@index([scope])
   @@index([severity])
   @@index([publishedAt])
+  @@index([sourceId])
+}
+enum CatalystCategory {
+  earnings
+  ma
+  regulatory
+  rating
+  contract
+  insider
+  macro
+}
+
+enum CatalystCredibility {
+  confirmed
+  rumor
+}
+
+enum PropagationDistance {
+  direct
+  upstream
+  downstream
+  competitor
+  commodity
+}
+
+enum ImpactDirection {
+  benefit
+  harm
+}
+
+enum TargetType {
+  sector
+  ticker
+}
+
+enum Horizon {
+  short
+  medium
+  long
+}
+
+model CatalystSource {
+  id                 String              @id @default(cuid())
+  title              String
+  category           CatalystCategory
+  sourceCredibility  CatalystCredibility
+  publishedDate      DateTime
+  executionDate      DateTime?
+  firstDetectedAt    DateTime            @default(now())
+  corroborationCount Int                 @default(1)
+  edges              ImpactEdge[]
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  @@index([firstDetectedAt])
+  @@index([category])
+}
+
+model ImpactEdge {
+  id                  String              @id @default(cuid())
+  sourceId            String
+  source              CatalystSource      @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  targetType          TargetType
+  targetId            String
+  direction           ImpactDirection
+  propagationDistance PropagationDistance
+  hopCount            Int                 @default(1)
+  baseWeight          Float
+  decayRate           Float
+  horizon             Horizon
+  createdAt           DateTime            @default(now())
+
+  @@index([targetType, targetId])
   @@index([sourceId])
 }

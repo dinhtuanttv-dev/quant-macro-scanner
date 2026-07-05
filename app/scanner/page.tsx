@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
-import { Cpu, Sparkles, SlidersHorizontal, Filter, Layers, Globe, Activity, TrendingUp, Award, RefreshCw } from "lucide-react";
+import { Cpu, Sparkles, SlidersHorizontal, Filter, Layers, Globe, Activity, TrendingUp, Award, RefreshCw, Flame } from "lucide-react"; // [CATALYST] thêm Flame
 
 import TickerMarquee from "@/components/quant/TickerMarquee";
 import MarketStructureBar from "@/components/quant/MarketStructureBar";
@@ -12,6 +12,8 @@ import CommodityTab from "@/components/quant/CommodityTab";
 import SectorsTab from "@/components/quant/SectorsTab";
 import TaTab from "@/components/quant/TaTab";
 import EliteTab from "@/components/quant/EliteTab";
+import { CatalystTab } from "@/components/catalyst/CatalystTab"; // [CATALYST]
+import { useCatalystData } from "@/lib/catalyst/useCatalystData"; // [CATALYST]
 
 import {
   stockUniverse, globalIndicesSectors, commoditiesImpact, sectorsData,
@@ -54,6 +56,14 @@ export default function ScannerPage() {
   const [kellyFraction, setKellyFraction] = useState(0.5);
 
   const [activeNewsId, setActiveNewsId] = useState(1);
+
+  // [CATALYST] dữ liệu radar catalyst + cấu hình ngưỡng cảnh báo
+  const { data: catalystData, isLoading: catalystLoading } = useCatalystData();
+  const [catalystAlertConfig, setCatalystAlertConfig] = useState({
+    minSectorNetScore: 6,
+    maxDaysBeforeExecutionForAlert: 3,
+    minCorroborationCount: 2,
+  });
 
   const [universe] = useState(stockUniverse);
   const [daysInEliteMap] = useState<Record<string, number>>(() => {
@@ -357,6 +367,7 @@ ${lines}`;
               { id: "commodity", label: "Ket noi the gioi", icon: Globe },
               { id: "sectors", label: "Loc Nganh", icon: Layers },
               { id: "ta", label: "TA VN-Index", icon: Activity },
+              { id: "catalyst", label: "Chat xuc tac", icon: Flame }, // [CATALYST]
               { id: "elite", label: "Elite 10", icon: Award },
             ].map((tab) => {
               const Icon = tab.icon;
@@ -389,6 +400,35 @@ ${lines}`;
           {activeTab === "ta" && (
             <TaTab taMode={taMode} setTaMode={setTaMode} rrgSectors={rrgSectors} selectedRrgSector={selectedRrgSector} setSelectedRrgSector={setSelectedRrgSector} quantRadarTab={quantRadarTab} setQuantRadarTab={setQuantRadarTab} tang4Result={tang4Result} selectedStockId={selectedStockId} setSelectedStockId={setSelectedStockId} setActiveTab={setActiveTab} />
           )}
+
+          {/* [CATALYST] khối render tab Chất xúc tác */}
+          {activeTab === "catalyst" && (
+            <>
+              {catalystLoading && (
+                <div className="text-slate-400 text-sm p-7">Dang tai du lieu catalyst...</div>
+              )}
+              {!catalystLoading && !catalystData && (
+                <div className="text-slate-400 text-sm p-7">
+                  Chua co du lieu - can chay lan quet cron dau tien qua /api/catalysts/scan
+                </div>
+              )}
+              {catalystData && (
+                <CatalystTab
+                  lastScanLabel={new Date(catalystData.scannedAt).toLocaleString("vi-VN")}
+                  sectors={catalystData.sectors}
+                  emerging={catalystData.emerging}
+                  upMovers={catalystData.upMovers}
+                  downMovers={catalystData.downMovers}
+                  totalBenefitCount={catalystData.totalBenefitCount}
+                  totalHarmCount={catalystData.totalHarmCount}
+                  alertConfig={catalystAlertConfig}
+                  onAlertConfigChange={setCatalystAlertConfig}
+                  activeAlerts={catalystData.activeAlerts}
+                />
+              )}
+            </>
+          )}
+
           {activeTab === "elite" && (
             <EliteTab
               eliteTop10={eliteTop10} reserve11={reserve11} selectedStockId={selectedStockId} setSelectedStockId={setSelectedStockId} selectedStock={selectedStock}

@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/macro-news",
       "schedule": "0 */4 * * *"
+    },
+    {
+      "path": "/api/catalysts/scan",
+      "schedule": "*/15 2-8 * * 1-5"
     }
   ]
 }
