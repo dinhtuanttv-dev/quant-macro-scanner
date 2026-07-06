@@ -1,7 +1,17 @@
 // app/api/catalysts/scan/route.ts
+// Route này CHỈ được cron gọi để chạy 1 lần quét và lưu kết quả vào Redis.
+// Vercel Cron luôn gửi request bằng GET, kèm header Authorization: Bearer <CRON_SECRET>.
+//
+// Redis: dùng đúng tên biến KV_REST_API_URL / KV_REST_API_TOKEN mà Vercel Marketplace
+// (Upstash) tự cấp — KHÔNG dùng Redis.fromEnv() vì hàm đó chỉ tìm UPSTASH_REDIS_REST_*.
+//
+// Dữ liệu nguồn: đọc thẳng qua Prisma (CatalystSource/ImpactEdge), không qua API giả.
+// fetchMarketSignals: TẠM THỜI dùng bảng tra cứu tay cho các mã đã seed, để demo đủ badge.
+// Khi có dữ liệu thật, thay bằng cách gọi adapter giá (tcbs-adapter/yahoo-finance-adapter).
+
 import { NextRequest, NextResponse } from "next/server";
 import { Redis } from "@upstash/redis";
-import { prisma } from "@/lib/prisma"; // TODO: đổi đúng đường dẫn nếu singleton Prisma của cậu ở chỗ khác
+import { prisma } from "@/lib/prisma"; // đổi lại đường dẫn nếu singleton Prisma của cậu ở chỗ khác
 import { CatalystEngine } from "@/lib/catalyst/CatalystEngine";
 import type {
   CatalystSource,
@@ -11,7 +21,10 @@ import type {
   AlertConfig,
 } from "@/lib/catalyst/types";
 
-const redis = Redis.fromEnv();
+const redis = new Redis({
+  url: process.env.KV_REST_API_URL!,
+  token: process.env.KV_REST_API_TOKEN!,
+});
 
 async function fetchSourcesAndEdges(): Promise<{ sources: CatalystSource[]; edges: ImpactEdge[] }> {
   const sources = await prisma.catalystSource.findMany({
@@ -24,17 +37,61 @@ async function fetchSourcesAndEdges(): Promise<{ sources: CatalystSource[]; edge
   return { sources, edges };
 }
 
+const MOCK_SIGNAL_OVERRIDES: Record<string, Partial<MarketSignal>> = {
+  HPG: {
+    priceInStatus: "not_reflected",
+    volumeFlag: "confirmed",
+    foreignFlowDirection: "buy",
+    foreignFlowValue: "+2.1M CP",
+    valuationPercentile: 0.35,
+    liquidityScore: 0.9,
+  },
+  NKG: {
+    priceInStatus: "reflected",
+    volumeFlag: "none",
+    foreignFlowDirection: "sell",
+    foreignFlowValue: "-0.4M CP",
+    valuationPercentile: 0.7,
+    liquidityScore: 0.6,
+  },
+  VGC: {
+    priceInStatus: "not_reflected",
+    volumeFlag: "none",
+    foreignFlowDirection: "none",
+    valuationPercentile: 0.5,
+    liquidityScore: 0.5,
+  },
+  NVL: {
+    priceInStatus: "not_reflected",
+    volumeFlag: "suspicious",
+    foreignFlowDirection: "sell",
+    foreignFlowValue: "-1.8M CP",
+    valuationPercentile: 0.6,
+    liquidityScore: 0.7,
+  },
+  VCB: {
+    priceInStatus: "reflected",
+    volumeFlag: "confirmed",
+    foreignFlowDirection: "buy",
+    foreignFlowValue: "+0.8M CP",
+    valuationPercentile: 0.4,
+    liquidityScore: 0.95,
+  },
+};
+
 async function fetchMarketSignals(tickers: string[]): Promise<Map<string, MarketSignal>> {
   const map = new Map<string, MarketSignal>();
   for (const ticker of tickers) {
+    const override = MOCK_SIGNAL_OVERRIDES[ticker];
     map.set(ticker, {
       ticker,
-      priceInStatus: "not_reflected",
-      volumeFlag: "none",
-      foreignFlowDirection: "none",
-      valuationPercentile: 0.5,
-      liquidityScore: 0.5,
-      isWatchlisted: false,
+      priceInStatus: override?.priceInStatus ?? "not_reflected",
+      volumeFlag: override?.volumeFlag ?? "none",
+      foreignFlowDirection: override?.foreignFlowDirection ?? "none",
+      foreignFlowValue: override?.foreignFlowValue,
+      valuationPercentile: override?.valuationPercentile ?? 0.5,
+      liquidityScore: override?.liquidityScore ?? 0.5,
+      isWatchlisted: false, // sẽ được ghi đè đúng bằng watchlist thật trong runScan()
     });
   }
   return map;
@@ -117,7 +174,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const snapshot = await runScan();
-    return NextResponse.json({ ok: true, scannedAt: snapshot.scannedAt, sourceCount: snapshot.sectors.length });
+    return NextResponse.json({ ok: true, scannedAt: snapshot.scannedAt, sectorCount: snapshot.sectors.length });
   } catch (err) {
     console.error("Catalyst scan failed:", err);
     return NextResponse.json({ ok: false, error: String(err) }, { status: 500 });
