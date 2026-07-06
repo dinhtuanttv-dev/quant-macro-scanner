@@ -29,6 +29,7 @@ model MacroNewsRecord {
   @@index([publishedAt])
   @@index([sourceId])
 }
+
 enum CatalystCategory {
   earnings
   ma
@@ -77,6 +78,7 @@ model CatalystSource {
   executionDate      DateTime?
   firstDetectedAt    DateTime            @default(now())
   corroborationCount Int                 @default(1)
+  originRecordId     String?             @unique
   edges              ImpactEdge[]
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
