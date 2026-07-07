@@ -4,6 +4,8 @@ import { Activity, Zap, RefreshCw, AlertCircle, CheckCircle2, TrendingUp, Trendi
 import type { Tang4Stock } from "@/lib/quant-funnel";
 import { useOhlcvData } from "@/lib/market-data/useOhlcvData";
 import { useScoredStocks } from "@/lib/market-data/useScoredStocks";
+import ChartDrawingPanel from "@/components/quant/ChartDrawingPanel";
+import TaCommandCenterTab from "@/components/quant/ta-command-center/TaCommandCenterTab";
 
 interface RrgSector {
   name: string; x: number; y: number; prevX: number; prevY: number;
@@ -24,8 +26,10 @@ interface TaTabProps {
   setActiveTab: (tab: string) => void;
 }
 
+// ============ CANDLESTICK CHART THUC (khong tuong tac) ============
 function RealCandlestickChart({ ticker }: { ticker: string }) {
   const { bars, isLoading, error } = useOhlcvData(ticker, "3mo");
+
   if (isLoading) return (
     <div className="h-64 flex items-center justify-center gap-2 text-xs text-slate-400">
       <RefreshCw className="w-4 h-4 animate-spin" /> Dang tai du lieu nen thuc cho {ticker}...
@@ -36,6 +40,7 @@ function RealCandlestickChart({ ticker }: { ticker: string }) {
       <AlertCircle className="w-4 h-4" /> Khong co du lieu nen thuc cho {ticker}.
     </div>
   );
+
   const maxPrice = Math.max(...bars.map((b) => b.high));
   const minPrice = Math.min(...bars.map((b) => b.low));
   const priceRange = maxPrice - minPrice || 1;
@@ -43,6 +48,7 @@ function RealCandlestickChart({ ticker }: { ticker: string }) {
   const lastClose = bars[bars.length - 1].close;
   const firstClose = bars[0].close;
   const changePct = (((lastClose - firstClose) / firstClose) * 100).toFixed(1);
+
   return (
     <div className="relative">
       <div className="absolute top-0 right-0 text-[10px] font-mono text-slate-500 space-y-0.5 text-right z-10">
@@ -72,6 +78,25 @@ function RealCandlestickChart({ ticker }: { ticker: string }) {
   );
 }
 
+// ============ VE VUNG AI - dung ChartDrawingPanel + Controller ============
+function VeVungAISection({ ticker }: { ticker: string }) {
+  const { bars, isLoading, error } = useOhlcvData(ticker, "3mo");
+
+  if (isLoading) return (
+    <div className="h-64 flex items-center justify-center gap-2 text-xs text-slate-400">
+      <RefreshCw className="w-4 h-4 animate-spin" /> Dang tai du lieu cho {ticker}...
+    </div>
+  );
+  if (error) return (
+    <div className="h-64 flex items-center justify-center gap-2 text-xs text-red-300">
+      <AlertCircle className="w-4 h-4" /> Khong co du lieu cho {ticker}.
+    </div>
+  );
+
+  return <ChartDrawingPanel bars={bars} ticker={ticker} />;
+}
+
+// ============ CONFIDENCE BADGE ============
 function ConfidenceBadge({ score, confluence }: { score: number; confluence: number }) {
   const color = score >= 70 ? "#34d399" : score >= 50 ? "#fbbf24" : "#f87171";
   return (
@@ -103,23 +128,25 @@ export default function TaTab({
   return (
     <div style={{ background: "linear-gradient(165deg, #0e1626 0%, #0a1020 100%)", border: "1px solid rgba(148,163,184,0.1)" }} className="rounded-2xl p-6 shadow-xl space-y-6">
 
+      {/* HEADER + MODE SWITCH */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800/60 pb-4">
         <div>
           <h3 className="text-sm font-bold uppercase text-slate-100 flex items-center gap-1.5"><Activity className="w-4 h-4 text-emerald-400" />Truc Quan Hoa Do Thi & Phan Tich Da Chieu</h3>
-          <p className="text-xs text-slate-400 mt-1">Do thi nen thuc (Yahoo Finance) hoac Ban do RRG luan chuyen dong tien.</p>
+          <p className="text-xs text-slate-400 mt-1">Do thi nen thuc (Yahoo Finance), Ban do RRG, Ve Vung AI, hoac Command Center day du.</p>
         </div>
-        <div style={{ background: "rgba(2,6,15,0.7)", border: "1px solid rgba(148,163,184,0.1)" }} className="flex gap-1 p-1 rounded-xl">
-          {["Nen Thuc", "RRG"].map((mode) => (
+        <div style={{ background: "rgba(2,6,15,0.7)", border: "1px solid rgba(148,163,184,0.1)" }} className="flex gap-1 p-1 rounded-xl flex-wrap">
+          {["Nen Thuc", "RRG", "Ve Vung AI", "Command Center"].map((mode) => (
             <button key={mode} onClick={() => setTaMode(mode)}
               style={taMode === mode ? { background: "linear-gradient(135deg, #fbbf24, #f59e0b)" } : {}}
               className={`px-3 py-1.5 text-[10px] font-black rounded-lg transition ${taMode === mode ? "text-slate-950" : "text-slate-400 hover:text-slate-200"}`}>
-              {mode === "RRG" ? "Ban Do RRG" : "Do Thi Nen Thuc"}
+              {mode === "RRG" ? "Ban Do RRG" : mode === "Ve Vung AI" ? "Vẽ Vùng AI" : mode === "Command Center" ? "Command Center" : "Do Thi Nen Thuc"}
             </button>
           ))}
         </div>
       </div>
 
-      {taMode === "RRG" ? (
+      {/* CHART AREA */}
+      {taMode === "RRG" && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div style={{ background: "rgba(2,6,15,0.6)", border: "1px solid rgba(148,163,184,0.1)" }} className="lg:col-span-2 rounded-2xl p-6 relative flex flex-col items-center">
             <div className="absolute top-3 left-3 text-[10px] font-mono text-slate-500">Benchmark: <b className="text-amber-500">VN-Index</b> <span className="text-slate-600">(minh hoa)</span></div>
@@ -161,12 +188,27 @@ export default function TaTab({
             </div>
           </div>
         </div>
-      ) : (
+      )}
+
+      {taMode === "Nen Thuc" && (
         <div style={{ background: "rgba(2,6,15,0.6)", border: "1px solid rgba(148,163,184,0.1)" }} className="rounded-2xl p-5">
           <RealCandlestickChart ticker={selectedStockId} />
         </div>
       )}
 
+      {taMode === "Ve Vung AI" && (
+        <div style={{ background: "rgba(2,6,15,0.6)", border: "1px solid rgba(148,163,184,0.1)" }} className="rounded-2xl p-5">
+          <VeVungAISection ticker={selectedStockId} />
+        </div>
+      )}
+
+      {taMode === "Command Center" && (
+        <div style={{ background: "rgba(2,6,15,0.6)", border: "1px solid rgba(148,163,184,0.1)" }} className="rounded-2xl p-5">
+          <TaCommandCenterTab ticker={selectedStockId} />
+        </div>
+      )}
+
+      {/* TERMINAL TIN HIEU DINH LUONG - GIU NGUYEN, KHONG THAY DOI */}
       <div style={{ background: "rgba(2,6,15,0.6)", border: "1px solid rgba(148,163,184,0.1)" }} className="rounded-2xl p-5">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-800/60 pb-4 mb-4">
           <div>

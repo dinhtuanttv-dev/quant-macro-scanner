@@ -1,6 +1,7 @@
 // types.ts
-// Kiến trúc: 1 CatalystSource (tin gốc) sinh ra N ImpactEdge (đường lan tác động),
-// mỗi edge tự quyết định chiều tác động + độ tin cậy cho riêng đối tượng nó trỏ tới.
+// Kiến trúc: 1 CatalystSource (sự kiện gốc, có thể được NHIỀU nguồn khác nhau xác nhận)
+// sinh ra N ImpactEdge (đường lan tác động). Khi 2 nguồn khác nhau đưa tin về CÙNG 1 sự kiện,
+// hệ thống gộp thành 1 CatalystSource + thêm SourceReference, KHÔNG tạo edge trùng lặp.
 
 export type CatalystCategory =
   | "earnings" | "ma" | "regulatory" | "rating" | "contract" | "insider" | "macro";
@@ -12,54 +13,59 @@ export type PropagationDistance =
 
 export type ImpactDirection = "benefit" | "harm";
 
-export type Horizon = "short" | "medium" | "long"; // ngắn / trung / dài hạn
+export type Horizon = "short" | "medium" | "long";
 
 export type TargetType = "sector" | "ticker";
 
-// Tin tức / sự kiện gốc — chỉ tồn tại 1 lần, không lặp theo từng mã
 export interface CatalystSource {
   id: string;
   title: string;
   category: CatalystCategory;
   sourceCredibility: CatalystCredibility;
-  publishedDate: Date;       // khi tin thực sự xảy ra / được công bố
-  executionDate?: Date | null; // nếu có lịch thực thi cụ thể (luật có hiệu lực, hợp đồng giao hàng...)
-                                // Date | null (không phải Date | undefined) để khớp kiểu Prisma trả về
-  firstDetectedAt: Date;     // khi hệ thống quét thấy — dùng cho badge "mới"
-  corroborationCount: number; // số nguồn độc lập xác nhận
+  publishedDate: Date;
+  executionDate?: Date | null;
+  firstDetectedAt: Date;
+  corroborationCount: number;
+  sourceUrl?: string | null;
+  targetPrice?: number | null;
 }
 
-// Một đường lan tác động từ 1 CatalystSource đến 1 đối tượng cụ thể (ngành hoặc mã)
+export interface SourceReference {
+  id: string;
+  sourceId: string;
+  sourceName: string;
+  sourceUrl: string;
+  discoveredAt: Date;
+}
+
 export interface ImpactEdge {
   id: string;
   sourceId: string;
   targetType: TargetType;
-  targetId: string;          // mã ticker hoặc tên ngành
+  targetId: string;
   direction: ImpactDirection;
   propagationDistance: PropagationDistance;
-  hopCount: number;          // 1 = tác động bậc 1, 2 = cascade bậc 2 (Prisma Int không hỗ trợ literal union)
-  baseWeight: number;        // 1-10, cường độ gốc trước khi áp suy giảm theo khoảng cách
-  decayRate: number;         // tốc độ giảm/ngày (dùng cho pha retrospective/released)
+  hopCount: number;
+  baseWeight: number;
+  decayRate: number;
   horizon: Horizon;
 }
 
-// Dữ liệu thị trường bên ngoài, do các module khác cung cấp — engine KHÔNG tự tính các giá trị này
 export interface MarketSignal {
   ticker: string;
   priceInStatus: "reflected" | "not_reflected";
   volumeFlag: "confirmed" | "suspicious" | "none";
   foreignFlowDirection: "buy" | "sell" | "none";
-  foreignFlowValue?: string;   // vd "+2.1M CP", chỉ để hiển thị
-  valuationPercentile: number; // 0-1, càng thấp càng "rẻ"/an toàn tương đối trong ngành
-  liquidityScore: number;      // 0-1, thanh khoản chuẩn hoá
+  foreignFlowValue?: string;
+  valuationPercentile: number;
+  liquidityScore: number;
   isWatchlisted: boolean;
 }
 
-// Thống kê hiệu chỉnh lịch sử, tra theo category + propagationDistance
 export interface CalibrationEntry {
   category: CatalystCategory;
   propagationDistance: PropagationDistance;
-  historicalWinRate: number; // 0-100
+  historicalWinRate: number;
 }
 
 export interface AlertConfig {
@@ -72,4 +78,25 @@ export interface TriggeredAlert {
   type: "sector_threshold" | "execution_window" | "low_corroboration_warning";
   targetId: string;
   message: string;
+}
+
+export interface RawSourceRecord {
+  title: string;
+  category: CatalystCategory;
+  sourceName: string;
+  sourceUrl: string;
+  sourceCredibility: CatalystCredibility;
+  publishedDate: Date;
+  executionDate?: Date | null;
+  originRecordId?: string;
+
+  direction: ImpactDirection;
+  baseWeight: number;
+  decayRate: number;
+  horizon: Horizon;
+
+  sectors: string[];
+  tickers: string[];
+
+  targetPrice?: number;
 }

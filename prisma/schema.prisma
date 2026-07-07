@@ -79,12 +79,26 @@ model CatalystSource {
   firstDetectedAt    DateTime            @default(now())
   corroborationCount Int                 @default(1)
   originRecordId     String?             @unique
+  sourceUrl          String?
+  targetPrice        Float?
+  sourceRefs         SourceReference[]
   edges              ImpactEdge[]
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
 
   @@index([firstDetectedAt])
   @@index([category])
+}
+
+model SourceReference {
+  id           String          @id @default(cuid())
+  sourceId     String
+  source       CatalystSource  @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  sourceName   String
+  sourceUrl    String
+  discoveredAt DateTime        @default(now())
+
+  @@index([sourceId])
 }
 
 model ImpactEdge {
