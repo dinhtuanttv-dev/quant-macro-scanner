@@ -1,19 +1,25 @@
 // TVChartManager - bọc TradingView Lightweight Charts (v4.x)
-// TRÁCH NHIỆM DUY NHẤT: khởi tạo chart, vẽ nến/volume, quy đổi
-// pixel <-> giá/thời gian bằng API thật của thư viện (chính xác
-// hơn tự tính tay). KHÔNG chứa logic vẽ vùng hay logic AI.
 
-import { createChart, IChartApi, ISeriesApi, CandlestickData, HistogramData, UTCTimestamp } from "lightweight-charts";
+import { createChart, IChartApi, ISeriesApi, CandlestickData, HistogramData, UTCTimestamp, SeriesMarker, Time } from "lightweight-charts";
 import type { OhlcvBar } from "@/lib/ta-drawing/ChartManager";
 
 function toTime(dateStr: string): UTCTimestamp {
   return (new Date(dateStr + "T00:00:00Z").getTime() / 1000) as UTCTimestamp;
 }
 
+export interface ChartMarkerInput {
+  time: string;
+  position: "aboveBar" | "belowBar";
+  color: string;
+  shape: "arrowUp" | "arrowDown" | "circle";
+  text: string;
+}
+
 export class TVChartManager {
   private chart: IChartApi;
   private candleSeries: ISeriesApi<"Candlestick">;
   private volumeSeries: ISeriesApi<"Histogram">;
+  private currentBars: OhlcvBar[] = [];
 
   constructor(container: HTMLElement, bars: OhlcvBar[]) {
     this.chart = createChart(container, {
@@ -40,6 +46,7 @@ export class TVChartManager {
   }
 
   setData(bars: OhlcvBar[]): void {
+    this.currentBars = bars;
     const candleData: CandlestickData[] = bars.map((b) => ({
       time: toTime(b.date), open: b.open, high: b.high, low: b.low, close: b.close,
     }));
@@ -52,6 +59,14 @@ export class TVChartManager {
     this.chart.timeScale().fitContent();
   }
 
+  setMarkers(markers: ChartMarkerInput[]): void {
+    const sorted = [...markers].sort((a, b) => a.time.localeCompare(b.time));
+    const seriesMarkers: SeriesMarker<Time>[] = sorted.map((m) => ({
+      time: toTime(m.time), position: m.position, color: m.color, shape: m.shape, text: m.text,
+    }));
+    this.candleSeries.setMarkers(seriesMarkers);
+  }
+
   resize(width: number, height: number = 360): void {
     this.chart.resize(width, height);
   }
@@ -62,9 +77,30 @@ export class TVChartManager {
   pixelToPrice(y: number): number | null {
     return this.candleSeries.coordinateToPrice(y);
   }
+
+  /**
+   * timeToPixel voi SNAP-TO-NEAREST-BAR: neu ngay chinh xac khong
+   * ton tai trong du lieu hien tai (vd doi tu Daily sang Weekly),
+   * tu dong tim phien GAN NHAT (<=) de van hien thi dung vi tri
+   * thoi gian tuong doi, khong lam mat vung da ve (Timestamp-based
+   * Persistence theo yeu cau).
+   */
   timeToPixel(dateStr: string): number | null {
-    return this.chart.timeScale().timeToCoordinate(toTime(dateStr));
+    const direct = this.chart.timeScale().timeToCoordinate(toTime(dateStr));
+    if (direct !== null) return direct;
+
+    if (this.currentBars.length === 0) return null;
+    const targetTime = new Date(dateStr + "T00:00:00Z").getTime();
+    let nearestBar: OhlcvBar | null = null;
+    for (const bar of this.currentBars) {
+      const barTime = new Date(bar.date + "T00:00:00Z").getTime();
+      if (barTime <= targetTime) nearestBar = bar;
+      else break;
+    }
+    if (!nearestBar) nearestBar = this.currentBars[0];
+    return this.chart.timeScale().timeToCoordinate(toTime(nearestBar.date));
   }
+
   pixelToDate(x: number): string | null {
     const time = this.chart.timeScale().coordinateToTime(x);
     if (time === null) return null;

@@ -1,14 +1,19 @@
 // AIEngine (Command Center) - phân tích vùng người vẽ, đối chiếu
-// (cross-reference) với SMC/VSA đã tự động phát hiện. HARD_DATA
-// thuần, không gọi API ngoài.
+// (cross-reference) với SMC/VSA/Pattern Scanner đã tự động phát
+// hiện. HARD_DATA thuần, không gọi API ngoài.
 
 import type { DrawnPrimitive, RectangleZone, Trendline } from "./DrawingManager";
 import type { OrderBlock, FairValueGap, BreakOfStructure } from "./detectors/smcDetector";
 import type { VSASignal } from "./detectors/vsaDetector";
+import type { PatternMatch } from "./detectors/patternScanner";
 
 export interface SignalLogEntry {
   id: string; message: string; confidence: number | null;
   source: "user" | "ai"; dataQuality: "HARD_DATA" | "ESTIMATED"; createdAt: number;
+}
+
+export interface ActiveLayers {
+  smc: boolean; vsa: boolean; wyckoff: boolean; elliott: boolean;
 }
 
 function overlaps(aTop: number, aBottom: number, bTop: number, bBottom: number): boolean {
@@ -66,5 +71,37 @@ export class AIEngine {
     }
 
     return entries;
+  }
+
+  /**
+   * AI Confluence: doi chieu 1 pattern (tu Pattern Scanner) voi cac
+   * layer dang bat (SMC/VSA) de tinh diem dong thuan tong hop.
+   */
+  analyzePatternConfluence(
+    pattern: PatternMatch,
+    smc: { obs: OrderBlock[]; fvgs: FairValueGap[]; bos: BreakOfStructure[] },
+    vsa: VSASignal[],
+    activeLayers: ActiveLayers
+  ): SignalLogEntry {
+    const reasons: string[] = [];
+    let confidence = pattern.confidenceScore;
+
+    if (activeLayers.smc) {
+      const matchedOB = smc.obs.find((ob) => ob.date >= pattern.dateRangeStart && ob.date <= pattern.dateRangeEnd);
+      if (matchedOB) { confidence = Math.min(99, confidence + 10); reasons.push(`SMC OB ${matchedOB.type} trùng khớp`); }
+    }
+    if (activeLayers.vsa) {
+      const matchedVSA = vsa.find((v) => v.date >= pattern.dateRangeStart && v.date <= pattern.dateRangeEnd);
+      if (matchedVSA) { confidence = Math.min(99, confidence + 8); reasons.push(`VSA ${matchedVSA.type} xác nhận`); }
+    }
+
+    const message = reasons.length > 0
+      ? `User: ${pattern.patternLabel} phát hiện (${pattern.ticker}) → AI: Confluence xác nhận với ${reasons.join(", ")} (${confidence}%).`
+      : `Pattern Scanner: ${pattern.patternLabel} (${pattern.ticker}) — chưa có xác nhận chéo từ layer đang bật (${confidence}%).`;
+
+    return {
+      id: `log-conf-${++this.idCounter}-${Date.now()}`, message, confidence,
+      source: "ai", dataQuality: "HARD_DATA", createdAt: Date.now(),
+    };
   }
 }

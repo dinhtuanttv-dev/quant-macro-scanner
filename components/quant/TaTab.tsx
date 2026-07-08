@@ -204,7 +204,7 @@ export default function TaTab({
 
       {taMode === "Command Center" && (
         <div style={{ background: "rgba(2,6,15,0.6)", border: "1px solid rgba(148,163,184,0.1)" }} className="rounded-2xl p-5">
-          <TaCommandCenterTab ticker={selectedStockId} />
+          <TaCommandCenterTab ticker={selectedStockId} onRequestTickerChange={setSelectedStockId} />
         </div>
       )}
 

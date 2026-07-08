@@ -1,0 +1,17 @@
+"use client";
+import useSWR from "swr";
+import type { PatternScanResponse } from "@/app/api/pattern-scan/route";
+
+const fetcher = (url: string) => fetch(url).then((r) => {
+  if (!r.ok) throw new Error(`Loi ${r.status}`);
+  return r.json();
+});
+
+export function usePatternScan() {
+  const { data, error, isLoading, mutate } = useSWR<PatternScanResponse>("/api/pattern-scan", fetcher, {
+    refreshInterval: 15 * 60 * 1000,
+    revalidateOnFocus: false,
+    dedupingInterval: 10 * 60 * 1000,
+  });
+  return { scanData: data, isLoading, error, refresh: mutate };
+}
