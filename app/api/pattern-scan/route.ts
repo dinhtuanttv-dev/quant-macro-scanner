@@ -1,24 +1,35 @@
 import { NextResponse } from "next/server";
 import { fetchOhlcvHistory } from "@/lib/market-data/yahoo-finance-adapter";
+import { fetchVN30VN100Universe } from "@/lib/market-data/vci-listing-adapter";
 import { applyMarketFilter } from "@/lib/ta-command-center/detectors/marketFilter";
 import { scanAllPatterns, type PatternMatch } from "@/lib/ta-command-center/detectors/patternScanner";
 import { stockUniverse } from "@/lib/quant-data";
 
 export const maxDuration = 10;
-const BATCH_SIZE = 8;
-const BATCH_DELAY_MS = 200;
+// Tang BATCH_SIZE (so voi 8 truoc day) de xu ly ~180 ma (VN30+VN100)
+// van nam trong gioi han 10s cua Vercel Hobby.
+const BATCH_SIZE = 18;
+const BATCH_DELAY_MS = 150;
 
 export interface PatternScanResponse {
   generatedAt: string;
+  universeSource: "VN30_VN100" | "FALLBACK_60";
   totalUniverse: number;
   eligibleCount: number;
   matches: (PatternMatch & { preFilter: { avgVolume: number; aboveMA200: boolean } })[];
 }
 
+// sectorMap fallback tu stockUniverse da co (60 ma) - cho ma nao khong
+// co trong danh sach nay se hien "-" thay vi loi.
+const sectorMap: Record<string, string> = {};
+stockUniverse.forEach((s) => { sectorMap[s.ticker] = s.sector; });
+
 export async function GET() {
-  const tickers = stockUniverse.map((s) => s.ticker);
-  const sectorMap: Record<string, string> = {};
-  stockUniverse.forEach((s) => { sectorMap[s.ticker] = s.sector; });
+  // Uu tien lay universe thuc VN30+VN100. Neu VCI loi (mang, doi API...),
+  // fallback ve 60 ma san co de trang khong bao gio trang hoan toan.
+  const universeResult = await fetchVN30VN100Universe();
+  const tickers = universeResult.success && universeResult.data ? universeResult.data : stockUniverse.map((s) => s.ticker);
+  const universeSource: PatternScanResponse["universeSource"] = universeResult.success ? "VN30_VN100" : "FALLBACK_60";
 
   const matches: PatternScanResponse["matches"] = [];
   let eligibleCount = 0;
@@ -26,7 +37,6 @@ export async function GET() {
   try {
     for (let i = 0; i < tickers.length; i += BATCH_SIZE) {
       const batch = tickers.slice(i, i + BATCH_SIZE);
-      // range "1y" (khong phai "6mo") de co du >=200 phien tinh MA200
       const results = await Promise.all(batch.map((t) => fetchOhlcvHistory(t, "1y")));
 
       results.forEach((res, bi) => {
@@ -50,6 +60,7 @@ export async function GET() {
 
     return NextResponse.json({
       generatedAt: new Date().toISOString(),
+      universeSource,
       totalUniverse: tickers.length,
       eligibleCount,
       matches,
