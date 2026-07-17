@@ -6,6 +6,7 @@ import { useOhlcvData } from "@/lib/market-data/useOhlcvData";
 import { useScoredStocks } from "@/lib/market-data/useScoredStocks";
 import ChartDrawingPanel from "@/components/quant/ChartDrawingPanel";
 import TaCommandCenterTab from "@/components/quant/ta-command-center/TaCommandCenterTab";
+import GoldenFilterPanel from "@/components/quant/ta-command-center/GoldenFilterPanel";
 
 interface RrgSector {
   name: string; x: number; y: number; prevX: number; prevY: number;
@@ -208,7 +209,7 @@ export default function TaTab({
         </div>
       )}
 
-      {/* TERMINAL TIN HIEU DINH LUONG - GIU NGUYEN, KHONG THAY DOI */}
+      {/* TERMINAL TIN HIEU DINH LUONG */}
       <div style={{ background: "rgba(2,6,15,0.6)", border: "1px solid rgba(148,163,184,0.1)" }} className="rounded-2xl p-5">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-800/60 pb-4 mb-4">
           <div>
@@ -230,8 +231,8 @@ export default function TaTab({
           {[
             { id: "golden", label: "✦ Golden Filter", icon: Star },
             { id: "beartrap", label: "⚡ Bay Giam Gia", icon: TrendingDown },
-            { id: "foreign", label: "🏦 Quy Ngoai Gom", icon: TrendingUp },
-            { id: "top20", label: "🏆 Top 20 Tong Hop", icon: Shield },
+            { id: "foreign", label: "🏆 Top 20 Ky Thuat", icon: TrendingUp },
+            { id: "top20", label: "🎯 Doi Chieu & AI", icon: Shield },
           ].map((t) => (
             <button key={t.id} onClick={() => setQuantRadarTab(t.id)}
               style={quantRadarTab === t.id ? { background: "linear-gradient(135deg, #fbbf24, #f59e0b)" } : {}}
@@ -309,8 +310,8 @@ export default function TaTab({
 
         {quantRadarTab === "foreign" && (
           <div>
-            <p className="text-[10px] text-slate-500 mb-3 italic">RS duong cao + Vol Spike &gt; 1.3x + MA50 khong broken. Proxy dong ngoai gom (HARD_DATA RS, ESTIMATED foreign flow).</p>
-            {foreignAccum.length === 0 && !scoreLoading && <p className="text-xs text-slate-500 italic py-4 text-center">Khong co ma nao thoa dieu kien Quy Ngoai Gom hom nay.</p>}
+            <p className="text-[10px] text-slate-500 mb-3 italic">RS duong cao + Vol Spike &gt; 1.3x + MA50 khong broken. Top 20 Ky Thuat tong hop (HARD_DATA RS, Volume, MA50).</p>
+            {foreignAccum.length === 0 && !scoreLoading && <p className="text-xs text-slate-500 italic py-4 text-center">Khong co ma nao thoa dieu kien Top 20 Ky Thuat hom nay.</p>}
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
                 <thead><tr className="border-b border-slate-800/60 text-slate-400 text-[10px] uppercase">
@@ -385,6 +386,9 @@ export default function TaTab({
                 30% Pattern (RS+BB) | 20% Volume | 20% RS | 30% Momentum (MA50+Regime) — Cap nhat: {new Date(scoredData.generatedAt).toLocaleString("vi-VN")}
               </p>
             )}
+            <div className="mt-4 pt-4 border-t border-slate-800/60">
+              <GoldenFilterPanel onSelectTicker={(t) => { setSelectedStockId(t); setActiveTab("elite"); }} />
+            </div>
           </div>
         )}
       </div>
