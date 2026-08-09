@@ -1,7 +1,27 @@
 ﻿import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["pg", "@prisma/adapter-pg", "@prisma/client"],
+  async headers() {
+    return [
+      {
+        source: "/api/:path*",
+        headers: [
+          {
+            key: "Access-Control-Allow-Origin",
+            value: "https://global-quanta.vercel.app",
+          },
+          {
+            key: "Access-Control-Allow-Methods",
+            value: "GET,POST,OPTIONS",
+          },
+          {
+            key: "Access-Control-Allow-Headers",
+            value: "Content-Type, Authorization",
+          },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;
