@@ -1,9 +1,4 @@
-// VSA Detector - Volume Spread Analysis.
-// HARD_DATA (rule-based): số liệu thật, nhưng ngưỡng phân loại là
-// quy tắc do mình chọn - kết quả là "khớp mẫu theo quy tắc", không
-// phải chân lý tuyệt đối.
-
-import type { OhlcvBar } from "@/lib/ta-drawing/ChartManager";
+﻿import type { OhlcvBar } from "../../ta-drawing/ChartManager";
 
 export type VSASignalType = "Stopping Volume" | "Climax" | "No Demand" | "No Supply";
 export interface VSASignal { date: string; type: VSASignalType; volumeRatio: number; spreadRatio: number; }

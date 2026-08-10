@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { fetchOhlcvHistory } from "@/lib/market-data/yahoo-finance-adapter";
 
 export const maxDuration = 10;
@@ -22,10 +22,6 @@ export async function GET(request: Request) {
     );
   }
 
-  // limit mac dinh 30 (dung cho SVG chart tinh cu), nhung Command
-  // Center (TVChartManager thuc su) co the yeu cau limit lon hon
-  // (vd 200) vi thu vien Lightweight Charts xu ly duoc nhieu nen.
   const recentBars = result.data.slice(-limit);
-
   return NextResponse.json({ ticker, bars: recentBars });
 }

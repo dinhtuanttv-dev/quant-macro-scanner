@@ -1,10 +1,5 @@
-// Market Filter - Pre-filter toan thi truong TRUOC KHI quet pattern.
-// HARD_DATA: Vol trung binh 20 phien > 500,000 CP VA gia dong cua
-// hien tai > MA200. Giam nhieu, chi giu ma du thanh khoan + dang
-// trong xu huong tang dai han.
-
-import type { OhlcvBar } from "@/lib/ta-drawing/ChartManager";
-import { calculateSMA } from "@/lib/market-data/technical-indicators";
+﻿import type { OhlcvBar } from "../types";
+import { calculateSMA } from "../../market-data/technical-indicators";
 
 export interface MarketFilterResult {
   passed: boolean;

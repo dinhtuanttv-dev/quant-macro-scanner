@@ -1,4 +1,8 @@
 // lib/catalyst/useCatalystData.ts
+// Hook fetch snapshot catalyst da cache. DA CAP NHAT: them upcomingEvents +
+// tickerImpacts vao CatalystSnapshot, khop voi du lieu moi ma scan/route.ts
+// giờ tra ve - Tang1Table va CommandCenterBar doc thang tu day, khong can hook rieng.
+
 "use client";
 
 import { useEffect, useState } from "react";
@@ -8,6 +12,7 @@ import type {
   EmergingSourceCard,
 } from "./CatalystEngine";
 import type { TriggeredAlert } from "./types";
+import type { MacroEventSummary, TickerImpactResult } from "../types/siu-quet-ai";
 
 export interface CatalystSnapshot {
   scannedAt: string;
@@ -18,6 +23,8 @@ export interface CatalystSnapshot {
   totalBenefitCount: number;
   totalHarmCount: number;
   activeAlerts: TriggeredAlert[];
+  upcomingEvents: MacroEventSummary[];                    // MOI
+  tickerImpacts: Record<string, TickerImpactResult>;       // MOI
 }
 
 export function useCatalystData(pollMs = 60_000) {

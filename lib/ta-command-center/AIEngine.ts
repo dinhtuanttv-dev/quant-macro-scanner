@@ -1,8 +1,4 @@
-// AIEngine (Command Center) - phân tích vùng người vẽ, đối chiếu
-// (cross-reference) với SMC/VSA/Pattern Scanner đã tự động phát
-// hiện. HARD_DATA thuần, không gọi API ngoài.
-
-import type { DrawnPrimitive, RectangleZone, Trendline } from "./DrawingManager";
+﻿import type { DrawnPrimitive, RectangleZone, Trendline } from "./DrawingManager";
 import type { OrderBlock, FairValueGap, BreakOfStructure } from "./detectors/smcDetector";
 import type { VSASignal } from "./detectors/vsaDetector";
 import type { PatternMatch } from "./detectors/patternScanner";
@@ -35,20 +31,20 @@ export class AIEngine {
       const zone = primitive as RectangleZone;
       const top = Math.max(zone.p1.price, zone.p2.price);
       const bottom = Math.min(zone.p1.price, zone.p2.price);
-      const classification = currentPrice > top ? "Hỗ trợ" : currentPrice < bottom ? "Kháng cự" : "Trung tính";
+      const classification = currentPrice > top ? "Ho tro" : currentPrice < bottom ? "Khang cu" : "Trung tinh";
 
       const matchedOB = smc.obs.find((ob) => overlaps(top, bottom, ob.top, ob.bottom));
       const matchedVSA = vsa.find((v) => v.date >= zone.p1.date && v.date <= zone.p2.date);
 
       let confidence = 40;
       const reasons: string[] = [];
-      if (matchedOB) { confidence += 30; reasons.push(`trùng Order Block ${matchedOB.type}`); }
-      if (matchedVSA) { confidence += 20; reasons.push(`VSA xác nhận (${matchedVSA.type})`); }
+      if (matchedOB) { confidence += 30; reasons.push(`trung Order Block ${matchedOB.type}`); }
+      if (matchedVSA) { confidence += 20; reasons.push(`VSA xac nhan (${matchedVSA.type})`); }
       confidence = Math.min(99, confidence);
 
       const message = reasons.length > 0
-        ? `Demand/Supply Zone (User) → AI xác nhận (${confidence}%) — ${reasons.join(", ")}.`
-        : `Vùng ${classification} (User) — chưa có xác nhận chéo từ SMC/VSA (${confidence}%).`;
+        ? `Demand/Supply Zone (User) -> AI xac nhan (${confidence}%) - ${reasons.join(", ")}.`
+        : `Vung ${classification} (User) - chua co xac nhan cheo tu SMC/VSA (${confidence}%).`;
 
       entries.push({ id: `log-${++this.idCounter}-${Date.now()}`, message, confidence, source: "user", dataQuality: "HARD_DATA", createdAt: Date.now() });
     }
@@ -57,15 +53,15 @@ export class AIEngine {
       const line = primitive as Trendline;
       const matchedBOS = smc.bos.find((b) => b.date >= line.p1.date && b.date <= line.p2.date);
       const message = matchedBOS
-        ? `Trendline Breakout (AI phát hiện BOS ${matchedBOS.type}) → xác thực chéo bởi đường xu hướng người vẽ.`
-        : `Trendline (User) đã vẽ — chưa phát hiện BOS trùng khớp trong khoảng thời gian này.`;
+        ? `Trendline Breakout (AI phat hien BOS ${matchedBOS.type}) -> xac thuc cheo boi duong xu huong nguoi ve.`
+        : `Trendline (User) da ve - chua phat hien BOS trung khop trong khoang thoi gian nay.`;
       entries.push({ id: `log-${++this.idCounter}-${Date.now()}`, message, confidence: matchedBOS ? 85 : null, source: "user", dataQuality: "HARD_DATA", createdAt: Date.now() });
     }
 
     if (primitive.toolType === "fibonacci") {
       entries.push({
         id: `log-${++this.idCounter}-${Date.now()}`,
-        message: `Fibonacci Retracement (User) đã vẽ — 7 mức giá đã tính (0% đến 100%).`,
+        message: `Fibonacci Retracement (User) da ve - 7 muc gia da tinh (0% den 100%).`,
         confidence: null, source: "user", dataQuality: "HARD_DATA", createdAt: Date.now(),
       });
     }
@@ -73,10 +69,6 @@ export class AIEngine {
     return entries;
   }
 
-  /**
-   * AI Confluence: doi chieu 1 pattern (tu Pattern Scanner) voi cac
-   * layer dang bat (SMC/VSA) de tinh diem dong thuan tong hop.
-   */
   analyzePatternConfluence(
     pattern: PatternMatch,
     smc: { obs: OrderBlock[]; fvgs: FairValueGap[]; bos: BreakOfStructure[] },
@@ -88,16 +80,16 @@ export class AIEngine {
 
     if (activeLayers.smc) {
       const matchedOB = smc.obs.find((ob) => ob.date >= pattern.dateRangeStart && ob.date <= pattern.dateRangeEnd);
-      if (matchedOB) { confidence = Math.min(99, confidence + 10); reasons.push(`SMC OB ${matchedOB.type} trùng khớp`); }
+      if (matchedOB) { confidence = Math.min(99, confidence + 10); reasons.push(`SMC OB ${matchedOB.type} trung khop`); }
     }
     if (activeLayers.vsa) {
       const matchedVSA = vsa.find((v) => v.date >= pattern.dateRangeStart && v.date <= pattern.dateRangeEnd);
-      if (matchedVSA) { confidence = Math.min(99, confidence + 8); reasons.push(`VSA ${matchedVSA.type} xác nhận`); }
+      if (matchedVSA) { confidence = Math.min(99, confidence + 8); reasons.push(`VSA ${matchedVSA.type} xac nhan`); }
     }
 
     const message = reasons.length > 0
-      ? `User: ${pattern.patternLabel} phát hiện (${pattern.ticker}) → AI: Confluence xác nhận với ${reasons.join(", ")} (${confidence}%).`
-      : `Pattern Scanner: ${pattern.patternLabel} (${pattern.ticker}) — chưa có xác nhận chéo từ layer đang bật (${confidence}%).`;
+      ? `User: ${pattern.patternLabel} phat hien (${pattern.ticker}) -> AI: Confluence xac nhan voi ${reasons.join(", ")} (${confidence}%).`
+      : `Pattern Scanner: ${pattern.patternLabel} (${pattern.ticker}) - chua co xac nhan cheo tu layer dang bat (${confidence}%).`;
 
     return {
       id: `log-conf-${++this.idCounter}-${Date.now()}`, message, confidence,

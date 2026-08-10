@@ -1,6 +1,4 @@
-// LayerManager - quản lý trạng thái 6 layer + AI Detection master switch.
-
-import { EventEmitter } from "@/lib/ta-drawing/EventEmitter";
+﻿import { EventEmitter } from "../ta-drawing/EventEmitter";
 
 export type LayerKey = "trendline" | "demandzone" | "smc" | "vsa" | "wyckoff" | "elliott";
 

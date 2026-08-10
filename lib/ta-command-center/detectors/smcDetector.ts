@@ -1,7 +1,4 @@
-// SMC Detector - Order Block, Fair Value Gap, Break of Structure.
-// HARD_DATA: quy tắc hình học xác định từ OHLCV, không chủ quan.
-
-import type { OhlcvBar } from "@/lib/ta-drawing/ChartManager";
+﻿import type { OhlcvBar } from "../../ta-drawing/ChartManager";
 
 export interface OrderBlock { date: string; type: "bullish" | "bearish"; top: number; bottom: number; }
 export interface FairValueGap { startDate: string; endDate: string; type: "bullish" | "bearish"; top: number; bottom: number; }

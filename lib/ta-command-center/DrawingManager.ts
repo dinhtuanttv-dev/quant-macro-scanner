@@ -1,8 +1,4 @@
-// DrawingManager (Command Center) - quản lý Rectangle/Trendline/
-// Fibonacci ở KHÔNG GIAN DOMAIN (ngày + giá), không biết pixel,
-// không chứa logic AI.
-
-import { EventEmitter } from "@/lib/ta-drawing/EventEmitter";
+﻿import { EventEmitter } from "../ta-drawing/EventEmitter";
 
 export interface DomainPoint { date: string; price: number; }
 export type DrawingToolType = "rectangle" | "trendline" | "fibonacci";

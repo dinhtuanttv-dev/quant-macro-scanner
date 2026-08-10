@@ -1,10 +1,4 @@
-// Timeframe Controller - quan ly D (Daily) / W (Weekly).
-// W tinh bang cach GOP nen Daily co san (HARD_DATA, khong goi API
-// moi). H4/M1 CHUA trien khai vi Yahoo Finance chi giu du lieu 1
-// phut trong 7 ngay gan nhat va CHUA xac minh duoc co day du du
-// lieu intraday cho ma VN hay khong - de tranh hua hen sai.
-
-import type { OhlcvBar } from "@/lib/ta-drawing/ChartManager";
+﻿import type { OhlcvBar } from "../ta-drawing/ChartManager";
 
 export type Timeframe = "D" | "W";
 

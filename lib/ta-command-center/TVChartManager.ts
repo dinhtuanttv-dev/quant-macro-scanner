@@ -1,7 +1,9 @@
-// TVChartManager - bọc TradingView Lightweight Charts (v4.x)
-
-import { createChart, IChartApi, ISeriesApi, CandlestickData, HistogramData, UTCTimestamp, SeriesMarker, Time } from "lightweight-charts";
-import type { OhlcvBar } from "@/lib/ta-drawing/ChartManager";
+﻿// TVChartManager - boc TradingView Lightweight Charts v4.x
+import {
+  createChart, IChartApi, ISeriesApi,
+  CandlestickData, HistogramData, UTCTimestamp, SeriesMarker, Time
+} from "lightweight-charts";
+import type { OhlcvBar } from "../ta-drawing/ChartManager";
 
 function toTime(dateStr: string): UTCTimestamp {
   return (new Date(dateStr + "T00:00:00Z").getTime() / 1000) as UTCTimestamp;
@@ -36,6 +38,7 @@ export class TVChartManager {
       borderUpColor: "#10b981", borderDownColor: "#ef4444",
       wickUpColor: "#10b981", wickDownColor: "#ef4444",
     });
+
     this.volumeSeries = this.chart.addHistogramSeries({
       priceFormat: { type: "volume" },
       priceScaleId: "",
@@ -74,17 +77,11 @@ export class TVChartManager {
   priceToPixel(price: number): number | null {
     return this.candleSeries.priceToCoordinate(price);
   }
+
   pixelToPrice(y: number): number | null {
     return this.candleSeries.coordinateToPrice(y);
   }
 
-  /**
-   * timeToPixel voi SNAP-TO-NEAREST-BAR: neu ngay chinh xac khong
-   * ton tai trong du lieu hien tai (vd doi tu Daily sang Weekly),
-   * tu dong tim phien GAN NHAT (<=) de van hien thi dung vi tri
-   * thoi gian tuong doi, khong lam mat vung da ve (Timestamp-based
-   * Persistence theo yeu cau).
-   */
   timeToPixel(dateStr: string): number | null {
     const direct = this.chart.timeScale().timeToCoordinate(toTime(dateStr));
     if (direct !== null) return direct;
