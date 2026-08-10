@@ -1,9 +1,4 @@
-﻿// app/api/tang1/route.ts
-// Route MOI - chi export computeTang1 + computeTang1WithScenario da co san
-// qua HTTP, KHONG sua logic tinh diem goc cua computeTang1(). Phuc vu Project B
-// (Vite) qua Option A. Da xac nhan dung chu ky ham that tu lib/quant-funnel.ts.
-
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import { stockUniverse } from "@/lib/quant-data";
 import { computeTang1 } from "@/lib/quant-funnel";
 import { computeTang1WithScenario } from "@/lib/quant-funnel/computeTang1WithScenario";
