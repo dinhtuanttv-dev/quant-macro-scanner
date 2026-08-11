@@ -1,4 +1,4 @@
-// components/quant/command-center/MarketOverviewBullets.tsx
+﻿// components/quant/command-center/MarketOverviewBullets.tsx
 // Atom: 3 dong phan tich ngan (Vi mo / Dong tien / Ky thuat).
 // Noi dung tinh tu props, khong goi network.
 
@@ -14,13 +14,13 @@ interface Bullet {
 }
 
 interface Props {
-  bullets: Bullet[];
+  bullets?: Bullet[];
 }
 
 const DEFAULT_BULLETS: Bullet[] = [
-  { icon: "✗", label: "Vi mo", value: "Tac dong hon hop, cho tin hieu chinh sach." },
-  { icon: "↕", label: "Dong tien", value: "Phan hoa, dich chuyen sang von hoa lon." },
-  { icon: "📊", label: "Ky thuat", value: "VN-Index test lai ho tro MA50." },
+  { icon: "âœ—", label: "Vi mo", value: "Tac dong hon hop, cho tin hieu chinh sach." },
+  { icon: "â†•", label: "Dong tien", value: "Phan hoa, dich chuyen sang von hoa lon." },
+  { icon: "ðŸ“Š", label: "Ky thuat", value: "VN-Index test lai ho tro MA50." },
 ];
 
 export const MarketOverviewBullets = React.memo(function MarketOverviewBullets({
@@ -42,7 +42,7 @@ export const MarketOverviewBullets = React.memo(function MarketOverviewBullets({
           letterSpacing: "0.03em", color: colors.amberLight, marginBottom: spacing.md,
         }}
       >
-        📊 Phan tich tong quan thi truong
+        ðŸ“Š Phan tich tong quan thi truong
       </div>
       {bullets.map((b, i) => (
         <div
