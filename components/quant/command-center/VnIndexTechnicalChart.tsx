@@ -1,4 +1,4 @@
-// components/quant/command-center/VnIndexTechnicalChart.tsx
+﻿// components/quant/command-center/VnIndexTechnicalChart.tsx
 // Atom: Bieu do nen VN-Index mini (sparkline), ve tu du lieu closes da co san
 // trong tang4Result / marketData (dung lai useMarketData hook da co san trong project).
 // Hien thi vung ho tro / khang cu duoi dang text, khong tinh toan them.
@@ -24,7 +24,7 @@ export const VnIndexTechnicalChart = React.memo(function VnIndexTechnicalChart({
   const hasData = closes.length >= 4;
 
   let polylinePoints = "";
-  let colorStroke = colors.emeraldLight;
+  let colorStroke: string = colors.emeraldLight;
 
   if (hasData) {
     const min = Math.min(...closes);
@@ -55,7 +55,7 @@ export const VnIndexTechnicalChart = React.memo(function VnIndexTechnicalChart({
           letterSpacing: "0.03em", color: colors.amberLight, marginBottom: spacing.sm,
         }}
       >
-        📈 VN-Index Technical Outlook
+        ðŸ“ˆ VN-Index Technical Outlook
       </div>
 
       <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`}
@@ -97,7 +97,7 @@ export const VnIndexTechnicalChart = React.memo(function VnIndexTechnicalChart({
 
       <div style={{ fontSize: fontSize.xs, color: colors.muted, marginTop: spacing.xs }}>
         {supportLevel && <span>Ho tro: <b style={{ color: colors.emeraldLight }}>{supportLevel.toLocaleString()}</b></span>}
-        {supportLevel && resistanceLevel && <span style={{ margin: "0 8px" }}>—</span>}
+        {supportLevel && resistanceLevel && <span style={{ margin: "0 8px" }}>â€”</span>}
         {resistanceLevel && <span>Khang cu: <b style={{ color: colors.red }}>{resistanceLevel.toLocaleString()}</b></span>}
         {!supportLevel && !resistanceLevel && "Chua xac dinh vung ho tro / khang cu"}
       </div>
