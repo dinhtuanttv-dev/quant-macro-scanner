@@ -1,0 +1,16 @@
+﻿name: Market Data Scan
+
+on:
+  schedule:
+    # Moi 15 phut, 2:00-8:59 UTC (~9h-16h VN), thu 2 - thu 6
+    - cron: "*/15 2-8 * * 1-5"
+  workflow_dispatch: {}
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call market-data scan route
+        run: |
+          curl -f -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "https://tuan-quant-scanner-psi.vercel.app/api/market-data/scan"
