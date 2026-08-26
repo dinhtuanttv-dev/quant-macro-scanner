@@ -14,7 +14,7 @@ export async function POST(request: Request) {
   // du lieu" - sai hoan toan nguyen nhan that, gay kho debug (dung tinh
   // than "khong suy doan" - phai lo ro nguyen nhan that).
   const { data: latestMarkets, error: queryError } = await supabase
-    .from("market_pulse").select("*").order("fetched_at", { ascending: false }).limit(10);
+    .from("world_market_pulse").select("*").order("fetched_at", { ascending: false }).limit(10);
 
   if (queryError) {
     console.error("[/api/ai/analyze] Loi truy van Supabase:", queryError);
@@ -37,7 +37,7 @@ export async function POST(request: Request) {
 
     await supabase.from("audit_log").insert({
       action: "ai_analyze", data_sources: dataPoints.map((d: any) => d.id),
-      model_version: "gemini-2.0-flash", confidence: analysis.finalConfidence,
+      model_version: "gemini-3.6-flash", confidence: analysis.finalConfidence,
     });
 
     return NextResponse.json(analysis);

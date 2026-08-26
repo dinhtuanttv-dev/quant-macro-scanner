@@ -63,7 +63,19 @@ export async function GET(request: Request) {
     change_percent: marketResults[i]?.changePercent ?? null,
   })).filter((r) => r.value !== null);
 
-  if (marketRows.length > 0) await supabase.from("market_pulse").insert(marketRows);
+  // FIX (2026-08-26): ban truoc khong kiem tra error tra ve tu .insert() -
+  // Supabase JS KHONG throw khi insert that bai (VD bang khong ton tai,
+  // schema cache stale nhu vua gap - PGRST205), chi tra { error: {...} }.
+  // Code cu se van chay tiep binh thuong va bao "success":true dieu nay
+  // sai hoan toan thuc te (khong co dong nao duoc ghi). Gio kiem tra ro.
+  let marketInsertError: string | null = null;
+  if (marketRows.length > 0) {
+    const { error } = await supabase.from("world_market_pulse").insert(marketRows);
+    if (error) {
+      console.error("[cron/refresh-macro] Loi insert market_pulse:", error);
+      marketInsertError = error.message;
+    }
+  }
 
   const macroEntries = Object.entries(TICKERS.macro);
   const macroResults = await Promise.all(macroEntries.map(([symbol]) => fetchYahooQuote(symbol)));
@@ -77,15 +89,26 @@ export async function GET(request: Request) {
       dxy: macroMap.dxy, vix: macroMap.vix, treasury10y: macroMap.treasury10y,
     });
 
-    await supabase.from("macro_trends").insert({
+    const { error: macroInsertError } = await supabase.from("world_macro_trends").insert({
       dxy: macroMap.dxy, vix: macroMap.vix, treasury_10y: macroMap.treasury10y,
       gold: macroMap.gold ?? null, oil_brent: macroMap.oilBrent ?? null, oil_wti: macroMap.oilWti ?? null,
       baltic_dry_index: bdi,
       risk_on_score: riskResult.score, risk_status: riskResult.status, breakdown: riskResult.breakdown,
     });
 
+    if (macroInsertError) {
+      console.error("[cron/refresh-macro] Loi insert macro_trends:", macroInsertError);
+      return NextResponse.json(
+        { success: false, error: `Lỗi ghi macro_trends: ${macroInsertError.message}`, marketInsertError },
+        { status: 502 }
+      );
+    }
+
+    // success:true GIO CHI tra ve khi ca 2 insert thuc su thanh cong (hoac
+    // market_pulse rong tu dau, khong phai bi loi am tham).
     return NextResponse.json({
-      success: true, marketsUpdated: marketRows.length,
+      success: true, marketsUpdated: marketInsertError ? 0 : marketRows.length,
+      marketInsertError,
       riskOnScore: riskResult.score, riskStatus: riskResult.status,
       bdiAvailable: bdi !== null,
     });

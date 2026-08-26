@@ -14,9 +14,9 @@ export async function GET() {
     async start(controller) {
       const sendUpdate = async () => {
         const { data: latestMacro } = await supabase
-          .from("macro_trends").select("*").order("fetched_at", { ascending: false }).limit(1).single();
+          .from("world_macro_trends").select("*").order("fetched_at", { ascending: false }).limit(1).single();
         const { data: latestMarkets } = await supabase
-          .from("market_pulse").select("*").order("fetched_at", { ascending: false }).limit(10);
+          .from("world_market_pulse").select("*").order("fetched_at", { ascending: false }).limit(10);
 
         const payload = JSON.stringify({ macro: latestMacro, markets: latestMarkets, timestamp: new Date().toISOString() });
         controller.enqueue(encoder.encode(`data: ${payload}\n\n`));

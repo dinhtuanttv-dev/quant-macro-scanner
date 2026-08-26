@@ -38,7 +38,7 @@ interface DataPoint { id: string; label: string; value: number | string; timesta
 
 export async function runMarketAgent(dataPoints: DataPoint[]) {
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash",
+    model: "gemini-3.6-flash",
     systemInstruction: MARKET_AGENT_SYSTEM_PROMPT,
     generationConfig: { responseMimeType: "application/json", responseSchema: marketAgentSchema as any },
   });
@@ -49,7 +49,7 @@ export async function runMarketAgent(dataPoints: DataPoint[]) {
 
 export async function runNewsAgent(newsItems: { title: string; url: string; publishedAt: string }[]) {
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash",
+    model: "gemini-3.6-flash",
     systemInstruction: NEWS_AGENT_SYSTEM_PROMPT,
     generationConfig: { responseMimeType: "application/json", responseSchema: newsAgentSchema as any },
   });
@@ -60,7 +60,7 @@ export async function runNewsAgent(newsItems: { title: string; url: string; publ
 
 export async function runEvidenceAgent(originalData: DataPoint[], marketAgentOutput: unknown, newsAgentOutput: unknown) {
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash",
+    model: "gemini-3.6-flash",
     systemInstruction: EVIDENCE_AGENT_SYSTEM_PROMPT,
     generationConfig: { responseMimeType: "application/json", responseSchema: evidenceAgentSchema as any },
   });
