@@ -19,8 +19,15 @@ const SECTOR_PROXIES: { sectorKey: string; sectorLabel: string; proxyTicker: str
 export async function GET() {
   try {
     const vnResult = await fetchOhlcvHistory("^VNINDEX.VN", "1y");
+    const debug: any = {
+      vnSuccess: vnResult.success,
+      vnDataLength: vnResult.data?.length ?? 0,
+      vnError: (vnResult as any).error ?? null,
+      sectors: [] as any[],
+    };
+
     if (!vnResult.success || !vnResult.data) {
-      return NextResponse.json({ error: "Khong lay duoc du lieu benchmark VN-Index." }, { status: 502 });
+      return NextResponse.json({ error: "Khong lay duoc du lieu benchmark VN-Index.", debug }, { status: 502 });
     }
     const benchmarkCloses = extractCloses(vnResult.data);
 
@@ -30,19 +37,32 @@ export async function GET() {
 
     const rrgPoints: RRGPoint[] = [];
     sectorResults.forEach((res, i) => {
-      if (!res.success || !res.data) return;
+      const sectorDebug: any = {
+        ticker: SECTOR_PROXIES[i].proxyTicker,
+        success: res.success,
+        dataLength: res.data?.length ?? 0,
+        error: (res as any).error ?? null,
+      };
+
+      if (!res.success || !res.data) {
+        debug.sectors.push(sectorDebug);
+        return;
+      }
       const sectorCloses = extractCloses(res.data);
       const minLen = Math.min(sectorCloses.length, benchmarkCloses.length);
       const point = calculateSectorRRG(
         SECTOR_PROXIES[i].sectorKey, SECTOR_PROXIES[i].sectorLabel,
         sectorCloses.slice(-minLen), benchmarkCloses.slice(-minLen)
       );
+      sectorDebug.rrgPointCreated = point !== null;
+      sectorDebug.minLen = minLen;
+      debug.sectors.push(sectorDebug);
       if (point) rrgPoints.push(point);
     });
 
-    return NextResponse.json({ generatedAt: new Date().toISOString(), benchmark: "VN-Index", points: rrgPoints });
+    return NextResponse.json({ generatedAt: new Date().toISOString(), benchmark: "VN-Index", points: rrgPoints, debug });
   } catch (err) {
     console.error("[api/sector-filter/rrg] Loi:", err);
-    return NextResponse.json({ error: "Khong the tinh RRG luc nay." }, { status: 500 });
+    return NextResponse.json({ error: "Khong the tinh RRG luc nay.", debug: String(err) }, { status: 500 });
   }
 }
