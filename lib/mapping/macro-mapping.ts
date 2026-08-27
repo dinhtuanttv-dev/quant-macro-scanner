@@ -18,6 +18,9 @@ export const MACRO_MAPPING: SectorMapping[] = [
   { sectorKey: "BANKING_FINANCE", sectorLabelVi: "Ngân hàng / Tài chính", representativeMarket: "Fed Funds Rate / US 10Y Treasury", vnTickers: ["VCB", "TCB", "ACB", "CTG"], transmissionNote: "Lãi suất Fed ảnh hưởng đến tỷ giá USD/VND và chi phí vốn vay ngoại tệ của hệ thống ngân hàng." },
   { sectorKey: "REAL_ESTATE", sectorLabelVi: "Bất động sản", representativeMarket: "US 10Y Treasury / DXY", vnTickers: ["VHM", "NLG", "KDH"], transmissionNote: "DXY tăng gây áp lực tỷ giá, ảnh hưởng gián tiếp dòng vốn FDI vào bất động sản." },
   { sectorKey: "PRECIOUS_METALS", sectorLabelVi: "Kim loại quý / Vàng", representativeMarket: "Gold (GC=F)", vnTickers: ["PNJ"], transmissionNote: "Giá vàng thế giới tác động trực tiếp đến biên lợi nhuận kinh doanh vàng trang sức." },
+  // PHASE 1 mo rong (2026-08-26): Ca phe Robusta - VN la nuoc xuat khau
+  // Robusta lon nhat the gioi, lien quan truc tiep hon han quang sat/cao su.
+  { sectorKey: "AGRICULTURE_COFFEE", sectorLabelVi: "Nông sản / Cà phê", representativeMarket: "NASDAQ Commodity Robusta Coffee (^NQCIRMER)", vnTickers: ["VCF"], transmissionNote: "Giá cà phê Robusta thế giới ảnh hưởng trực tiếp doanh thu xuất khẩu và biên lợi nhuận nhóm chế biến cà phê nội địa." },
 ];
 
 export function lookupSectorMapping(sectorKey: string): SectorMapping | null {

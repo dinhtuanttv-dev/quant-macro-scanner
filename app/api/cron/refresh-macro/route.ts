@@ -12,6 +12,18 @@ const TICKERS = {
     "^GDAXI": "DAX (Đức)", "^FTSE": "FTSE 100 (Anh)", "^STI": "STI (Singapore)",
   },
   macro: { "DX-Y.NYB": "dxy", "^VIX": "vix", "^TNX": "treasury10y", "GC=F": "gold", "BZ=F": "oilBrent", "CL=F": "oilWti" },
+  // PHASE 1 mo rong hang hoa (2026-08-26): Quang sat/Cao su KHONG co
+  // ticker Yahoo Finance dang tin cay (da xac nhan qua tim kiem that -
+  // TIO=F/TIOM15.NYM tra ve "Futures data is currently not available").
+  // Giai phap thay the:
+  // - Ca phe Robusta: dung truc tiep chi so that ^NQCIRMER (co du lieu that)
+  // - Quang sat: dung PROXY qua 3 co phieu khai khoang lon nhat the gioi
+  //   (RIO/VALE/BHP), % thay doi trung binh phan anh xu huong gia quang sat
+  //   gian tiep nhung dang tin cay hon han ticker hang hoa truc tiep bi loi.
+  // Cao su: CHUA co trong Phase 1 - can co che rieng (World Bank monthly
+  // data), xem PHASE2-TODO.md se lam sau, KHONG bia du lieu.
+  commodityRobusta: { "^NQCIRMER": "robustaCoffee" },
+  ironOreProxy: { "RIO": "Rio Tinto", "VALE": "Vale", "BHP": "BHP" },
 };
 
 async function fetchYahooQuote(symbol: string): Promise<{ value: number; changePercent: number } | null> {
@@ -84,6 +96,21 @@ export async function GET(request: Request) {
 
   const bdi = await fetchBDI();
 
+  // PHASE 1 mo rong (2026-08-26): Ca phe Robusta that + Iron Ore proxy
+  const robustaEntries = Object.entries(TICKERS.commodityRobusta);
+  const robustaResults = await Promise.all(robustaEntries.map(([symbol]) => fetchYahooQuote(symbol)));
+  const robustaCoffee = robustaResults[0]?.value ?? null;
+
+  const ironOreEntries = Object.entries(TICKERS.ironOreProxy);
+  const ironOreResults = await Promise.all(ironOreEntries.map(([symbol]) => fetchYahooQuote(symbol)));
+  const validIronOreChanges = ironOreResults.filter((r): r is { value: number; changePercent: number } => r !== null).map((r) => r.changePercent);
+  // Proxy: % thay doi TRUNG BINH cua 3 co phieu khai khoang lon nhat -
+  // KHONG phai gia quang sat that, chi la tin hieu xu huong gian tiep.
+  // Neu khong lay duoc du lieu nao ca 3 ma -> null, khong bia so 0.
+  const ironOreProxyChangePercent = validIronOreChanges.length > 0
+    ? Math.round((validIronOreChanges.reduce((a, b) => a + b, 0) / validIronOreChanges.length) * 100) / 100
+    : null;
+
   if (macroMap.dxy && macroMap.vix && macroMap.treasury10y) {
     const riskResult = calculateRiskOnIndex({
       dxy: macroMap.dxy, vix: macroMap.vix, treasury10y: macroMap.treasury10y,
@@ -93,6 +120,7 @@ export async function GET(request: Request) {
       dxy: macroMap.dxy, vix: macroMap.vix, treasury_10y: macroMap.treasury10y,
       gold: macroMap.gold ?? null, oil_brent: macroMap.oilBrent ?? null, oil_wti: macroMap.oilWti ?? null,
       baltic_dry_index: bdi,
+      robusta_coffee: robustaCoffee, iron_ore_proxy_change_percent: ironOreProxyChangePercent,
       risk_on_score: riskResult.score, risk_status: riskResult.status, breakdown: riskResult.breakdown,
     });
 
