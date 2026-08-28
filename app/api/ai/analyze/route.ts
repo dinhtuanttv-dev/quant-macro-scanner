@@ -7,6 +7,20 @@ export const maxDuration = 30;
 export async function POST(request: Request) {
   const supabase = createServiceClient();
 
+  // MUC 4 (2026-08-27): cache 45 phut (giua khoang 30-60 da xac nhan) -
+  // tranh goi Gemini TON PHI THAT moi lan bam nut. Kiem tra cache TRUOC
+  // khi lam bat cu viec gi khac (kie ca doc world_market_pulse).
+  const CACHE_MAX_AGE_MINUTES = 45;
+  const { data: cached } = await supabase
+    .from("ai_analysis_cache").select("result, generated_at").eq("id", "latest").maybeSingle();
+
+  if (cached) {
+    const ageMinutes = (Date.now() - new Date(cached.generated_at).getTime()) / 60000;
+    if (ageMinutes < CACHE_MAX_AGE_MINUTES) {
+      return NextResponse.json({ ...cached.result, cached: true, cacheAgeMinutes: Math.round(ageMinutes) });
+    }
+  }
+
   // FIX (2026-08-26): ban truoc chi kiem tra !latestMarkets, khong doc
   // truong `error` ma Supabase JS tra ve khi query that bai (thu vien nay
   // KHONG throw, tra { data: null, error: {...} }). Neu co loi that (key
@@ -77,7 +91,13 @@ export async function POST(request: Request) {
       }
     }
 
-    return NextResponse.json({ ...analysis, impactEventsWritten, impactEventsError });
+    const responsePayload = { ...analysis, impactEventsWritten, impactEventsError };
+
+    // Ghi cache SAU khi da co ket qua thanh cong - lan goi tiep theo trong
+    // 45 phut se doc thang tu day, khong goi Gemini nua.
+    await supabase.from("ai_analysis_cache").upsert({ id: "latest", result: responsePayload, generated_at: new Date().toISOString() });
+
+    return NextResponse.json({ ...responsePayload, cached: false });
   } catch (err) {
     // FIX: goi Gemini co the loi (key sai, quota, model name sai...) -
     // ban truoc khong bat, se lam Next.js tra ve 500 chung chung "Internal
