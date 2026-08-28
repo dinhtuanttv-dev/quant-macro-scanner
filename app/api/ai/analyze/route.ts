@@ -68,6 +68,7 @@ export async function POST(request: Request) {
           if (!mapping) return null; // Bo qua sector key khong xac dinh, khong bia mapping rong
           return {
             title: analysis.market.summaryVi,
+            source_category: "market_index", // MOI (Muc 1) - phan biet nguon: chung khoan vs hang hoa (Muc 2 sau)
             sector_key: key,
             direction: analysis.market.direction,
             impact_score: Math.round(analysis.finalConfidence * 100),
@@ -81,7 +82,7 @@ export async function POST(request: Request) {
         .filter((e: unknown): e is NonNullable<typeof e> => e !== null);
 
       if (events.length > 0) {
-        const { error: impactError, data: insertedRows } = await supabase.from("world_impact_events").insert(events).select("id");
+        const { error: impactError, data: insertedRows } = await supabase.from("world_ai_impact_events").insert(events).select("id");
         if (impactError) {
           console.error("[/api/ai/analyze] Loi ghi world_impact_events:", impactError);
           impactEventsError = impactError.message;
