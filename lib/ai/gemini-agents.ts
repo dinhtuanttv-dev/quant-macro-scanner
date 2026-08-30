@@ -58,13 +58,23 @@ export async function runNewsAgent(newsItems: { title: string; url: string; publ
   return JSON.parse(result.response.text());
 }
 
-export async function runEvidenceAgent(originalData: DataPoint[], marketAgentOutput: unknown, newsAgentOutput: unknown) {
+export async function runEvidenceAgent(
+  originalData: DataPoint[],
+  marketAgentOutput: unknown,
+  newsAgentOutput: unknown,
+  originalNewsItems: { title: string; url: string; publishedAt: string }[] = []
+) {
   const model = genAI.getGenerativeModel({
     model: "gemini-3.6-flash",
     systemInstruction: EVIDENCE_AGENT_SYSTEM_PROMPT,
     generationConfig: { responseMimeType: "application/json", responseSchema: evidenceAgentSchema as any },
   });
-  const prompt = `DỮ LIỆU GỐC:\n${JSON.stringify(originalData, null, 2)}\n\nKẾT LUẬN MARKET AGENT:\n${JSON.stringify(marketAgentOutput, null, 2)}\n\nKẾT LUẬN NEWS AGENT:\n${JSON.stringify(newsAgentOutput, null, 2)}\n\nKiểm tra và đối chiếu.`;
+  // FIX (2026-08-29): truoc day Evidence Agent chi nhan "DU LIEU GOC" la
+  // dataPoints (thi truong), KHONG co tin tuc RSS that -> luon bao
+  // verified:false cho News Agent vi "khong tim thay trong du lieu goc",
+  // du News Agent tra loi dung 100%. Gio them muc "TIN TUC GOC" rieng de
+  // Evidence Agent co du lieu that de doi chieu voi ket luan News Agent.
+  const prompt = `DỮ LIỆU THỊ TRƯỜNG GỐC:\n${JSON.stringify(originalData, null, 2)}\n\nTIN TỨC GỐC (danh sách tin tức thật đã cung cấp cho News Agent):\n${JSON.stringify(originalNewsItems, null, 2)}\n\nKẾT LUẬN MARKET AGENT:\n${JSON.stringify(marketAgentOutput, null, 2)}\n\nKẾT LUẬN NEWS AGENT:\n${JSON.stringify(newsAgentOutput, null, 2)}\n\nKiểm tra: Market Agent phải đối chiếu với DỮ LIỆU THỊ TRƯỜNG GỐC, News Agent phải đối chiếu với TIN TỨC GỐC (không phải dữ liệu thị trường).`;
   const result = await model.generateContent(prompt);
   return JSON.parse(result.response.text());
 }
@@ -75,7 +85,7 @@ export async function runMultiAgentAnalysis(dataPoints: DataPoint[], newsItems: 
     newsItems.length > 0 ? runNewsAgent(newsItems) : Promise.resolve(null),
   ]);
 
-  const evidenceResult = await runEvidenceAgent(dataPoints, marketResult, newsResult);
+  const evidenceResult = await runEvidenceAgent(dataPoints, marketResult, newsResult, newsItems);
 
   return {
     market: marketResult, news: newsResult, evidence: evidenceResult,

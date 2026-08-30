@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/client";
 import { runMultiAgentAnalysis } from "@/lib/ai/gemini-agents";
+import { fetchMacroNews } from "@/lib/news/macro-rss";
 
-export const maxDuration = 30;
+// FIX (2026-08-29): tang tu 30 len 60 - them News Agent (fetch RSS + Gemini
+// them 1 lan goi) khien tong thoi gian co the vuot 30s, dac biet lan dau
+// sau khi khoi dong lai (Turbopack bien dich lan dau).
+export const maxDuration = 60;
 
 export async function POST(request: Request) {
   const supabase = createServiceClient();
@@ -47,7 +51,10 @@ export async function POST(request: Request) {
   }));
 
   try {
-    const analysis = await runMultiAgentAnalysis(dataPoints, []);
+    // MUC 3 (2026-08-29): kich hoat News Agent that, thay vi truyen mang
+    // rong nhu truoc day (News Agent chua bao gio duoc goi thuc su).
+    const news = await fetchMacroNews();
+    const analysis = await runMultiAgentAnalysis(dataPoints, news);
 
     await supabase.from("audit_log").insert({
       action: "ai_analyze", data_sources: dataPoints.map((d: any) => d.id),
