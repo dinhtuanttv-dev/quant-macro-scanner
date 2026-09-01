@@ -18,13 +18,25 @@ export async function OPTIONS() {
 
 export async function GET(req: NextRequest) {
   try {
+    console.log("[tang1] Request received", {
+      url: req.url,
+      method: "GET",
+      timestamp: new Date().toISOString(),
+    });
+
     const scenarioParam = req.nextUrl.searchParams.get("scenario") ?? "growth";
     const scenario = VALID_SCENARIOS.includes(scenarioParam as Scenario)
       ? (scenarioParam as Scenario)
       : "growth";
 
+    console.log("[tang1] Computing with scenario:", scenario);
     const tang1Result = computeTang1(stockUniverse);
     const tang1WithScenario = computeTang1WithScenario(tang1Result, scenario);
+
+    console.log("[tang1] Success - returning", {
+      resultCount: tang1Result.length,
+      scenarioResultCount: tang1WithScenario.length,
+    });
 
     return NextResponse.json(
       {
@@ -36,6 +48,12 @@ export async function GET(req: NextRequest) {
       { status: 200, headers: corsHeaders }
     );
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500, headers: corsHeaders });
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    console.error("[tang1] Error:", {
+      error: errorMsg,
+      stack: err instanceof Error ? err.stack : undefined,
+      timestamp: new Date().toISOString(),
+    });
+    return NextResponse.json({ error: errorMsg }, { status: 500, headers: corsHeaders });
   }
 }
