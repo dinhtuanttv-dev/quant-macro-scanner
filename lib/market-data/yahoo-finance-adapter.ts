@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 // YAHOO FINANCE ADAPTER - lay du lieu gia OHLCV
 // Thay the cho TCBS adapter (da ngung hoat dong - endpoint 404).
 // Yahoo Finance v8 chart endpoint khong chinh thuc nhung da on
@@ -26,6 +26,8 @@ export interface FetchResult<T> {
 const YAHOO_BASE_URL = "https://query1.finance.yahoo.com/v8/finance/chart";
 
 function toYahooSymbol(ticker: string): string {
+  const normalized = ticker.trim().toUpperCase();
+  if (normalized === "VNINDEX" || normalized === "VN-INDEX") return "^VNINDEX.VN";
   if (ticker.startsWith("^") || ticker.includes(".")) return ticker;
   return `${ticker}.VN`;
 }

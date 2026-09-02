@@ -1,0 +1,6 @@
+﻿C:\Users\HP\quant-macro-scanner\lib\catalyst\marketSignals.ts
+C:\Users\HP\quant-macro-scanner\lib\market-data\tcbs-adapter.ts
+C:\Users\HP\quant-macro-scanner\lib\market-data\yahoo-finance-adapter.ts
+C:\Users\HP\quant-macro-scanner\lib\__tests__\tcbs-adapter.manual-check.ts
+C:\Users\HP\quant-macro-scanner\lib\__tests__\yahoo-finance-adapter.manual-check.ts
+C:\Users\HP\quant-macro-scanner\lib\__tests__\yahoo-finance-adapter.ts

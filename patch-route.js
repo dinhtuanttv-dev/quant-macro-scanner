@@ -1,6 +1,9 @@
-import { NextResponse } from "next/server";
+﻿const fs = require("fs");
+const path = "./app/api/ohlcv/route.ts";
+
+const newContent = `import { NextResponse } from "next/server";
 import { fetchOhlcvHistory } from "@/lib/market-data/yahoo-finance-adapter";
-import { fetchIndexOhlcvHistory } from "@/lib/market-data/vndirect-adapter";
+import { fetchIndexOhlcvHistory } from "@/lib/market-data/ssi-adapter";
 
 export const maxDuration = 10;
 
@@ -33,3 +36,7 @@ export async function GET(request: Request) {
   const recentBars = result.data.slice(-limit);
   return NextResponse.json({ ticker, bars: recentBars });
 }
+`;
+
+fs.writeFileSync(path, newContent, "utf8");
+console.log("DA VA XONG route.ts");
