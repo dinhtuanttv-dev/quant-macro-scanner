@@ -1,7 +1,7 @@
-// components/quant/command-center/TradingPlanCard.tsx
-// Molecule: Ke hoach giao dich tuc thoi theo kich ban hien tai.
-// Noi dung thay doi theo scenario - khong goi AI, dung template tinh toan san
-// (ghe po ket qua computeTang1WithScenario + phan tich vi mo co san).
+// components/quant/command-center/TradingPlanCard.tsx — PHASE 3 UPGRADE
+// M1: Bo hoan toan dangerouslySetInnerHTML. Noi dung bullet la text thuan, khong
+// can HTML injection - render truc tiep {b} la du va AN TOAN TUYET DOI, khong con
+// nguy co XSS du sau nay noi dung doi sang du lieu dong (vd ghep tu database).
 
 "use client";
 
@@ -66,7 +66,6 @@ export const TradingPlanCard = React.memo(function TradingPlanCard({ scenario }:
         🧭 Ke hoach giao dich tuc thoi
       </div>
 
-      {/* 3 bullets phan tich */}
       <div style={{ marginBottom: spacing.md }}>
         {content.bullets.map((b, i) => (
           <div key={i} style={{ display: "flex", gap: spacing.sm, fontSize: fontSize.sm,
@@ -74,12 +73,12 @@ export const TradingPlanCard = React.memo(function TradingPlanCard({ scenario }:
             <span style={{ color: colors.muted, flexShrink: 0 }}>
               {i === 0 ? "✗" : i === 1 ? "↕" : "📊"}
             </span>
-            <span dangerouslySetInnerHTML={{ __html: b }} />
+            {/* ★PHASE 3: render text thuần, KHÔNG dùng dangerouslySetInnerHTML */}
+            <span>{b}</span>
           </div>
         ))}
       </div>
 
-      {/* Khung hanh dong */}
       <div
         style={{
           background: `linear-gradient(135deg, ${token.bg}, ${token.bgSoft})`,

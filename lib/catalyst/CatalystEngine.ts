@@ -1,6 +1,7 @@
-// CatalystEngine.ts
-// Engine cho kien truc "radar quet & lan truyen": nguon tin -> edge lan tac dong -> nganh/ma.
-// Da them 2 method moi cho Tab Sieu Quet AI 2.0: getUpcomingMacroEvents(), getImpactForTicker().
+// CatalystEngine.ts — PHASE 1 + 2 + 3 UPGRADE (bản tích lũy đầy đủ)
+// Phase 1: EdgeIndex, computeTrustScore, searchTickerImpact
+// Phase 2: computeCredibilityWeight (đường cong hội tụ liên tục)
+// Phase 3: computeFreshnessScore (thay isNew nhị phân bằng điểm liên tục)
 
 import {
   CatalystSource,
@@ -13,6 +14,10 @@ import {
   Horizon,
 } from "./types";
 import type { MacroEventSummary, TickerImpactResult } from "../types/siu-quet-ai";
+import { EdgeIndex } from "./engine/EdgeIndex";
+import { computeTrustScore } from "./engine/computeTrustScore";
+import { computeCredibilityWeight } from "./engine/computeCredibilityWeight";
+import { computeFreshnessScore, isConsideredNew } from "./engine/computeFreshnessScore"; // ★PHASE 3
 
 export interface TickerImpactCard {
   ticker: string;
@@ -36,6 +41,7 @@ export interface TickerImpactCard {
   isConflicted: boolean;
   isWatchlisted: boolean;
   compositeScore: number;
+  trustScore: number;
 }
 
 export interface SectorRanking {
@@ -43,7 +49,8 @@ export interface SectorRanking {
   netScore: number;
   opportunityScore: number;
   tickerCount: number;
-  isNew: boolean;
+  isNew: boolean;          // giữ lại để tương thích ngược
+  freshnessScore: number;  // ★PHASE 3: 0-1, liên tục, thay thế isNew về lâu dài
   primaryCards: TickerImpactCard[];
   cascadeCards: TickerImpactCard[];
 }
@@ -75,9 +82,10 @@ const CONFIDENCE_BASE: Record<PropagationDistance, number> = {
 
 const HOP_DECAY = 0.6;
 const ANTICIPATION_WINDOW_DAYS = 30;
-const RUMOR_WEIGHT = 0.5;
 
 export class CatalystEngine {
+  private index: EdgeIndex | null = null;
+
   constructor(
     private sources: CatalystSource[],
     private edges: ImpactEdge[],
@@ -85,6 +93,11 @@ export class CatalystEngine {
     private calibration: CalibrationEntry[],
     private previousRanks: Map<string, number> = new Map()
   ) {}
+
+  private getIndex(): EdgeIndex {
+    if (!this.index) this.index = new EdgeIndex(this.edges);
+    return this.index;
+  }
 
   private sourceById(id: string): CatalystSource | undefined {
     return this.sources.find((s) => s.id === id);
@@ -98,7 +111,7 @@ export class CatalystEngine {
 
   private calculateEdgeImpact(edge: ImpactEdge, source: CatalystSource, now: number): number {
     const confidence = this.confidenceMultiplier(edge);
-    const credibilityWeight = source.sourceCredibility === "confirmed" ? 1 : RUMOR_WEIGHT;
+    const credibilityWeight = computeCredibilityWeight(source.sourceCredibility, source.corroborationCount);
     const sign = edge.direction === "benefit" ? 1 : -1;
 
     let magnitude: number;
@@ -144,20 +157,16 @@ export class CatalystEngine {
     direction: "benefit" | "harm";
   }): number {
     let score = Math.min(50, params.absImpact * 5);
-
     if (params.priceInStatus === "not_reflected") score += 15;
     if (params.volumeFlag === "confirmed") score += 10;
     if (params.volumeFlag === "suspicious") score -= 8;
-
     score += Math.min(10, params.corroborationCount * 2.5);
     score += (params.winRate - 50) * 0.2;
-
     const flowAligned =
       (params.direction === "benefit" && params.foreignFlowDirection === "buy") ||
       (params.direction === "harm" && params.foreignFlowDirection === "sell");
     if (flowAligned) score += 8;
     else if (params.foreignFlowDirection !== "none") score -= 5;
-
     return Math.max(0, Math.min(100, Math.round(score)));
   }
 
@@ -208,32 +217,29 @@ export class CatalystEngine {
         direction,
       });
 
+      const trustScore = computeTrustScore({
+        corroborationCount: source.corroborationCount,
+        sourceCredibility: source.sourceCredibility,
+        firstDetectedAt: source.firstDetectedAt,
+      });
+
       const valuationAdj = 1 - (signal?.valuationPercentile ?? 0.5);
       const liquidityAdj = signal?.liquidityScore ?? 0.5;
       const opportunityScore = netSignedImpact * (0.5 + 0.5 * valuationAdj) * (0.5 + 0.5 * liquidityAdj);
 
       cards.push({
-        ticker,
-        sourceId: source.id,
-        sourceTitle: source.title,
-        direction,
-        netSignedImpact,
-        propagationDistance: primaryEdge.propagationDistance,
-        hopCount: primaryEdge.hopCount,
+        ticker, sourceId: source.id, sourceTitle: source.title, direction, netSignedImpact,
+        propagationDistance: primaryEdge.propagationDistance, hopCount: primaryEdge.hopCount,
         horizon: primaryEdge.horizon,
         scheduled: !!source.executionDate && now < source.executionDate.getTime(),
         daysRemaining: this.daysRemainingFor(source, now),
-        corroborationCount: source.corroborationCount,
-        historicalWinRate: winRate,
+        corroborationCount: source.corroborationCount, historicalWinRate: winRate,
         priceInStatus: signal?.priceInStatus ?? "not_reflected",
         volumeFlag: signal?.volumeFlag ?? "none",
         foreignFlowDirection: signal?.foreignFlowDirection ?? "none",
         foreignFlowValue: signal?.foreignFlowValue,
-        opportunityScore,
-        isBestPickInGroup: false,
-        isConflicted,
-        isWatchlisted: signal?.isWatchlisted ?? false,
-        compositeScore,
+        opportunityScore, isBestPickInGroup: false, isConflicted,
+        isWatchlisted: signal?.isWatchlisted ?? false, compositeScore, trustScore,
       });
     }
 
@@ -245,9 +251,7 @@ export class CatalystEngine {
     }
     for (const group of bySource.values()) {
       if (group.length < 2) continue;
-      const best = group.reduce((a, b) =>
-        Math.abs(b.opportunityScore) > Math.abs(a.opportunityScore) ? b : a
-      );
+      const best = group.reduce((a, b) => Math.abs(b.opportunityScore) > Math.abs(a.opportunityScore) ? b : a);
       best.isBestPickInGroup = true;
     }
 
@@ -256,46 +260,46 @@ export class CatalystEngine {
 
   public getSectorRankings(): SectorRanking[] {
     const now = Date.now();
-    const sectorEdges = this.edges.filter((e) => e.targetType === "sector");
-    const sectors = Array.from(new Set(sectorEdges.map((e) => e.targetId)));
-
+    const index = this.getIndex();
+    const sectors = index.getAllSectors();
     const results: SectorRanking[] = [];
 
     for (const sector of sectors) {
-      const edgesForSector = sectorEdges.filter((e) => e.targetId === sector);
+      const edgesForSector = index.getBySector(sector);
       let netScore = 0;
       let isNew = false;
+      let maxFreshness = 0; // ★PHASE 3: freshness cao nhất trong các nguồn của ngành này
 
       for (const e of edgesForSector) {
         const source = this.sourceById(e.sourceId);
         if (!source) continue;
         netScore += this.calculateEdgeImpact(e, source, now);
-        const detectedHoursAgo = (now - source.firstDetectedAt.getTime()) / (1000 * 3600);
-        if (detectedHoursAgo <= 2) isNew = true;
+        if (isConsideredNew(source.firstDetectedAt)) isNew = true;
+        const freshness = computeFreshnessScore(source.firstDetectedAt);
+        if (freshness > maxFreshness) maxFreshness = freshness;
       }
 
       const sourceIds = new Set(edgesForSector.map((e) => e.sourceId));
-      const tickerEdges = this.edges.filter(
-        (e) => e.targetType === "ticker" && sourceIds.has(e.sourceId) && e.hopCount === 1
-      );
-      const cascadeEdges = this.edges.filter(
-        (e) => e.targetType === "ticker" && sourceIds.has(e.sourceId) && e.hopCount === 2
-      );
+      const tickerEdges: ImpactEdge[] = [];
+      const cascadeEdges: ImpactEdge[] = [];
+      for (const sourceId of sourceIds) {
+        const edgesOfSource = index.getBySourceId(sourceId);
+        for (const e of edgesOfSource) {
+          if (e.targetType !== "ticker") continue;
+          if (e.hopCount === 1) tickerEdges.push(e);
+          else if (e.hopCount === 2) cascadeEdges.push(e);
+        }
+      }
 
       const primaryCards = this.buildTickerCards(tickerEdges, now);
       const cascadeCards = this.buildTickerCards(cascadeEdges, now);
-
       const opportunityScore =
         primaryCards.reduce((sum, c) => sum + c.opportunityScore, 0) / (primaryCards.length || 1);
 
       results.push({
-        sector,
-        netScore,
-        opportunityScore,
-        tickerCount: primaryCards.length,
-        isNew,
-        primaryCards,
-        cascadeCards,
+        sector, netScore, opportunityScore, tickerCount: primaryCards.length,
+        isNew, freshnessScore: Math.round(maxFreshness * 1000) / 1000,
+        primaryCards, cascadeCards,
       });
     }
 
@@ -304,35 +308,30 @@ export class CatalystEngine {
 
   public getTopMovers(direction: "benefit" | "harm", limit = 10): TopMoverEntry[] {
     const now = Date.now();
-    const tickerEdges = this.edges.filter((e) => e.targetType === "ticker");
-    const allCards = this.buildTickerCards(tickerEdges, now).filter((c) => c.direction === direction);
+    const index = this.getIndex();
+    const allTickers = index.getAllTickers();
+    const tickerEdges: ImpactEdge[] = [];
+    for (const ticker of allTickers) tickerEdges.push(...index.getByTicker(ticker));
 
+    const allCards = this.buildTickerCards(tickerEdges, now).filter((c) => c.direction === direction);
     const sorted = allCards.sort((a, b) => b.compositeScore - a.compositeScore).slice(0, limit);
 
-    return sorted.map((c, i) => {
-      const rank = i + 1;
-      const prevRank = this.previousRanks.get(c.ticker) ?? null;
-      return {
-        rank,
-        prevRank,
-        ticker: c.ticker,
-        label: c.sourceTitle,
-        compositeScore: c.compositeScore,
-        isWatchlisted: c.isWatchlisted,
-      };
-    });
+    return sorted.map((c, i) => ({
+      rank: i + 1, prevRank: this.previousRanks.get(c.ticker) ?? null,
+      ticker: c.ticker, label: c.sourceTitle, compositeScore: c.compositeScore,
+      isWatchlisted: c.isWatchlisted,
+    }));
   }
 
   public getEmergingSources(withinMinutes = 120): EmergingSourceCard[] {
     const now = Date.now();
+    const index = this.getIndex();
     return this.sources
       .filter((s) => (now - s.firstDetectedAt.getTime()) / 60000 <= withinMinutes)
       .map((s) => ({
-        sourceId: s.id,
-        title: s.title,
-        category: s.category,
+        sourceId: s.id, title: s.title, category: s.category,
         corroborationCount: s.corroborationCount,
-        affectedTargetCount: this.edges.filter((e) => e.sourceId === s.id).length,
+        affectedTargetCount: index.getBySourceId(s.id).length,
       }));
   }
 
@@ -343,8 +342,7 @@ export class CatalystEngine {
     for (const s of sectorRankings) {
       if (Math.abs(s.netScore) >= config.minSectorNetScore) {
         alerts.push({
-          type: "sector_threshold",
-          targetId: s.sector,
+          type: "sector_threshold", targetId: s.sector,
           message: `Nganh ${s.sector} da vuot nguong net score (${s.netScore.toFixed(1)})`,
         });
       }
@@ -356,15 +354,13 @@ export class CatalystEngine {
       const daysRemaining = (source.executionDate.getTime() - now) / (1000 * 3600 * 24);
       if (daysRemaining > 0 && daysRemaining <= config.maxDaysBeforeExecutionForAlert) {
         alerts.push({
-          type: "execution_window",
-          targetId: source.id,
+          type: "execution_window", targetId: source.id,
           message: `"${source.title}" sap thuc thi trong ${Math.round(daysRemaining)} ngay`,
         });
       }
       if (source.corroborationCount < config.minCorroborationCount) {
         alerts.push({
-          type: "low_corroboration_warning",
-          targetId: source.id,
+          type: "low_corroboration_warning", targetId: source.id,
           message: `"${source.title}" chi co ${source.corroborationCount} nguon xac nhan - duoi nguong toi thieu`,
         });
       }
@@ -373,74 +369,60 @@ export class CatalystEngine {
     return alerts;
   }
 
-  // ===================== METHOD MOI CHO TAB SIEU QUET AI 2.0 =====================
-
-  // Danh sach su kien vi mo sap thuc thi (executionDate trong tuong lai), sort theo gan nhat.
-  // Dung cho UniversalCountdown + ActiveEventsRow o Command Bar.
   public getUpcomingMacroEvents(limit = 5): MacroEventSummary[] {
     const now = Date.now();
-
+    const index = this.getIndex();
     const upcoming = this.sources
       .filter((s) => s.executionDate && s.executionDate.getTime() > now)
       .map((s) => {
         const daysRemaining = (s.executionDate!.getTime() - now) / (1000 * 3600 * 24);
-
-        // Suy ra direction tong hop tu cac edge cua source nay (giong logic getDivergenceSignal cu)
-        const sourceEdges = this.edges.filter((e) => e.sourceId === s.id);
+        const sourceEdges = index.getBySourceId(s.id);
         const netImpact = sourceEdges.reduce((sum, e) => sum + this.calculateEdgeImpact(e, s, now), 0);
-        const direction: "benefit" | "harm" = netImpact >= 0 ? "benefit" : "harm";
-
         return {
-          sourceId: s.id,
-          title: s.title,
-          executionDate: s.executionDate!.toISOString(),
+          sourceId: s.id, title: s.title, executionDate: s.executionDate!.toISOString(),
           daysRemaining: Math.round(daysRemaining * 10) / 10,
-          direction,
+          direction: (netImpact >= 0 ? "benefit" : "harm") as "benefit" | "harm",
           category: s.category,
         };
       })
       .sort((a, b) => a.daysRemaining - b.daysRemaining);
-
     return upcoming.slice(0, limit);
   }
 
-  // Tac dong catalyst hien tai toi 1 ma cu the -> dung cho cot "Event Impact" trong Tang1Table.
-  // Neu ma khong co catalyst nao lien quan, tra ve direction "none", compositeScore 0.
   public getImpactForTicker(ticker: string): TickerImpactResult {
     const now = Date.now();
-    const edgesForTicker = this.edges.filter((e) => e.targetType === "ticker" && e.targetId === ticker);
-
-    if (edgesForTicker.length === 0) {
-      return { direction: "none", compositeScore: 0 };
-    }
-
+    const index = this.getIndex();
+    const edgesForTicker = index.getByTicker(ticker);
+    if (edgesForTicker.length === 0) return { direction: "none", compositeScore: 0 };
     const cards = this.buildTickerCards(edgesForTicker, now);
     const card = cards.find((c) => c.ticker === ticker);
-
     if (!card) return { direction: "none", compositeScore: 0 };
-
     return { direction: card.direction, compositeScore: card.compositeScore };
   }
 
-  // Ban hang loat cua getImpactForTicker() - tranh N+1 khi can tra cuu nhieu ma cung luc
-  // (vd 20 ma trong bang Top 20). Chi duyet edges 1 lan thay vi goi lai N lan.
   public getImpactForTickers(tickers: string[]): Record<string, TickerImpactResult> {
     const now = Date.now();
-    const tickerSet = new Set(tickers);
-    const edgesForTickers = this.edges.filter(
-      (e) => e.targetType === "ticker" && tickerSet.has(e.targetId)
-    );
-
-    const cards = this.buildTickerCards(edgesForTickers, now);
-    const cardByTicker = new Map(cards.map((c) => [c.ticker, c]));
-
+    const index = this.getIndex();
+    const edgesByTicker = index.getByTickers(tickers);
     const result: Record<string, TickerImpactResult> = {};
     for (const ticker of tickers) {
-      const card = cardByTicker.get(ticker);
+      const edges = edgesByTicker.get(ticker) ?? [];
+      if (edges.length === 0) { result[ticker] = { direction: "none", compositeScore: 0 }; continue; }
+      const cards = this.buildTickerCards(edges, now);
+      const card = cards.find((c) => c.ticker === ticker);
       result[ticker] = card
         ? { direction: card.direction, compositeScore: card.compositeScore }
         : { direction: "none", compositeScore: 0 };
     }
     return result;
+  }
+
+  public searchTickerImpact(query: string, limit = 10): TickerImpactCard[] {
+    const now = Date.now();
+    const index = this.getIndex();
+    const matchedTickers = index.searchTickersByPrefix(query, limit);
+    const edges: ImpactEdge[] = [];
+    for (const ticker of matchedTickers) edges.push(...index.getByTicker(ticker));
+    return this.buildTickerCards(edges, now);
   }
 }

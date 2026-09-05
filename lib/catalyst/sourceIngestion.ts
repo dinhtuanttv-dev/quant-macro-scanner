@@ -1,8 +1,11 @@
-// lib/catalyst/sourceIngestion.ts
-// Pipeline ingest DUY NHẤT cho mọi nguồn (CafeF, Vietstock, HSC, HOSE, MacroNewsRecord...).
+// lib/catalyst/sourceIngestion.ts — PHASE 1 UPGRADE
+// Da them buoc isDuplicateByUrl() CHINH XAC tuyet doi, chay TRUOC heuristic gop
+// su kien theo thoi gian (findMatchingSource) - ngan chan rui ro gop nham 2 su
+// kien khac nhau trung thoi diem tren cung 1 target (da neu trong ra soat #2).
 
 import { prisma } from "@/lib/prisma";
 import type { RawSourceRecord } from "./types";
+import { isDuplicateByUrl } from "./dedup/isDuplicateByUrl";
 
 const MERGE_WINDOW_HOURS = 36;
 const DEFAULT_PROPAGATION = "direct" as const;
@@ -11,6 +14,7 @@ export interface IngestSummary {
   createdCount: number;
   mergedCount: number;
   skippedCount: number;
+  duplicateUrlCount: number; // ★MỚI: đếm riêng số bị chặn ở bước kiểm tra URL chính xác
   errorCount: number;
 }
 
@@ -105,7 +109,9 @@ async function createNew(record: RawSourceRecord): Promise<void> {
   }
 }
 
-export async function ingestRawRecord(record: RawSourceRecord): Promise<"created" | "merged" | "skipped"> {
+export async function ingestRawRecord(
+  record: RawSourceRecord
+): Promise<"created" | "merged" | "skipped" | "duplicate_url"> {
   if (record.sectors.length === 0 && record.tickers.length === 0) {
     return "skipped";
   }
@@ -115,6 +121,13 @@ export async function ingestRawRecord(record: RawSourceRecord): Promise<"created
       where: { originRecordId: record.originRecordId },
     });
     if (existing) return "skipped";
+  }
+
+  // ★MỚI: kiểm tra URL CHÍNH XÁC trước — nhanh hơn (index unique trên DB) và
+  // đáng tin cậy hơn heuristic 36h. Nếu đã ingest đúng URL này rồi, dừng ngay.
+  const duplicateCheck = await isDuplicateByUrl(record.sourceUrl);
+  if (duplicateCheck.isDuplicate) {
+    return "duplicate_url";
   }
 
   const match = await findMatchingSource(record);
@@ -129,13 +142,16 @@ export async function ingestRawRecord(record: RawSourceRecord): Promise<"created
 }
 
 export async function ingestBatch(records: RawSourceRecord[]): Promise<IngestSummary> {
-  const summary: IngestSummary = { createdCount: 0, mergedCount: 0, skippedCount: 0, errorCount: 0 };
+  const summary: IngestSummary = {
+    createdCount: 0, mergedCount: 0, skippedCount: 0, duplicateUrlCount: 0, errorCount: 0,
+  };
 
   for (const record of records) {
     try {
       const result = await ingestRawRecord(record);
       if (result === "created") summary.createdCount++;
       else if (result === "merged") summary.mergedCount++;
+      else if (result === "duplicate_url") summary.duplicateUrlCount++;
       else summary.skippedCount++;
     } catch (err) {
       console.error(`Loi ingest record "${record.title}":`, err);

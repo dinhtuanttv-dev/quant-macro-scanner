@@ -1,28 +1,35 @@
-// app/api/recommendations/test-cafef/route.ts
-// Route TẠM THỜI chỉ để test scraper CafeF độc lập, không phục vụ production.
-// Sau khi xác nhận chạy đúng, XOÁ file này (đã nhắc rõ trong bước xác nhận cuối cùng).
-
+﻿// app/api/recommendations/test-cafef/route.ts
+// Route TAM THOI chi de test scraper CafeF doc lap, khong phuc vu production.
+// Sau khi xac nhan chay dung, XOA file nay (da nhac ro trong buoc xac nhan cuoi cung).
 import { NextResponse } from "next/server";
 import { scrapeCafefRecommendations } from "@/lib/recommendations/cafef-scraper";
 import { ingestBatch } from "@/lib/catalyst/sourceIngestion";
 
 export async function GET() {
   try {
-    const records = await scrapeCafefRecommendations();
+    const result = await scrapeCafefRecommendations();
 
-    if (records.length === 0) {
+    if (result.records.length === 0) {
       return NextResponse.json({
         ok: false,
         warning: "Scraper chay khong loi nhung khong lay duoc ban ghi nao - kiem tra lai selector",
+        circuitBreakerTripped: result.circuitBreakerTripped,
+        timeBudgetExhausted: result.timeBudgetExhausted,
+        attemptedCount: result.attemptedCount,
+        elapsedMs: result.elapsedMs,
       });
     }
 
-    const summary = await ingestBatch(records);
-
+    const summary = await ingestBatch(result.records);
     return NextResponse.json({
       ok: true,
-      totalScraped: records.length,
-      sample: records.slice(0, 3), // xem thử 3 bản ghi đầu để kiểm tra dữ liệu có đúng không
+      totalScraped: result.records.length,
+      circuitBreakerTripped: result.circuitBreakerTripped,
+      timeBudgetExhausted: result.timeBudgetExhausted,
+      attemptedCount: result.attemptedCount,
+      successCount: result.successCount,
+      elapsedMs: result.elapsedMs,
+      sample: result.records.slice(0, 3),
       ingestSummary: summary,
     });
   } catch (err) {

@@ -1,9 +1,11 @@
-// lib/catalyst/newsIngestion.ts
-// Chuyển đổi các dòng MacroNewsRecord (đã có sẵn, do cron /api/cron/macro-news đổ vào)
-// thành CatalystSource + ImpactEdge. Idempotent: dùng originRecordId để không convert trùng.
+// lib/catalyst/newsIngestion.ts — PHASE 1 UPGRADE
+// Da thay the bang anh xa tinh SECTOR_KEY_TO_DISPLAY_NAME + kiem tra thu cong
+// "Macro_General" bang resolveSectorName() cua SectorRegistry - co 3 lop phong
+// thu tu chua lanh, khong bao gio leak ten nganh sai ngon ngu ra UI nua.
 
-import { prisma } from "@/lib/prisma"; // đổi đúng đường dẫn nếu khác
+import { prisma } from "@/lib/prisma";
 import type { CatalystCategory, PropagationDistance, Horizon, ImpactDirection } from "./types";
+import { resolveSectorName } from "./engine/SectorRegistry";
 
 const TYPE_TO_CATEGORY: Record<string, CatalystCategory> = {
   "Chinh sach SBV": "regulatory",
@@ -17,31 +19,6 @@ function mapCategory(type: string): CatalystCategory {
   return TYPE_TO_CATEGORY[type] ?? "macro";
 }
 
-// classifySectors() trong lib/macro/classifier.ts trả về tên ngành TIẾNG ANH
-// (Banking, Steel, Oil_Gas...) — khác với tên tiếng Việt dùng xuyên suốt hệ thống
-// (Thep, Bat dong san, Dau khi...). Ánh xạ lại ở đây để gộp đúng cùng 1 ngành,
-// KHÔNG sửa classifier.ts vì file đó đang phục vụ các tính năng khác đã chạy sẵn.
-const SECTOR_KEY_TO_DISPLAY_NAME: Record<string, string> = {
-  Banking: "Ngan hang",
-  RealEstate: "Bat dong san",
-  Steel: "Thep",
-  Oil_Gas: "Dau khi",
-  Securities: "Chung khoan",
-  Export_Textile: "Det may",
-  Technology: "Cong nghe",
-  Agriculture: "Nong san",
-};
-
-// "Macro_General" là giá trị fallback của classifySectors() khi không khớp từ khoá ngành nào
-// -> không phải 1 ngành thật, phải loại bỏ khỏi sector-edge (nhưng vẫn giữ ticker-edge nếu có).
-const NON_SECTOR_FALLBACK = "Macro_General";
-
-function mapSectorName(rawSector: string): string | null {
-  if (rawSector === NON_SECTOR_FALLBACK) return null;
-  return SECTOR_KEY_TO_DISPLAY_NAME[rawSector] ?? rawSector;
-}
-
-// toSeverity() trong classifier.ts trả về đủ 4 mức, bao gồm "critical" — xử lý đủ cả 4.
 function mapSeverity(severity: string): { decayRate: number; horizon: Horizon } {
   switch (severity) {
     case "critical":
@@ -50,7 +27,7 @@ function mapSeverity(severity: string): { decayRate: number; horizon: Horizon } 
       return { decayRate: 0.08, horizon: "long" };
     case "low":
       return { decayRate: 0.25, horizon: "short" };
-    default: // "medium"
+    default:
       return { decayRate: 0.15, horizon: "medium" };
   }
 }
@@ -69,6 +46,7 @@ export interface IngestResult {
   convertedCount: number;
   skippedCount: number;
   errorCount: number;
+  unmappedSectorCount: number; // ★MỚI: đếm số lần gặp ngành chưa ánh xạ (quarantine)
 }
 
 export async function ingestFromMacroNews(limit = 50): Promise<IngestResult> {
@@ -92,6 +70,7 @@ export async function ingestFromMacroNews(limit = 50): Promise<IngestResult> {
   let convertedCount = 0;
   let skippedCount = 0;
   let errorCount = 0;
+  let unmappedSectorCount = 0;
 
   for (const record of unconverted) {
     try {
@@ -100,11 +79,15 @@ export async function ingestFromMacroNews(limit = 50): Promise<IngestResult> {
       const baseWeight = clampWeight(record.rawImpact);
       const category = mapCategory(record.type);
 
-      const mappedSectors = (record.affectedSectors ?? [])
-        .map(mapSectorName)
-        .filter((s): s is string => s !== null);
+      // ★MỚI: dùng SectorRegistry self-healing thay vì bảng ánh xạ tay + check thủ công
+      const resolvedSectors: string[] = [];
+      for (const rawSector of record.affectedSectors ?? []) {
+        const resolution = await resolveSectorName(rawSector);
+        if (resolution.wasUnmapped) unmappedSectorCount++;
+        if (resolution.displayName) resolvedSectors.push(resolution.displayName);
+      }
 
-      if (!mappedSectors.length && !record.relatedTickers?.length) {
+      if (!resolvedSectors.length && !record.relatedTickers?.length) {
         skippedCount++;
         continue;
       }
@@ -124,7 +107,7 @@ export async function ingestFromMacroNews(limit = 50): Promise<IngestResult> {
       });
 
       const edgesToCreate = [
-        ...mappedSectors.map((sector) => ({
+        ...resolvedSectors.map((sector) => ({
           sourceId: source.id,
           targetType: "sector" as const,
           targetId: sector,
@@ -159,5 +142,5 @@ export async function ingestFromMacroNews(limit = 50): Promise<IngestResult> {
     }
   }
 
-  return { convertedCount, skippedCount, errorCount };
+  return { convertedCount, skippedCount, errorCount, unmappedSectorCount };
 }

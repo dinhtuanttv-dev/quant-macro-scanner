@@ -1,14 +1,12 @@
-// lib/recommendations/cafef-scraper.ts
-// Scraper 2 bước cho CafeF:
-//   Bước 1: trang danh sách -> chỉ lấy URL các báo cáo (danh sách không đủ tin cậy để lấy nguồn).
-//   Bước 2: fetch TỪNG trang báo cáo chi tiết -> đọc meta og:title/og:description, nơi LUÔN có
-//           dòng "Nguồn báo cáo: {tên công ty chứng khoán}" (đã xác nhận qua 2 mẫu thật: VEA, NKG).
-// Ngành được tra cứu trực tiếp từ stockUniverse theo mã, KHÔNG chạy classifySectors trên tiêu đề
-// (tiêu đề khuyến nghị hiếm khi chứa từ khoá ngành, chỉ có mã cổ phiếu).
+// lib/recommendations/cafef-scraper.ts — PHASE 1+2+3 UPGRADE
+// Phase 2: ScanCircuitBreaker (dung khi nghi bi chan)
+// Phase 3: ScanTimeBudget (dung theo thoi gian con lai, khong chi so dem cung)
 
 import * as cheerio from "cheerio";
 import type { RawSourceRecord } from "@/lib/catalyst/types";
 import { stockUniverse } from "@/lib/quant-data";
+import { ScanCircuitBreaker, logCircuitBreakerTrip } from "@/lib/catalyst/engine/ScanCircuitBreaker";
+import { ScanTimeBudget } from "@/lib/catalyst/engine/ScanTimeBudget"; // ★PHASE 3
 
 const CAFEF_LIST_URL =
   "https://cafef.vn/du-lieu/phan-tich-bao-cao/cap-nhat-doanh-nghiep-khuyen-nghi.chn";
@@ -19,8 +17,11 @@ const REQUEST_HEADERS = {
   "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7",
 };
 
-const MAX_REPORTS_PER_SCAN = 30; // giới hạn số trang chi tiết fetch mỗi lần chạy, tránh quá tải + quá lâu
-const DETAIL_FETCH_DELAY_MS = 300; // giãn cách giữa các request trang chi tiết, tôn trọng server CafeF
+const MAX_REPORTS_PER_SCAN = 30; // vẫn giữ làm TRẦN TRÊN, không còn là điều kiện dừng chính
+const DETAIL_FETCH_DELAY_MS = 300;
+const CIRCUIT_BREAKER_THRESHOLD = 5;
+const SCRAPER_MAX_DURATION_MS = 8500; // để dư margin cho phần ingestBatch() chạy sau, tổng route vẫn dưới 10s
+const ESTIMATED_MS_PER_ITERATION = DETAIL_FETCH_DELAY_MS + 600; // ước lượng fetch + xử lý ~600ms/trang
 
 const TICKER_TO_SECTOR = new Map(stockUniverse.map((s) => [s.ticker, s.sector]));
 
@@ -47,7 +48,6 @@ interface ParsedTitle {
 }
 
 function parseTitle(title: string): ParsedTitle | null {
-  // Mẫu 1: "VEA (KHẢ QUAN, Giá mục tiêu: 38.000 Đồng/cp): ..."
   const pattern1 = title.match(
     /^([A-Z]{3})\s*\(([^,]+),\s*Gi[áa] m[ụu]c ti[êe]u:\s*([\d.,]+)\s*[ĐđDd][ồô]ng/i
   );
@@ -58,7 +58,6 @@ function parseTitle(title: string): ParsedTitle | null {
     }
   }
 
-  // Mẫu 2: "NKG: Khuyến nghị MUA với giá mục tiêu 14,400 đồng/cổ phiếu"
   const pattern2 = title.match(
     /^([A-Z]{3}):\s*Khuy[ếe]n ngh[ịi]\s+(\S+)\s+v[ớo]i gi[áa] m[ụu]c ti[êe]u\s+([\d.,]+)\s*[đĐ][ồô]ng/i
   );
@@ -72,7 +71,6 @@ function parseTitle(title: string): ParsedTitle | null {
   return null;
 }
 
-// Trích "Nguồn báo cáo: Công ty cổ phần Chứng khoán Sài Gòn" -> "Công ty cổ phần Chứng khoán Sài Gòn"
 function parseSourceOrgName(description: string): string | null {
   const match = description.match(/Ngu[ồo]n b[áa]o c[áa]o:\s*(.+)$/i);
   return match ? match[1].trim() : null;
@@ -85,7 +83,6 @@ function parseVnDate(text: string): Date {
   return new Date(Number(year), Number(month) - 1, Number(day));
 }
 
-// Bước 1: chỉ lấy URL + ngày từ trang danh sách (không tin phần "nguồn" ở đây, đa số item thiếu)
 async function fetchReportUrls(): Promise<{ url: string; listDate: Date }[]> {
   const res = await fetch(CAFEF_LIST_URL, { headers: REQUEST_HEADERS, cache: "no-store" });
   if (!res.ok) throw new Error(`CafeF list page tra ve HTTP ${res.status}`);
@@ -112,7 +109,6 @@ async function fetchReportUrls(): Promise<{ url: string; listDate: Date }[]> {
   return results.slice(0, MAX_REPORTS_PER_SCAN);
 }
 
-// Bước 2: fetch từng trang chi tiết, đọc og:title + og:description
 async function fetchReportDetail(url: string): Promise<RawSourceRecord | null> {
   const res = await fetch(url, { headers: REQUEST_HEADERS, cache: "no-store" });
   if (!res.ok) return null;
@@ -123,14 +119,13 @@ async function fetchReportDetail(url: string): Promise<RawSourceRecord | null> {
   const ogTitle = $('meta[property="og:title"]').attr("content") ?? "";
   const ogDescription = $('meta[property="og:description"]').attr("content") ?? "";
 
-  // og:title có dạng "{tiêu đề gốc} | Báo cáo phân tích CafeF.vn" -> bỏ phần đuôi cố định
   const cleanTitle = ogTitle.replace(/\s*\|\s*B[áa]o c[áa]o ph[âa]n t[íi]ch CafeF\.vn\s*$/i, "").trim();
 
   const parsed = parseTitle(cleanTitle);
   if (!parsed) return null;
 
   const sector = TICKER_TO_SECTOR.get(parsed.ticker);
-  if (!sector) return null; // mã không nằm trong danh mục đang theo dõi -> bỏ qua
+  if (!sector) return null;
 
   const sourceOrgName = parseSourceOrgName(ogDescription) ?? "CafeF";
 
@@ -145,7 +140,7 @@ async function fetchReportDetail(url: string): Promise<RawSourceRecord | null> {
     sourceName: sourceOrgName,
     sourceUrl: url,
     sourceCredibility: "confirmed",
-    publishedDate: new Date(), // ghi đè bằng listDate ở nơi gọi (fetchReportUrls đã có ngày chính xác hơn)
+    publishedDate: new Date(),
     direction,
     baseWeight: 6,
     decayRate: 0.15,
@@ -156,22 +151,61 @@ async function fetchReportDetail(url: string): Promise<RawSourceRecord | null> {
   };
 }
 
-export async function scrapeCafefRecommendations(): Promise<RawSourceRecord[]> {
+export interface ScrapeResult {
+  records: RawSourceRecord[];
+  circuitBreakerTripped: boolean;
+  timeBudgetExhausted: boolean; // ★PHASE 3: cho biết đã dừng do hết ngân sách thời gian
+  attemptedCount: number;
+  successCount: number;
+  elapsedMs: number;
+}
+
+export async function scrapeCafefRecommendations(): Promise<ScrapeResult> {
   const urls = await fetchReportUrls();
   const records: RawSourceRecord[] = [];
+  const breaker = new ScanCircuitBreaker(CIRCUIT_BREAKER_THRESHOLD);
+  const budget = new ScanTimeBudget(SCRAPER_MAX_DURATION_MS); // ★PHASE 3
+  let timeBudgetExhausted = false;
 
   for (const { url, listDate } of urls) {
+    if (breaker.isTripped()) break;
+
+    // ★PHASE 3: kiểm tra CÓ ĐỦ thời gian cho vòng lặp tiếp theo không, trước khi
+    // bắt đầu — tránh tình huống bắt đầu 1 request rồi bị cắt ngang giữa chừng
+    if (!budget.canAffordNextIteration(ESTIMATED_MS_PER_ITERATION)) {
+      timeBudgetExhausted = true;
+      console.warn(
+        `[cafef-scraper] Dung som do het ngan sach thoi gian - da xu ly ${records.length}/${urls.length} URL trong ${budget.elapsedMs()}ms`
+      );
+      break;
+    }
+
     try {
       const record = await fetchReportDetail(url);
       if (record) {
-        record.publishedDate = listDate; // dùng ngày từ trang danh sách, chính xác hơn ngày mặc định
+        record.publishedDate = listDate;
         records.push(record);
       }
+      breaker.recordSuccess();
     } catch (err) {
       console.error(`Loi fetch report detail ${url}:`, err);
+      breaker.recordFailure();
     }
     await new Promise((r) => setTimeout(r, DETAIL_FETCH_DELAY_MS));
   }
 
-  return records;
+  const state = breaker.getState();
+  if (state.tripped) {
+    console.warn(`[cafef-scraper] Circuit breaker TRIPPED sau ${state.consecutiveFailures} loi lien tiep`);
+    await logCircuitBreakerTrip("cafef-scraper", state);
+  }
+
+  return {
+    records,
+    circuitBreakerTripped: state.tripped,
+    timeBudgetExhausted,
+    attemptedCount: state.totalAttempts,
+    successCount: state.totalAttempts - state.totalFailures,
+    elapsedMs: budget.elapsedMs(),
+  };
 }
