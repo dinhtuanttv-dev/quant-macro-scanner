@@ -68,3 +68,74 @@ export async function fetchIndexOhlcvHistory(
     };
   }
 }
+
+export interface IndexQuote {
+  symbol: string;
+  close: number;
+  changeAbs: number;
+  changePct: number;
+}
+
+/**
+ * Lay gia dong cua + % thay doi cho nhieu chi so cung luc, dung
+ * chung nguon VNDirect dchart da xac nhan hoat dong tot cho VNINDEX.
+ * Symbol dung: VNINDEX, VN30, HNX, UPCOM.
+ */
+export async function fetchIndicesLatest(symbols: string[]): Promise<Record<string, IndexQuote | null>> {
+  const result: Record<string, IndexQuote | null> = {};
+
+  await Promise.all(
+    symbols.map(async (symbol) => {
+      const vndSymbol = symbol === "VNINDEX" ? "VNINDEX" : symbol;
+      const res = await fetchIndexOhlcvHistory(vndSymbol, 5);
+      if (!res.success || !res.data || res.data.length < 2) {
+        result[symbol] = null;
+        return;
+      }
+      const bars = res.data;
+      const last = bars[bars.length - 1];
+      const prev = bars[bars.length - 2];
+      const changeAbs = last.close - prev.close;
+      const changePct = prev.close !== 0 ? (changeAbs / prev.close) * 100 : 0;
+      result[symbol] = { symbol, close: last.close, changeAbs, changePct };
+    })
+  );
+
+  return result;
+}
+
+export interface IntradayBar {
+  timestamp: number;
+  close: number;
+  volume: number;
+}
+
+/**
+ * Lay du lieu intraday (theo phut) cho VNINDEX, dung de tinh thanh
+ * khoan luy ke den mot gio cu the (vd 10:30) cho nhieu phien gan day.
+ * resolution: "15" (15 phut) la du chi tiet, giam tai request.
+ */
+export async function fetchIntradayBars(
+  symbol: string,
+  daysBack: number = 10,
+  resolution: string = "15"
+): Promise<IntradayBar[]> {
+  const to = Math.floor(Date.now() / 1000);
+  const from = to - daysBack * 24 * 60 * 60;
+  const url = `${VND_BASE_URL}?resource=stock&symbol=${encodeURIComponent(symbol)}&resolution=${resolution}&from=${from}&to=${to}`;
+
+  const res = await fetch(url, {
+    headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
+    cache: "no-store",
+  });
+  if (!res.ok) return [];
+
+  const json = await res.json();
+  if (json?.s !== "ok" || !Array.isArray(json?.t)) return [];
+
+  return json.t.map((ts: number, i: number) => ({
+    timestamp: ts,
+    close: json.c[i],
+    volume: json.v[i],
+  }));
+}
