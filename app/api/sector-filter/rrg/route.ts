@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { fetchOhlcvHistory } from "@/lib/market-data/yahoo-finance-adapter";
 import { extractCloses } from "@/lib/market-data/technical-indicators";
 import { calculateSectorRRG, type RRGPoint } from "@/lib/sector-filter/rrg/rrg-calculator";
@@ -6,7 +6,7 @@ import { calculateSectorRRG, type RRGPoint } from "@/lib/sector-filter/rrg/rrg-c
 export const maxDuration = 10;
 const OHLCV_RANGE = "6mo";
 
-const VN_INDEX_TICKER = "^VNINDEX.VN";
+const VN_INDEX_TICKER = "E1VFVN30"; // Dung ETF VN30 thay ^VNINDEX.VN lam benchmark - Yahoo chi tra ve 1 nen cho ma chi so tong hop, khong du du lieu tinh RRG. E1VFVN30 la cong cu giao dich that, thanh khoan cao, du lich su.
 const SECTOR_PROXIES: { sectorKey: string; sectorLabel: string; proxyTicker: string }[] = [
   { sectorKey: "BANKING", sectorLabel: "Ngan hang", proxyTicker: "VCB" },
   { sectorKey: "REAL_ESTATE", sectorLabel: "Bat dong san", proxyTicker: "VHM" },
