@@ -1,6 +1,8 @@
-// app/api/catalysts/scan/route.ts — PHASE 2 UPGRADE
-// Da thay redis.set(key, data, {ex: 1800}) bang writeSnapshotSafe() - khong con
+﻿// app/api/catalysts/scan/route.ts - PHASE 2 + PHASE 3 UPGRADE
+// PHASE 2: Da thay redis.set(key, data, {ex: 1800}) bang writeSnapshotSafe() - khong con
 // TTL lam mat du lieu, thay bang co che "stale-aware" o tang doc (latest/route.ts).
+// PHASE 3: Ghi tung tin hieu that vao SignalLedger de sau nay doi chieu gia that,
+// tinh ra ty le thang that - thay the historicalWinRate=50 bia truoc day.
 
 import { NextRequest, NextResponse } from "next/server";
 import { Redis } from "@upstash/redis";
@@ -9,7 +11,8 @@ import { CatalystEngine } from "@/lib/catalyst/CatalystEngine";
 import { ingestFromMacroNews } from "@/lib/catalyst/newsIngestion";
 import { fetchMarketSignalsReal } from "@/lib/catalyst/marketSignals";
 import { stockUniverse } from "@/lib/quant-data";
-import { writeSnapshotSafe } from "@/lib/catalyst/engine/SnapshotStore"; // ★PHASE 2
+import { writeSnapshotSafe } from "@/lib/catalyst/engine/SnapshotStore";
+import { recordNewSignal } from "@/lib/catalyst/engine/SignalLedger";
 import type { CatalystSource, ImpactEdge, CalibrationEntry, AlertConfig } from "@/lib/catalyst/types";
 
 export const maxDuration = 10;
@@ -60,7 +63,22 @@ async function runScan() {
     activeAlerts, upcomingEvents, tickerImpacts,
   };
 
-  // ★PHASE 2: writeSnapshotSafe thay redis.set trực tiếp - không TTL, có lưu lịch sử
+  // PHASE 3: ghi tung tin hieu that vao SignalLedger truoc khi luu snapshot -
+  // chay song song, bo qua loi rieng le (khong lam gian doan scan chinh).
+  const allTickerEdges = edges.filter((e) => e.targetType === "ticker");
+  await Promise.allSettled(allTickerEdges.map(async (e) => {
+    const source = sources.find((s) => s.id === e.sourceId);
+    if (!source) return;
+    await recordNewSignal(redis, {
+      ticker: e.targetId,
+      category: source.category,
+      propagationDistance: e.propagationDistance,
+      direction: e.direction,
+      sourceId: e.sourceId,
+    });
+  }));
+
+  // PHASE 2: writeSnapshotSafe thay redis.set truc tiep - khong TTL, co luu lich su
   await writeSnapshotSafe(redis, snapshot);
 
   const nextRanks: Record<string, number> = {};
