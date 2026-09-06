@@ -1,0 +1,25 @@
+﻿name: Catalyst Backtest Pipeline
+
+on:
+  schedule:
+    # 8:30 UTC = 15:30 VN, sau gio dong cua HOSE (15:00) - chay 1 lan/ngay
+    - cron: "30 8 * * 1-5"
+  workflow_dispatch: {}
+
+jobs:
+  fill-prices:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dien gia con thieu cho tin hieu moi
+        run: |
+          curl -f -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "https://tuan-quant-scanner-psi.vercel.app/api/catalysts/fill-signal-prices"
+
+  evaluate-signals:
+    needs: fill-prices
+    runs-on: ubuntu-latest
+    steps:
+      - name: Doi chieu tin hieu du 5 phien + tinh lai calibration
+        run: |
+          curl -f -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "https://tuan-quant-scanner-psi.vercel.app/api/catalysts/evaluate-signals"
