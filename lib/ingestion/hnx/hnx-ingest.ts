@@ -7,6 +7,7 @@
 import { prisma } from "@/lib/prisma";
 import { fetchHnxDisclosures, type HnxDisclosureRecord } from "./hnx-disclosure-scraper";
 import { stockUniverse } from "@/lib/quant-data";
+import { UPCOM_TICKER_SECTOR } from "./ticker-sector-lookup";
 
 interface NegativeSignalRule {
   keywords: string[];
@@ -36,10 +37,17 @@ function matchNegativeRule(title: string): NegativeSignalRule | null {
   return null;
 }
 
+// Tra 2 nguon theo thu tu uu tien: stockUniverse (ma lon, da phan loai san)
+// truoc, roi den UPCOM_TICKER_SECTOR (ma nho, tra cuu rieng, chi de hien
+// thi - khong dinh gi den diem so FA). Neu khong co o ca 2 -> tra ve rong,
+// KHONG bia nganh.
 function findSectorForTicker(ticker: string | null): string[] {
   if (!ticker) return [];
   const stock = stockUniverse.find((s) => s.ticker === ticker);
-  return stock ? [stock.sector] : [];
+  if (stock) return [stock.sector];
+  const upcomSector = UPCOM_TICKER_SECTOR[ticker];
+  if (upcomSector) return [upcomSector];
+  return [];
 }
 
 export interface HnxIngestResult {
@@ -101,4 +109,3 @@ export async function ingestHnxDisclosures(): Promise<HnxIngestResult> {
 
   return result;
 }
-
