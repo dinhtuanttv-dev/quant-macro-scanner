@@ -72,7 +72,10 @@ export async function ingestHnxDisclosures(): Promise<HnxIngestResult> {
     try {
       await prisma.macroNewsRecord.upsert({
         where: { contentHash: record.originRecordId },
-        update: {},
+        update: {
+          affectedSectors: findSectorForTicker(record.tickerGuess),
+          relatedTickers: record.tickerGuess ? [record.tickerGuess] : [],
+        },
         create: {
           headline: record.title,
           summary: null,
@@ -98,3 +101,4 @@ export async function ingestHnxDisclosures(): Promise<HnxIngestResult> {
 
   return result;
 }
+
