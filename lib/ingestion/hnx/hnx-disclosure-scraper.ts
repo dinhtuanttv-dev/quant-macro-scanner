@@ -65,9 +65,11 @@ export async function fetchHnxDisclosures(numRecord = 30): Promise<HnxDisclosure
   const $ = cheerio.load(html);
   const records: HnxDisclosureRecord[] = [];
 
+  let debugCount = 0;
   $("table#_tableDatas tr").each((_, el) => {
     const row = $(el);
     if (row.find("th").length > 0) return; // bo qua dong tieu de (thead)
+    if (debugCount < 3) { console.log(`[DEBUG row ${debugCount}] html:`, row.html()?.slice(0, 500)); debugCount++; }
 
     const dateText = row.find("td.tdCenterAlign").eq(0).text().trim();
     const linkEl = row.find("a.hrefViewDetail");
@@ -90,3 +92,4 @@ export async function fetchHnxDisclosures(numRecord = 30): Promise<HnxDisclosure
 
   return records;
 }
+
