@@ -46,7 +46,7 @@ export async function checkVn30ReviewAnnouncement(): Promise<Vn30ReviewFinding> 
   const ai = new GoogleGenAI({ apiKey });
 
   const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
+    model: "gemini-3.6-flash",
     contents: SYSTEM_PROMPT,
     config: {
       tools: [{ googleSearch: {} }],
@@ -81,3 +81,4 @@ export async function checkVn30ReviewAnnouncement(): Promise<Vn30ReviewFinding> 
     return { found: false, announcementDate: null, effectiveDate: null, sourceUrl: null, sourceName: null, rawAnswer: text };
   }
 }
+
