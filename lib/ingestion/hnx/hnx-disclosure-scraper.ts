@@ -54,9 +54,11 @@ export async function fetchHnxDisclosures(numRecord = 30): Promise<HnxDisclosure
     dispatcher: hnxAgent,
   });
 
+  console.log("[DEBUG hnx-scraper] status:", res.status);
   if (!res.ok) throw new Error(`HNX tra ve HTTP ${res.status}`);
 
   const html = await res.text();
+  console.log("[DEBUG hnx-scraper] html length:", html.length, "| 100 ky tu dau:", html.slice(0, 100));
   const $ = cheerio.load(html);
   const records: HnxDisclosureRecord[] = [];
 
@@ -83,3 +85,4 @@ export async function fetchHnxDisclosures(numRecord = 30): Promise<HnxDisclosure
 
   return records;
 }
+

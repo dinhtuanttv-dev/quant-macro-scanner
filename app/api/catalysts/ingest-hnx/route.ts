@@ -13,9 +13,11 @@ export async function GET(request: Request) {
 
   try {
     const result = await ingestHnxDisclosures();
+    console.log("[DEBUG ingest-hnx] result:", JSON.stringify(result));
     return NextResponse.json({ ok: true, ...result });
   } catch (err) {
     console.error("[api/catalysts/ingest-hnx] Loi:", err);
     return NextResponse.json({ error: "Khong ingest duoc du lieu HNX." }, { status: 500 });
   }
 }
+
