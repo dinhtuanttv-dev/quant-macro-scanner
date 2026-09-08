@@ -4,20 +4,19 @@
 // thong tin THAT tu chinh So, do tin cay cao nhat trong toan he thong.
 // Dung POST form-urlencoded, response la HTML fragment (khong phai JSON).
 //
-// GHI CHU QUAN TRONG VE SSL: hnx.vn dung chuoi chung chi ma Node.js runtime
-// (ca local lan Vercel) khong xac minh duoc day du - da xac nhan qua log
-// loi that: UNABLE_TO_VERIFY_LEAF_SIGNATURE. Day la van de PHIA HNX (thieu
-// chuoi CA trung gian chuan), khong phai loi code. Giai phap: dung 1
-// https.Agent RIENG chi noi long kiem tra SSL cho DUNG request nay - KHONG
-// dung bien moi truong NODE_TLS_REJECT_UNAUTHORIZED toan cuc (se lam mat
-// an toan moi request HTTPS khac trong he thong).
+// GHI CHU QUAN TRONG VE SSL: hnx.vn dung chuoi chung chi ma runtime khong
+// xac minh duoc day du (UNABLE_TO_VERIFY_LEAF_SIGNATURE - loi PHIA HNX,
+// khong phai loi code). fetch() toan cuc cua Next.js dung undici (KHONG
+// phai module https co dien), nen phai dung undici.Agent voi connect:
+// { rejectUnauthorized: false } - https.Agent thong thuong KHONG co tac
+// dung voi undici (da xac nhan qua log loi thuc te tren Vercel).
 import * as cheerio from "cheerio";
-import https from "https";
+import { Agent } from "undici";
 
 const HNX_ENDPOINT = "https://hnx.vn/ModuleArticles/ArticlesCPEtfs/NextPageTinTCPHChuaGD_UpCoM";
 const REFERER = "https://hnx.vn/vi-vn/thong-tin-cong-bo-up-hnx.html";
 
-const hnxAgent = new https.Agent({ rejectUnauthorized: false });
+const hnxAgent = new Agent({ connect: { rejectUnauthorized: false } });
 
 export interface HnxDisclosureRecord {
   originRecordId: string;
@@ -51,8 +50,8 @@ export async function fetchHnxDisclosures(numRecord = 30): Promise<HnxDisclosure
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     },
     body: body.toString(),
-    // @ts-expect-error - "agent" khong nam trong type chuan cua fetch() nhung Node.js runtime ho tro that
-    agent: hnxAgent,
+    // @ts-expect-error - "dispatcher" la tuy chon rieng cua undici, khong nam trong type chuan RequestInit nhung Next.js runtime ho tro that
+    dispatcher: hnxAgent,
   });
 
   if (!res.ok) throw new Error(`HNX tra ve HTTP ${res.status}`);
