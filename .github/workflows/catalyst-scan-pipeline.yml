@@ -1,0 +1,25 @@
+﻿name: Catalyst Scan Pipeline
+
+on:
+  schedule:
+    # 8:00 UTC = 15:00 VN (dung luc dong cua HOSE) - chay 1 lan/ngay, thu 2-6
+    - cron: "0 8 * * 1-5"
+  workflow_dispatch: {}
+
+jobs:
+  ingest-hnx:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ingest cong bo thong tin chinh thuc tu HNX (chi tin hieu tieu cuc ro rang)
+        run: |
+          curl -f -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "https://tuan-quant-scanner-psi.vercel.app/api/catalysts/ingest-hnx"
+
+  scan:
+    needs: ingest-hnx
+    runs-on: ubuntu-latest
+    steps:
+      - name: Quet Catalyst Engine chinh (doc ca tin HNX vua ingest)
+        run: |
+          curl -f -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "https://tuan-quant-scanner-psi.vercel.app/api/catalysts/scan"
