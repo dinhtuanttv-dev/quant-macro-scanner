@@ -33,8 +33,16 @@ export interface HnxDisclosureRecord {
 }
 
 function extractTicker(title: string): string | null {
-  const match = title.match(/MCK:\s*([A-Z0-9]{2,10})/i);
-  return match ? match[1].toUpperCase() : null;
+  // Dinh dang 1: "...MCK: XXX)" - hay gap o bao cao tai chinh, thong bao quyen
+  const mckMatch = title.match(/MCK:\s*([A-Z0-9]{2,10})/i);
+  if (mckMatch) return mckMatch[1].toUpperCase();
+
+  // Dinh dang 2: "... - XXX)" o cuoi ten cong ty - hay gap o thong bao han che/dinh chi giao dich
+  // (da xac nhan qua du lieu that: "CTCP Vat lieu xay dung Ben Tre - VXB")
+  const dashMatch = title.match(/-\s*([A-Z]{2,5})\)\s*$/);
+  if (dashMatch) return dashMatch[1].toUpperCase();
+
+  return null;
 }
 
 function parseVnDate(raw: string): Date | null {
@@ -92,3 +100,4 @@ export async function fetchHnxDisclosures(numRecord = 30): Promise<HnxDisclosure
 
   return records;
 }
+
