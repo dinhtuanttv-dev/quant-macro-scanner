@@ -61,6 +61,11 @@ export async function fetchHnxDisclosures(numRecord = 30): Promise<HnxDisclosure
   console.log("[DEBUG hnx-scraper] html length:", html.length, "| 100 ky tu dau:", html.slice(0, 100));
   console.log("[DEBUG hnx-scraper] co table#_tableDatas khong:", html.includes("_tableDatas"));
   console.log("[DEBUG hnx-scraper] co hrefViewDetail khong:", html.includes("hrefViewDetail"));
+  const tableIdx = html.indexOf("_tableDatas");
+  console.log("[DEBUG hnx-scraper] doan quanh _tableDatas:", html.slice(Math.max(0, tableIdx - 50), tableIdx + 400));
+  const cheerioTest = cheerio.load(html);
+  console.log("[DEBUG hnx-scraper] cheerio tim thay table:", cheerioTest("table#_tableDatas").length);
+  console.log("[DEBUG hnx-scraper] cheerio tim thay tr:", cheerioTest("table#_tableDatas tr").length);
   const $ = cheerio.load(html);
   const records: HnxDisclosureRecord[] = [];
 
@@ -87,5 +92,6 @@ export async function fetchHnxDisclosures(numRecord = 30): Promise<HnxDisclosure
 
   return records;
 }
+
 
 
