@@ -1,0 +1,16 @@
+﻿name: Macro Calendar Sync
+
+on:
+  schedule:
+    # 1:00 UTC = 8:00 VN, dau ngay lam viec - lich tinh it thay doi, 1 lan/ngay la du
+    - cron: "0 1 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dong bo lich vi mo tinh (CPI/PMI/FOMC)
+        run: |
+          curl -f -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "https://tuan-quant-scanner-psi.vercel.app/api/catalysts/macro-calendar-sync"
