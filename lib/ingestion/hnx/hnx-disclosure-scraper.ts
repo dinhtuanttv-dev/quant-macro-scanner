@@ -4,12 +4,17 @@
 // thong tin THAT tu chinh So, do tin cay cao nhat trong toan he thong.
 // Dung POST form-urlencoded, response la HTML fragment (khong phai JSON).
 //
-// GHI CHU QUAN TRONG VE SSL: hnx.vn dung chuoi chung chi ma runtime khong
-// xac minh duoc day du (UNABLE_TO_VERIFY_LEAF_SIGNATURE - loi PHIA HNX,
-// khong phai loi code). fetch() toan cuc cua Next.js dung undici (KHONG
-// phai module https co dien), nen phai dung undici.Agent voi connect:
-// { rejectUnauthorized: false } - https.Agent thong thuong KHONG co tac
-// dung voi undici (da xac nhan qua log loi thuc te tren Vercel).
+// GHI CHU VE SSL: hnx.vn dung chuoi chung chi ma runtime khong xac minh
+// duoc day du (UNABLE_TO_VERIFY_LEAF_SIGNATURE - loi PHIA HNX). fetch()
+// toan cuc cua Next.js dung undici, nen phai dung undici.Agent voi
+// connect: { rejectUnauthorized: false } - https.Agent thong thuong
+// KHONG co tac dung voi undici (da xac nhan qua log loi thuc te).
+//
+// GHI CHU VE SELECTOR: HTML tra ve KHONG co the <tbody> tuong minh bao
+// boc cac dong du lieu (da xac nhan qua debug: "table#_tableDatas tr"
+// ra dung 52 dong, nhung "table#_tableDatas tbody tr" ra 0 dong). Vi vay
+// dung selector "table tr" roi tu loc bo dong tieu de bang cach kiem tra
+// khong co the <th> ben trong, thay vi dua vao <tbody>.
 import * as cheerio from "cheerio";
 import { Agent } from "undici";
 
@@ -54,23 +59,16 @@ export async function fetchHnxDisclosures(numRecord = 30): Promise<HnxDisclosure
     dispatcher: hnxAgent,
   });
 
-  console.log("[DEBUG hnx-scraper] status:", res.status);
   if (!res.ok) throw new Error(`HNX tra ve HTTP ${res.status}`);
 
   const html = await res.text();
-  console.log("[DEBUG hnx-scraper] html length:", html.length, "| 100 ky tu dau:", html.slice(0, 100));
-  console.log("[DEBUG hnx-scraper] co table#_tableDatas khong:", html.includes("_tableDatas"));
-  console.log("[DEBUG hnx-scraper] co hrefViewDetail khong:", html.includes("hrefViewDetail"));
-  const tableIdx = html.indexOf("_tableDatas");
-  console.log("[DEBUG hnx-scraper] doan quanh _tableDatas:", html.slice(Math.max(0, tableIdx - 50), tableIdx + 400));
-  const cheerioTest = cheerio.load(html);
-  console.log("[DEBUG hnx-scraper] cheerio tim thay table:", cheerioTest("table#_tableDatas").length);
-  console.log("[DEBUG hnx-scraper] cheerio tim thay tr:", cheerioTest("table#_tableDatas tr").length);
   const $ = cheerio.load(html);
   const records: HnxDisclosureRecord[] = [];
 
-  $("table#_tableDatas tbody tr").each((_, el) => {
+  $("table#_tableDatas tr").each((_, el) => {
     const row = $(el);
+    if (row.find("th").length > 0) return; // bo qua dong tieu de (thead)
+
     const dateText = row.find("td.tdCenterAlign").eq(0).text().trim();
     const linkEl = row.find("a.hrefViewDetail");
     const title = linkEl.text().trim().replace(/\s+/g, " ");
@@ -92,6 +90,3 @@ export async function fetchHnxDisclosures(numRecord = 30): Promise<HnxDisclosure
 
   return records;
 }
-
-
-
