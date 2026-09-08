@@ -10,11 +10,13 @@
 // connect: { rejectUnauthorized: false } - https.Agent thong thuong
 // KHONG co tac dung voi undici (da xac nhan qua log loi thuc te).
 //
-// GHI CHU VE SELECTOR: HTML tra ve KHONG co the <tbody> tuong minh bao
-// boc cac dong du lieu (da xac nhan qua debug: "table#_tableDatas tr"
-// ra dung 52 dong, nhung "table#_tableDatas tbody tr" ra 0 dong). Vi vay
-// dung selector "table tr" roi tu loc bo dong tieu de bang cach kiem tra
-// khong co the <th> ben trong, thay vi dua vao <tbody>.
+// GHI CHU VE SELECTOR: HTML tra ve KHONG co the <tbody> tuong minh, dung
+// "table tr" roi loc bo dong tieu de bang kiem tra khong co <th>.
+//
+// GHI CHU VE COT NGAY: cot STT ("1", "2"...) VA cot ngay cung mang chung
+// class "tdCenterAlign" (cot STT co them class rieng "STT"). Neu dung
+// .eq(0) se lay NHAM cot STT thay vi cot ngay - da xac nhan qua debug
+// HTML thuc te. Dung :not(.STT) de loai truc tiep, khong dua vao vi tri.
 import * as cheerio from "cheerio";
 import { Agent } from "undici";
 
@@ -65,13 +67,11 @@ export async function fetchHnxDisclosures(numRecord = 30): Promise<HnxDisclosure
   const $ = cheerio.load(html);
   const records: HnxDisclosureRecord[] = [];
 
-  let debugCount = 0;
   $("table#_tableDatas tr").each((_, el) => {
     const row = $(el);
-    if (row.find("th").length > 0) return; // bo qua dong tieu de (thead)
-    if (debugCount < 3) { console.log(`[DEBUG row ${debugCount}] html:`, row.html()?.slice(0, 500)); debugCount++; }
+    if (row.find("th").length > 0) return;
 
-    const dateText = row.find("td.tdCenterAlign").eq(0).text().trim();
+    const dateText = row.find("td.tdCenterAlign:not(.STT)").first().text().trim();
     const linkEl = row.find("a.hrefViewDetail");
     const title = linkEl.text().trim().replace(/\s+/g, " ");
     const onclick = linkEl.attr("onclick") ?? "";
@@ -92,4 +92,3 @@ export async function fetchHnxDisclosures(numRecord = 30): Promise<HnxDisclosure
 
   return records;
 }
-
