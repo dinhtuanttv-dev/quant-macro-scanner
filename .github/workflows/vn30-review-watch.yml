@@ -1,0 +1,16 @@
+﻿name: VN30 Review Watch
+
+on:
+  schedule:
+    # Thu 2 hang tuan, 2:00 UTC (~9h VN) - tan suat thap vi thong bao hiem xay ra
+    - cron: "0 2 * * 1"
+  workflow_dispatch: {}
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Kiem tra HOSE da cong bo ky ra soat VN30 tiep theo chua (qua Gemini)
+        run: |
+          curl -f -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "https://tuan-quant-scanner-psi.vercel.app/api/catalysts/vn30-review-watch"
