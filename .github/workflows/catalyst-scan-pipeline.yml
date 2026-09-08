@@ -2,24 +2,27 @@
 
 on:
   schedule:
-    # 8:00 UTC = 15:00 VN (dung luc dong cua HOSE) - chay 1 lan/ngay, thu 2-6
     - cron: "0 8 * * 1-5"
   workflow_dispatch: {}
 
 jobs:
   ingest-hnx:
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - name: Ingest cong bo thong tin chinh thuc tu HNX (chi tin hieu tieu cuc ro rang)
         run: |
-          curl -f -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+          curl -f --retry 3 --retry-delay 10 --retry-connrefused \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
             "https://tuan-quant-scanner-psi.vercel.app/api/catalysts/ingest-hnx"
 
   scan:
-    needs: ingest-hnx
     runs-on: ubuntu-latest
+    needs: ingest-hnx
+    if: always()
     steps:
-      - name: Quet Catalyst Engine chinh (doc ca tin HNX vua ingest)
+      - name: Quet Catalyst Engine chinh (chay du HNX truoc do co thanh cong hay khong)
         run: |
-          curl -f -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+          curl -f --retry 3 --retry-delay 10 --retry-connrefused \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
             "https://tuan-quant-scanner-psi.vercel.app/api/catalysts/scan"
