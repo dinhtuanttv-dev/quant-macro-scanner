@@ -15,7 +15,7 @@ import { writeSnapshotSafe } from "@/lib/catalyst/engine/SnapshotStore";
 import { recordNewSignal } from "@/lib/catalyst/engine/SignalLedger";
 import type { CatalystSource, ImpactEdge, CalibrationEntry, AlertConfig } from "@/lib/catalyst/types";
 
-export const maxDuration = 10;
+export const maxDuration = 60;
 
 const redis = new Redis({ url: process.env.KV_REST_API_URL!, token: process.env.KV_REST_API_TOKEN! });
 
@@ -104,3 +104,4 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: String(err) }, { status: 500 });
   }
 }
+
