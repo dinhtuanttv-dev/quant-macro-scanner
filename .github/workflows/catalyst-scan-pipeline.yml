@@ -16,12 +16,22 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
             "https://tuan-quant-scanner-psi.vercel.app/api/catalysts/ingest-hnx"
 
+  ingest-hose:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Ingest su kien co tuc/quyen + tin tieu cuc tu HOSE
+        run: |
+          curl -f --retry 3 --retry-delay 10 --retry-connrefused \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "https://tuan-quant-scanner-psi.vercel.app/api/catalysts/ingest-hose"
+
   scan:
     runs-on: ubuntu-latest
-    needs: ingest-hnx
+    needs: [ingest-hnx, ingest-hose]
     if: always()
     steps:
-      - name: Quet Catalyst Engine chinh (chay du HNX truoc do co thanh cong hay khong)
+      - name: Quet Catalyst Engine chinh (chay du HNX/HOSE truoc do co thanh cong hay khong)
         run: |
           curl -f --retry 3 --retry-delay 10 --retry-connrefused \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
