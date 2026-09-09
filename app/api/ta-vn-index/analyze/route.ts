@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 export const maxDuration = 30;
 
@@ -6,13 +6,37 @@ export const maxDuration = 30;
  * MOCK ROUTE cho Tab "Elite 10" (TA VN-Index) — Frontend.
  * TODO (Backend): thay bằng SMC/Wyckoff/Elliott/ADX/Pattern Scanner thật.
  * Hợp đồng dữ liệu: global-quanta/src/types/taVnIndex.ts
+ *
+ * ĐÃ SỬA (tích hợp dữ liệu giá thật qua vnstock, giữ nguyên phần phân tích mock):
+ *  1. `priceSeries` giờ gọi thật từ /api/stock (FastAPI + vnstock) khi thành
+ *     công — KHÔNG còn sinh giả bằng buildOhlcSeries() trong trường hợp này.
+ *  2. QUAN TRỌNG: KHÔNG gộp chung 1 cờ `isMock` cho cả priceSeries lẫn các
+ *     field phân tích (smc/wyckoff/elliott/adx/rsi/macd/patternScanner) —
+ *     những field đó VẪN LÀ MOCK (hardcode) dù priceSeries đã thật, nên
+ *     tách riêng `analysisIsMock: true` để không ai hiểu nhầm RSI=58.3 hay
+ *     ADX=24.5 là tính từ giá thật (chúng KHÔNG PHẢI). Chỉ số thật (SMA/EMA/
+ *     RSI/Bollinger) nằm ở field `computedIndicators` mới, tính bởi
+ *     api/stock.py trực tiếp trên priceSeries thật.
+ *  3. Nếu gọi /api/stock thất bại (mạng lỗi, vnstock rate-limit, mã không
+ *     tồn tại...), fallback về priceSeries mock NHƯ CŨ, giữ `isMock: true`
+ *     và ghi rõ `fallbackReason` — không bao giờ để lỗi khiến response
+ *     trông giống dữ liệu thật.
  */
 
 function toBusinessDay(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-function buildOhlcSeries(ticker: string, weeks = 60) {
+const TIMEFRAME_CONFIG: Record<string, { dayStep: number; bars: number }> = {
+  D: { dayStep: 1, bars: 500 },
+  W: { dayStep: 7, bars: 120 },
+  M: { dayStep: 30, bars: 36 },
+};
+
+function buildOhlcSeries(ticker: string, timeframe: string) {
+  const config = TIMEFRAME_CONFIG[timeframe] ?? TIMEFRAME_CONFIG.W;
+  const { dayStep, bars } = config;
+
   let seed = 0;
   for (let i = 0; i < ticker.length; i++) seed = (seed * 31 + ticker.charCodeAt(i)) >>> 0;
   const rand = () => { seed = (seed * 1103515245 + 12345) >>> 0; return (seed % 1000) / 1000; };
@@ -21,9 +45,9 @@ function buildOhlcSeries(ticker: string, weeks = 60) {
   const out: any[] = [];
   let price = basePrice;
   const today = new Date();
-  today.setUTCDate(today.getUTCDate() - weeks * 7);
+  today.setUTCDate(today.getUTCDate() - bars * dayStep);
 
-  for (let i = 0; i < weeks; i++) {
+  for (let i = 0; i < bars; i++) {
     const drift = (rand() - 0.48) * 0.04;
     const open = price;
     const close = Math.max(1000, open * (1 + drift));
@@ -32,13 +56,29 @@ function buildOhlcSeries(ticker: string, weeks = 60) {
     const volume = Math.floor(500000 + rand() * 2000000);
     out.push({ time: toBusinessDay(today), open: Math.round(open), high: Math.round(high), low: Math.round(low), close: Math.round(close), volume });
     price = close;
-    today.setUTCDate(today.getUTCDate() + 7);
+    today.setUTCDate(today.getUTCDate() + dayStep);
   }
   return out;
 }
 
+/** Gọi api/stock.py (FastAPI + vnstock) để lấy priceSeries THẬT. Ném lỗi nếu thất bại — caller phải tự fallback. */
+async function fetchRealPriceSeries(origin: string, ticker: string, timeframe: string) {
+  const url = `${origin}/api/stock?symbol=${encodeURIComponent(ticker)}&timeframe=${encodeURIComponent(timeframe)}`;
+  const res = await fetch(url, {
+    // Next.js Data Cache: dữ liệu EOD không cần fetch lại mỗi request,
+    // revalidate mỗi 10 phút là đủ, giảm tải lên vnstock (tránh rate-limit
+    // 20 req/phút của tier Guest).
+    next: { revalidate: 600 },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(`api/stock trả lỗi ${res.status}: ${body.detail ?? "không rõ nguyên nhân"}`);
+  }
+  return res.json();
+}
+
 function buildMockResponse(ticker: string, timeframe: string) {
-  const priceSeries = buildOhlcSeries(ticker);
+  const priceSeries = buildOhlcSeries(ticker, timeframe);
   const lastBar = priceSeries[priceSeries.length - 1];
   const lastClose = lastBar?.close ?? 30000;
   const dzBar = priceSeries[5] ?? lastBar;
@@ -47,7 +87,12 @@ function buildMockResponse(ticker: string, timeframe: string) {
     ticker,
     timeframe: (timeframe || "W"),
     asOfDate: new Date().toISOString().slice(0, 10),
+    isMock: true,
+    // MỚI: cờ riêng cho khối phân tích (smc/wyckoff/.../patternScanner bên
+    // dưới) — LUÔN true ở bản này, độc lập với priceSeries thật hay giả.
+    analysisIsMock: true,
     priceSeries,
+    computedIndicators: null, // chỉ có khi priceSeries là thật (xem GET handler)
     trendline: [
       { time: priceSeries[10]?.time, value: priceSeries[10]?.low ?? lastClose * 0.9 },
       { time: priceSeries[40]?.time, value: priceSeries[40]?.low ?? lastClose * 0.95 },
@@ -103,5 +148,25 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const ticker = (searchParams.get("ticker") ?? "VNM").toUpperCase();
   const timeframe = searchParams.get("timeframe") ?? "W";
-  return NextResponse.json(buildMockResponse(ticker, timeframe));
+
+  const mock = buildMockResponse(ticker, timeframe);
+
+  try {
+    const real = await fetchRealPriceSeries(req.nextUrl.origin, ticker, timeframe);
+    return NextResponse.json({
+      ...mock,
+      priceSeries: real.priceSeries,
+      computedIndicators: real.computedIndicators,
+      isMock: false, // priceSeries giờ thật
+      priceDataSource: "vnstock",
+      barCount: real.barCount,
+      // analysisIsMock vẫn giữ nguyên true từ `mock` — smc/wyckoff/... chưa đổi
+    });
+  } catch (err) {
+    console.error(`[ta-vn-index/analyze] Không lấy được dữ liệu thật cho ${ticker}, dùng mock:`, err);
+    return NextResponse.json({
+      ...mock,
+      fallbackReason: err instanceof Error ? err.message : String(err),
+    });
+  }
 }

@@ -1,0 +1,8 @@
+# Ghim chính xác phiên bản để tránh Vercel build ra bản vnstock khác,
+# có thể đổi cách gọi hàm bất cứ lúc nào (v4 Unified UI còn đang phát triển
+# nhanh). Nếu build lỗi vì bản 4.0.5 không còn khả dụng, kiểm tra phiên bản
+# mới nhất tại https://pypi.org/project/vnstock/#history rồi cập nhật dòng này.
+vnstock==4.0.5
+fastapi==0.117.1
+pandas==2.2.3
+python-dateutil==2.9.0
