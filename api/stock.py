@@ -13,7 +13,27 @@ tài liệu hóa chính thức là `Market().equity(ticker).ohlcv(...)`. Dùng
 Code dưới đây có thêm lớp fallback sang cách gọi namespace-style
 (`market.equity.ohlcv(symbol=...)`) phòng trường hợp phiên bản cài đặt
 thực tế trên Vercel khác với bản mình đã tra cứu.
+
+QUAN TRỌNG — về filesystem chỉ đọc trên Vercel Functions:
+`vnstock`/`vnai` cố ghi file vào thư mục home (đã xác nhận qua lỗi thật:
+"[Errno 30] Read-only file system: '/home/sbx_user1051'") — rất có thể
+cùng cơ chế đã tự ghi vào AGENTS.md phát hiện ở phía Next.js project.
+Vercel Functions chỉ cho ghi vào /tmp. Ép biến môi trường HOME trỏ về
+/tmp TRƯỚC KHI import vnstock, để mọi lệnh ghi file của thư viện (cache,
+config, hay bất kỳ hành vi ẩn nào khác) đổ vào /tmp thay vì thư mục home
+thật (read-only) — đây là workaround chuẩn cho các thư viện Python giả
+định luôn có quyền ghi vào $HOME, phổ biến khi chạy trên serverless.
 """
+
+import os
+
+os.environ.setdefault("HOME", "/tmp")
+os.environ.setdefault("XDG_CACHE_HOME", "/tmp/.cache")
+os.environ.setdefault("XDG_CONFIG_HOME", "/tmp/.config")
+# Tạo sẵn thư mục — phòng trường hợp vnai/vnstock giả định thư mục đã tồn
+# tại sẵn (không tự gọi os.makedirs trước khi ghi file vào đó).
+os.makedirs("/tmp/.cache", exist_ok=True)
+os.makedirs("/tmp/.config", exist_ok=True)
 
 from datetime import date, timedelta
 from typing import Optional
