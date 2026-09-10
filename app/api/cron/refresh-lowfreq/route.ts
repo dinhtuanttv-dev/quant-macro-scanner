@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/client";
-import { fetchGlobalHousingPrices, fetchLatestRubberPrice } from "@/lib/commodity/lowfreq-fetchers";
+import { fetchGlobalHousingPrices, fetchLatestRubberPrice, fetchLatestFertilizerPrices } from "@/lib/commodity/lowfreq-fetchers";
 
 export const maxDuration = 60;
 
@@ -35,11 +35,51 @@ export async function GET(request: Request) {
     results.housing = { success: false, error: err instanceof Error ? err.message : String(err) };
   }
 
-  // --- CAO SU (World Bank) - TAM KHOA: URL nguon dang tra ve du lieu cu
-  // (thang 12/2024), da xac nhan qua kiem tra thuc te 2026-08-27. KHONG
-  // kich hoat cho toi khi co URL Pink Sheet moi nhat, tranh ghi du lieu
-  // cu vao Supabase roi hien thi nhu la "moi nhat" tren UI (sai su that).
-  results.rubber = { success: false, skipped: true, reason: "Cho URL World Bank Pink Sheet moi nhat - xem PHASE2-TODO" };
+  // --- CAO SU + PHAN BON (World Bank Pink Sheet) ---
+  // FIX (2026-09-10): kich hoat lai - nguyen nhan tam khoa truoc day (URL
+  // het han) da duoc sua trong lowfreq-fetchers.ts bang co che phat hien
+  // URL dong. Ghi vao bang moi "monthly_commodity_price" (xem migration
+  // add_monthly_commodity_price.sql) - CHUA co bang nay trong Supabase,
+  // PHAI chay migration truoc khi cron nay chay lan dau, neu khong insert
+  // se that bai voi loi ro rang (khong phai loi am tham).
+  try {
+    const rubberPoints = await fetchLatestRubberPrice(6);
+    if (rubberPoints && rubberPoints.length > 0) {
+      const rows = rubberPoints.map((p) => ({
+        commodity_key: "RUBBER_RSS3", period: p.month, price: p.priceUsdKg, unit: "USD/kg",
+        source: "World Bank Pink Sheet",
+      }));
+      // upsert theo (commodity_key, period) - trach nhiem UNIQUE constraint
+      // trong migration, tranh insert trung khi cron chay lai nhieu lan/thang
+      const { error } = await supabase.from("monthly_commodity_price").upsert(rows, { onConflict: "commodity_key,period" });
+      results.rubber = error ? { success: false, error: error.message } : { success: true, count: rows.length, latestPeriod: rubberPoints[rubberPoints.length - 1].month };
+    } else {
+      results.rubber = { success: false, error: "Không lấy được dữ liệu Cao su (World Bank) - xem log server để biết cột/sheet thực tế" };
+    }
+  } catch (err) {
+    results.rubber = { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+
+  try {
+    const fertilizerPoints = await fetchLatestFertilizerPrices(6);
+    if (fertilizerPoints && fertilizerPoints.length > 0) {
+      const rows: { commodity_key: string; period: string; price: number; unit: string; source: string }[] = [];
+      for (const p of fertilizerPoints) {
+        if (p.ureaUsdMt !== null) rows.push({ commodity_key: "UREA", period: p.month, price: p.ureaUsdMt, unit: "USD/mt", source: "World Bank Pink Sheet" });
+        if (p.dapUsdMt !== null) rows.push({ commodity_key: "DAP", period: p.month, price: p.dapUsdMt, unit: "USD/mt", source: "World Bank Pink Sheet" });
+      }
+      if (rows.length > 0) {
+        const { error } = await supabase.from("monthly_commodity_price").upsert(rows, { onConflict: "commodity_key,period" });
+        results.fertilizer = error ? { success: false, error: error.message } : { success: true, count: rows.length };
+      } else {
+        results.fertilizer = { success: false, error: "Có dữ liệu kỳ nhưng cả Urea và DAP đều null" };
+      }
+    } else {
+      results.fertilizer = { success: false, error: "Không lấy được dữ liệu Phân bón (World Bank) - xem log server để biết cột/sheet thực tế" };
+    }
+  } catch (err) {
+    results.fertilizer = { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
 
   return NextResponse.json({ generatedAt: new Date().toISOString(), results });
 }
