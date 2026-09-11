@@ -4,13 +4,18 @@
 // và ghi chú rõ, KHÔNG bịa số để trông như có dữ liệu thật.
 //
 // Có dữ liệu thật: priceInStatus (proxy qua Relative Strength), volumeFlag (Volume Spike Ratio)
-// CHƯA có dữ liệu: foreignFlowDirection (tcbs-adapter không có field khối ngoại),
-//                  valuationPercentile (chưa có route /api/fundamentals),
+// MOI (2026-09-11): foreignFlowDirection = "buy" cho 5 ma xuat hien trong
+// bang "Giao dich cua NDTNN - mua rong" cua ban tin HOSE hang ngay (bang
+// hose_foreign_net_buy, ghi boi lib/ingestion/hose/hose-ingest.ts). CHI co
+// "buy", KHONG co "sell" - ban tin HOSE khong cong bo danh sach ban rong
+// tuong ung, gan "sell" cho ma con lai se la suy dien khong co can cu.
+// CHƯA có dữ liệu: valuationPercentile (chưa có route /api/fundamentals),
 //                  liquidityScore (volumeSpikeRatio đo đột biến tương đối, không phải
 //                  thanh khoản tuyệt đối — không thể suy ra chính xác từ đó)
 
 import { fetchOhlcvHistory } from "@/lib/market-data/yahoo-finance-adapter";
 import { extractCloses, calculateRelativeStrength, calculateVolumeSpikeRatio } from "@/lib/market-data/technical-indicators";
+import { prisma } from "@/lib/prisma";
 import type { MarketSignal } from "./types";
 
 const BATCH_SIZE = 10;
@@ -26,6 +31,23 @@ function inferVolumeFlag(volumeSpikeRatio: number | null): "confirmed" | "suspic
   return volumeSpikeRatio >= 1.5 ? "confirmed" : "none";
 }
 
+// Doc bang cache 1-dong hose_foreign_net_buy - tra ve Set rong (khong loi)
+// neu bang chua co du lieu (chua chay cron lan nao) hoac loi ket noi, de
+// KHONG lam sap ca luong chinh vi 1 phan nho khong quan trong bang.
+async function fetchForeignNetBuySet(): Promise<Set<string>> {
+  try {
+    const rows = await prisma.$queryRaw<{ tickers: unknown }[]>`
+      SELECT tickers FROM hose_foreign_net_buy WHERE id = 'latest' LIMIT 1
+    `;
+    const tickers = rows[0]?.tickers;
+    if (Array.isArray(tickers)) return new Set(tickers.map((t) => String(t)));
+    return new Set();
+  } catch (err) {
+    console.error("[marketSignals] Loi doc hose_foreign_net_buy (bo qua, dung Set rong):", err);
+    return new Set();
+  }
+}
+
 export async function fetchMarketSignalsReal(tickers: string[]): Promise<Map<string, MarketSignal>> {
   const map = new Map<string, MarketSignal>();
   if (tickers.length === 0) return map;
@@ -33,6 +55,9 @@ export async function fetchMarketSignalsReal(tickers: string[]): Promise<Map<str
   const vnIndexResult = await fetchOhlcvHistory("^VNINDEX.VN", "6mo");
   const vnIndexCloses =
     vnIndexResult.success && vnIndexResult.data ? extractCloses(vnIndexResult.data) : [];
+
+  // MOI: lay song song voi VN-Index, khong lam cham them (1 truy van nho)
+  const foreignNetBuySet = await fetchForeignNetBuySet();
 
   for (let i = 0; i < tickers.length; i += BATCH_SIZE) {
     const batch = tickers.slice(i, i + BATCH_SIZE);
@@ -58,7 +83,7 @@ export async function fetchMarketSignalsReal(tickers: string[]): Promise<Map<str
         ticker,
         priceInStatus: inferPriceInStatus(rs3m),
         volumeFlag: inferVolumeFlag(volumeSpikeRatio),
-        foreignFlowDirection: "none",
+        foreignFlowDirection: foreignNetBuySet.has(ticker) ? "buy" : "none",
         valuationPercentile: 0.5,
         liquidityScore: 0.5,
         isWatchlisted: false,
@@ -76,7 +101,7 @@ export async function fetchMarketSignalsReal(tickers: string[]): Promise<Map<str
         ticker,
         priceInStatus: "not_reflected",
         volumeFlag: "none",
-        foreignFlowDirection: "none",
+        foreignFlowDirection: foreignNetBuySet.has(ticker) ? "buy" : "none",
         valuationPercentile: 0.5,
         liquidityScore: 0.5,
         isWatchlisted: false,

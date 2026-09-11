@@ -6,7 +6,7 @@
 // (2) Tin TIEU CUC ro rang tu cac loai tin khac (dinh chi/canh bao/margin) -
 //     dung chung bo tu khoa da xac nhan hoat dong voi HNX.
 import { prisma } from "@/lib/prisma";
-import { fetchHoseNews, extractCorporateEvents, type HoseNewsRecord } from "./hose-news-fetcher";
+import { fetchHoseNews, extractCorporateEvents, extractForeignNetBuyTickers, DAILY_SUMMARY_CAT_ID, type HoseNewsRecord } from "./hose-news-fetcher";
 import { stockUniverse } from "@/lib/quant-data";
 
 interface NegativeRule { keywords: string[]; severity: "critical" | "high"; rawImpact: number; typeLabel: string; }
@@ -38,11 +38,12 @@ export interface HoseIngestResult {
   fetchedNewsCount: number;
   corporateEventsSaved: number;
   negativeNewsSaved: number;
+  foreignNetBuyTickers: string[];
   errorCount: number;
 }
 
 export async function ingestHoseData(): Promise<HoseIngestResult> {
-  const result: HoseIngestResult = { fetchedNewsCount: 0, corporateEventsSaved: 0, negativeNewsSaved: 0, errorCount: 0 };
+  const result: HoseIngestResult = { fetchedNewsCount: 0, corporateEventsSaved: 0, negativeNewsSaved: 0, foreignNetBuyTickers: [], errorCount: 0 };
 
   let news: HoseNewsRecord[];
   try {
@@ -122,6 +123,29 @@ export async function ingestHoseData(): Promise<HoseIngestResult> {
     } catch (err) {
       console.error(`[hose-ingest] Loi ghi tin tieu cuc ${contentHash}:`, err);
       result.errorCount++;
+    }
+  }
+
+  // MOI (2026-09-11): trich 5 ma khoi ngoai mua rong nhieu nhat tu chinh
+  // ban tin "Diem tin giao dich" hang ngay (KHONG can nguon moi, KHONG ton
+  // phi - da xac nhan du lieu that co san trong ban tin nay). Ghi vao bang
+  // cache 1-dong "hose_foreign_net_buy" de marketSignals.ts doc lai.
+  const dailySummary = news.find((n) => n.catId === DAILY_SUMMARY_CAT_ID);
+  if (dailySummary) {
+    const tickers = extractForeignNetBuyTickers(dailySummary);
+    result.foreignNetBuyTickers = tickers;
+    if (tickers.length > 0) {
+      try {
+        const tradingDate = dailySummary.postedDate.toISOString().slice(0, 10);
+        await prisma.$executeRaw`
+          INSERT INTO hose_foreign_net_buy (id, tickers, trading_date, fetched_at)
+          VALUES ('latest', ${JSON.stringify(tickers)}::jsonb, ${tradingDate}, now())
+          ON CONFLICT (id) DO UPDATE SET tickers = EXCLUDED.tickers, trading_date = EXCLUDED.trading_date, fetched_at = EXCLUDED.fetched_at
+        `;
+      } catch (err) {
+        console.error("[hose-ingest] Loi ghi hose_foreign_net_buy:", err);
+        result.errorCount++;
+      }
     }
   }
 

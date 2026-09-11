@@ -7,7 +7,7 @@
 import * as cheerio from "cheerio";
 
 const HOSE_NEWS_ENDPOINT = "https://api.hsx.vn/n/api/v1/1/news/cate";
-const DAILY_SUMMARY_CAT_ID = 1048;
+export const DAILY_SUMMARY_CAT_ID = 1048;
 
 export interface HoseNewsRecord {
   id: number;
@@ -96,4 +96,53 @@ export function extractCorporateEvents(record: HoseNewsRecord): HoseCorporateEve
   });
 
   return events;
+}
+
+// MOI (2026-09-11): trich xuat 5 ma dang duoc KHOI NGOAI MUA RONG NHIEU
+// NHAT tu bang "Giao dich cua NDTNN" trong cung ban tin nay - da xac nhan
+// qua du lieu THAT (khong suy doan): ban tin co san cot "Top 5 CP ve KLGD
+// NDTNN mua rong", NHUNG KHONG co cot "ban rong" tuong ung - vi vay CHI
+// tra ve ma "buying" that su ro rang, KHONG suy dien "selling" cho cac ma
+// con lai (thieu can cu se la bia du lieu).
+//
+// Dung parse THEO TUNG DONG <tr> (giong het pattern da chung minh hoat
+// dong cua extractCorporateEvents), khong dung regex tren toan bo HTML
+// phang - tranh phu thuoc vao so luong <td> chinh xac (khong ro tu HTML
+// goc, chi co text da flatten qua .text()).
+export function extractForeignNetBuyTickers(record: HoseNewsRecord): string[] {
+  if (record.catId !== DAILY_SUMMARY_CAT_ID) return [];
+
+  const $ = cheerio.load(record.summaryHtml);
+  const tickers: string[] = [];
+  let foundHeader = false;
+  const MAX_ROWS = 5;
+
+  $("tr").each((_, el) => {
+    if (tickers.length >= MAX_ROWS) return;
+    const rowText = $(el).text().replace(/\s+/g, "");
+
+    if (!foundHeader) {
+      // Header that: "...Top 5 CP về KLGD NĐTNN mua ròng" - sau khi bo
+      // khoang trang thanh "...muarong" (khong dau) hoac "...mua ròng"
+      // (co dau, tuy encoding). Kiem tra ca 2 dang de an toan.
+      if (rowText.includes("mua ròng") || rowText.includes("muaròng") || rowText.toLowerCase().includes("mua rong")) {
+        foundHeader = true;
+      }
+      return;
+    }
+
+    // Moi dong du lieu that co dang: "1MBB23,234,758MBB460,597,657BSR3,949,100"
+    // - 1 STT roi 3 cap [Ma CK 2-5 chu hoa][so co dau phay]. Cot "mua rong"
+    // luon la CAP CUOI CUNG trong dong (thu tu cot: KLGD -> GTGD -> Mua rong).
+    const matches = [...rowText.matchAll(/([A-Z]{2,5})([\d.,]+)/g)];
+    if (matches.length === 0) return;
+
+    const lastMatch = matches[matches.length - 1];
+    const ticker = lastMatch[1];
+    if (/^[A-Z0-9]{2,5}$/.test(ticker)) {
+      tickers.push(ticker);
+    }
+  });
+
+  return tickers;
 }
