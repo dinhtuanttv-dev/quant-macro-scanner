@@ -1,21 +1,32 @@
 import { NextResponse } from "next/server";
 import { fetchOhlcvHistory } from "@/lib/market-data/yahoo-finance-adapter";
 import { extractCloses, calculateAtrSeries, detectMarketRegime } from "@/lib/market-data/technical-indicators";
-import { findTopKCycles, computeQualityScore, computeSummaryStats } from "@/lib/cycle-fingerprint/cycle-scanner";
+import {
+  findTopKCycles, computeQualityScore, computeSummaryStats,
+  computeFanChart, computeTimingForecast, computeExplainability,
+} from "@/lib/cycle-fingerprint/cycle-scanner";
 
-// GIAI DOAN 1 (Top-K Similarity, quet TRONG CHINH LICH SU cua ma dang xem)
+// GIAI DOAN 1 + NHOM 1 (Fan Chart, Timing Forecast, Explainability)
 // - Yahoo Finance 5 nam du lieu + DTW thuan TypeScript. Chua co: quet cheo
 // nhieu ma (cross-market), phan cum HDBSCAN, Monte Carlo, xac nhan da tin
-// hieu - da thong nhat pham vi voi nguoi dung, se lam o Giai doan sau.
+// hieu.
+//
+// QUAN TRONG: alignedSeries (dung cho MainChart, bieu do gia chinh) va cac
+// truong Nhom 1 (fanChart/timingForecast, dung forwardSeries) la 2 luong
+// du lieu HOAN TOAN TACH BIET, dung 2 quy uoc offset khac nhau co chu dich
+// - KHONG duoc gop chung/anh huong lan nhau. MainChart CHI dung alignedSeries.
 export const maxDuration = 30;
 
 const MIN_WINDOW = 10;
 const MAX_WINDOW = 90;
 const DEFAULT_WINDOW = 30;
 const HISTORY_RANGE = "5y";
+// So ung vien dung rieng de tinh Fan Chart/Timing Forecast (thong ke rong
+// hon, dang tin cay hon), TACH RIENG voi so match hien thi (K=5, TopKList/
+// Summary/QualityScore - giu nguyen y het Giai doan 1, KHONG doi).
+const STATS_POOL_SIZE = 20;
 
 function toTicker(rawTicker: string): string {
-  // Chuyen ma VN sang dung dinh dang Yahoo Finance da dung xuyen suot backend
   return rawTicker.toUpperCase().endsWith(".VN") ? rawTicker.toUpperCase() : `${rawTicker.toUpperCase()}.VN`;
 }
 
@@ -31,8 +42,6 @@ export async function GET(request: Request) {
 
   const windowSize = Math.max(MIN_WINDOW, Math.min(MAX_WINDOW, Number(windowParam) || DEFAULT_WINDOW));
 
-  // GIAI DOAN 1: chi ho tro timeframe "daily" - "weekly"/"monthly" can resample
-  // du lieu OHLCV, chua lam o day (danh dau state="insufficient" thay vi bo qua im lang).
   if (timeframe !== "daily") {
     return NextResponse.json({
       ticker: rawTicker, windowSize, timeframe, asOfDate: new Date().toISOString(),
@@ -63,15 +72,19 @@ export async function GET(request: Request) {
     const bars = result.data;
     const closes = extractCloses(bars);
 
-    const matches = findTopKCycles(bars, windowSize, 5);
-    const regimeResult = detectMarketRegime(closes);
-    const qualityScore = computeQualityScore(matches, bars, regimeResult.confidence);
-    const summary = computeSummaryStats(matches);
-    const atrSeries = calculateAtrSeries(bars, 14);
+    // Pool rong (20) de tinh Fan Chart/Timing Forecast; chi hien thi 5 match
+    // tot nhat trong TopKList/Summary/QualityScore (giu nguyen Giai doan 1).
+    const pool = findTopKCycles(bars, windowSize, STATS_POOL_SIZE);
+    const displayMatches = pool.slice(0, 5);
 
-    // priceSeries: hien thi cua so hien tai + 1 doan lich su ngay truoc do de
-    // co ngu canh (khong chi dung dung windowSize phien, de nguoi dung thay
-    // "gia den tu dau").
+    const regimeResult = detectMarketRegime(closes);
+    const qualityScore = computeQualityScore(displayMatches, bars, regimeResult.confidence);
+    const summary = computeSummaryStats(displayMatches);
+    const atrSeries = calculateAtrSeries(bars, 14);
+    const fanChart = computeFanChart(pool);
+    const timingForecast = computeTimingForecast(pool, summary.avgReturnPct);
+    const explainabilityFactors = computeExplainability(qualityScore, displayMatches.length);
+
     const contextBars = Math.min(bars.length, windowSize * 3);
     const priceSeriesBars = bars.slice(-contextBars);
     const priceSeries = priceSeriesBars.map((b) => ({ date: b.date, close: { value: b.close, source: "HARD_DATA" as const } }));
@@ -80,7 +93,10 @@ export async function GET(request: Request) {
       sessionOffset: i - (contextBars - 1), atr: { value: Math.round(atr * 100) / 100, source: "HARD_DATA" as const },
     }));
 
-    const topMatches = matches.map((m) => ({
+    // topMatches.alignedSeries: GIU NGUYEN offset 0..windowSize-1 tu
+    // findTopKCycles, KHONG bien doi gi them o day - day chinh la du lieu
+    // MainChart doc de ve, phai giu dung Giai doan 1.
+    const topMatches = displayMatches.map((m) => ({
       ticker: rawTicker.toUpperCase(),
       matchStartDate: m.matchStartDate,
       matchEndDate: m.matchEndDate,
@@ -96,15 +112,37 @@ export async function GET(request: Request) {
       })),
     }));
 
+    const fanChartForResponse = fanChart.map((b) => ({
+      sessionOffset: b.sessionOffset,
+      p10: { value: b.p10, source: "ESTIMATED" as const },
+      p25: { value: b.p25, source: "ESTIMATED" as const },
+      p50: { value: b.p50, source: "ESTIMATED" as const },
+      p75: { value: b.p75, source: "ESTIMATED" as const },
+      p90: { value: b.p90, source: "ESTIMATED" as const },
+    }));
+
+    const timingForecastForResponse = {
+      targetReturnPct: timingForecast.targetReturnPct,
+      hittingProbability: timingForecast.hittingProbability.map((h) => ({
+        withinSessions: h.withinSessions, probabilityPct: { value: h.probabilityPct, source: "ESTIMATED" as const },
+      })),
+      daysToPeak: { value: timingForecast.daysToPeak, source: "ESTIMATED" as const },
+      daysToTrough: { value: timingForecast.daysToTrough, source: "ESTIMATED" as const },
+    };
+
+    const explainability = {
+      factors: explainabilityFactors.map((f) => ({
+        name: f.name, contributionPct: { value: f.contributionPct, source: "ESTIMATED" as const }, description: f.description,
+      })),
+    };
+
     return NextResponse.json({
       ticker: rawTicker.toUpperCase(),
-      windowSize,
-      timeframe,
-      asOfDate: new Date().toISOString(),
-      state: matches.length > 0 ? "success" : "insufficient",
+      windowSize, timeframe, asOfDate: new Date().toISOString(),
+      state: displayMatches.length > 0 ? "success" : "insufficient",
       priceSeries,
       topMatches,
-      cluster: null, // Giai doan sau (HDBSCAN)
+      cluster: null,
       qualityScore: {
         similarity: { value: qualityScore.similarity, source: "HARD_DATA" as const },
         liquidity: { value: qualityScore.liquidity, source: "ESTIMATED" as const },
@@ -119,8 +157,10 @@ export async function GET(request: Request) {
         maxDrawdownPct: { value: summary.maxDrawdownPct, source: "HARD_DATA" as const },
         sampleCount: summary.sampleCount,
       },
-      fanChart: [], // Giai doan sau
+      fanChart: fanChartForResponse,
       atrSeries: atrSeriesForResponse,
+      timingForecast: timingForecastForResponse,
+      explainability,
     });
   } catch (err) {
     console.error("[cycle-fingerprint/analyze] Loi:", err);

@@ -13,6 +13,8 @@ import { calculateAtrSeries, detectMarketRegime } from "@/lib/market-data/techni
 const FORWARD_HORIZONS = [10, 20, 30, 60] as const;
 const MAX_FORWARD_HORIZON = 60;
 
+export interface SeriesPoint { sessionOffset: number; normalizedClose: number; }
+
 export interface CycleMatchResult {
   startIndex: number;
   endIndex: number; // inclusive
@@ -20,7 +22,16 @@ export interface CycleMatchResult {
   matchEndDate: string;
   distance: number;
   similarityPct: number; // 0-100, da chuan hoa trong pham vi lan quet nay
-  alignedSeries: { sessionOffset: number; normalizedClose: number }[]; // base=100 tai diem khop
+  // KHONG DUOC DOI offset cua truong nay (0..windowSize-1, 0 = DAU cua so) -
+  // day chinh la nguyen nhan gay loi bieu do o lan trien khai Nhom 1 truoc
+  // (doi sang -(windowSize-1)..0 lam MainChart hien khac han ban goc). Moi
+  // du lieu Nhom 1 (Fan Chart/Timing Forecast) dung `forwardSeries` RIENG
+  // BIET (offset 0..+60), KHONG DUNG DEN alignedSeries.
+  alignedSeries: SeriesPoint[];
+  // MOI (Nhom 1): dien bien SAU KHI mau hinh ket thuc, base=100 TAI DIEM
+  // KET THUC mau hinh, offset 0..+60. Dung rieng cho Fan Chart/Timing
+  // Forecast - KHONG anh huong gi den MainChart/alignedSeries.
+  forwardSeries: SeriesPoint[];
   returns: Record<(typeof FORWARD_HORIZONS)[number], number>; // % thay doi N phien SAU khi ket thuc mau hinh
   forwardMaxDrawdownPct: number; // muc sut giam toi da trong 60 phien sau do (gia tri <= 0)
 }
@@ -71,11 +82,22 @@ export function findTopKCycles(bars: OhlcvBar[], windowSize: number, k: number =
 
   return top.map((cand) => {
     const matchEndIdxExclusive = cand.endIndex + 1;
+    // Mau hinh (pattern) - offset 0..windowSize-1 (0 = DAU cua so) - GIU
+    // NGUYEN Y HET ban Giai doan 1 goc, KHONG DOI.
     const alignedSlice = closes.slice(cand.startIndex, matchEndIdxExclusive);
     const alignedNorm = normalizeToBase100(alignedSlice);
-    const alignedSeries = alignedNorm.map((v, i) => ({ sessionOffset: i, normalizedClose: v }));
+    const alignedSeries: SeriesPoint[] = alignedNorm.map((v, i) => ({ sessionOffset: i, normalizedClose: v }));
 
     const priceAtMatchEnd = closes[cand.endIndex];
+
+    // MOI (Nhom 1): dien bien SAU DO, base=100 TAI DIEM KET THUC mau hinh,
+    // offset 0..+60 - hoan toan tach biet voi alignedSeries o tren.
+    const forwardRaw = closes.slice(cand.endIndex, Math.min(cand.endIndex + MAX_FORWARD_HORIZON + 1, L));
+    const forwardSeries: SeriesPoint[] = forwardRaw.map((c, i) => ({
+      sessionOffset: i,
+      normalizedClose: priceAtMatchEnd === 0 ? 100 : (c / priceAtMatchEnd) * 100,
+    }));
+
     const returns = {} as Record<(typeof FORWARD_HORIZONS)[number], number>;
     for (const h of FORWARD_HORIZONS) {
       const futureIdx = cand.endIndex + h;
@@ -103,6 +125,7 @@ export function findTopKCycles(bars: OhlcvBar[], windowSize: number, k: number =
       distance: cand.distance,
       similarityPct,
       alignedSeries,
+      forwardSeries,
       returns,
       forwardMaxDrawdownPct: Math.round(maxDD * 10) / 10,
     };
@@ -172,3 +195,131 @@ export function computeSummaryStats(matches: CycleMatchResult[]): SummaryStatsRe
 }
 
 export { detectMarketRegime, calculateAtrSeries };
+
+// ============================================================
+// FAN CHART (P10-P90) - NHOM 1
+// Dai xac suat tai TUNG phien SAU KHI mau hinh ket thuc, tinh tu phan vi
+// (percentile) cua forwardSeries qua toan bo pool match - hoan toan doc
+// lap voi alignedSeries/MainChart, hien thi o component RIENG.
+// ============================================================
+
+export interface FanChartBandResult { sessionOffset: number; p10: number; p25: number; p50: number; p75: number; p90: number; }
+
+function percentile(sortedAsc: number[], p: number): number {
+  if (sortedAsc.length === 0) return 0;
+  if (sortedAsc.length === 1) return sortedAsc[0];
+  const idx = p * (sortedAsc.length - 1);
+  const lower = Math.floor(idx);
+  const upper = Math.ceil(idx);
+  if (lower === upper) return sortedAsc[lower];
+  const frac = idx - lower;
+  return sortedAsc[lower] + (sortedAsc[upper] - sortedAsc[lower]) * frac;
+}
+
+export function computeFanChart(matches: CycleMatchResult[]): FanChartBandResult[] {
+  if (matches.length === 0) return [];
+  const maxOffset = Math.max(...matches.map((m) => m.forwardSeries.length - 1));
+  const bands: FanChartBandResult[] = [];
+
+  for (let offset = 0; offset <= maxOffset; offset++) {
+    const values = matches
+      .map((m) => m.forwardSeries.find((p) => p.sessionOffset === offset)?.normalizedClose)
+      .filter((v): v is number => v !== undefined)
+      .sort((a, b) => a - b);
+    if (values.length === 0) continue;
+
+    bands.push({
+      sessionOffset: offset,
+      p10: Math.round(percentile(values, 0.1) * 100) / 100,
+      p25: Math.round(percentile(values, 0.25) * 100) / 100,
+      p50: Math.round(percentile(values, 0.5) * 100) / 100,
+      p75: Math.round(percentile(values, 0.75) * 100) / 100,
+      p90: Math.round(percentile(values, 0.9) * 100) / 100,
+    });
+  }
+  return bands;
+}
+
+// ============================================================
+// TIMING FORECAST - NHOM 1
+// ============================================================
+
+export interface TimingForecastResult {
+  targetReturnPct: number;
+  hittingProbability: { withinSessions: number; probabilityPct: number }[];
+  daysToPeak: number;
+  daysToTrough: number;
+}
+
+function reachedTargetWithin(forwardSeries: SeriesPoint[], targetPct: number, withinSessions: number): boolean {
+  const targetValue = 100 * (1 + targetPct / 100);
+  const relevant = forwardSeries.filter((p) => p.sessionOffset > 0 && p.sessionOffset <= withinSessions);
+  return targetPct >= 0 ? relevant.some((p) => p.normalizedClose >= targetValue) : relevant.some((p) => p.normalizedClose <= targetValue);
+}
+
+export function computeTimingForecast(matches: CycleMatchResult[], avgReturnPct: number): TimingForecastResult {
+  const rounded = Math.round(avgReturnPct);
+  const targetReturnPct = rounded === 0 ? 3 : (Math.abs(rounded) < 3 ? Math.sign(rounded) * 3 : rounded);
+
+  const horizons = [10, 20, 30, 60];
+  const hittingProbability = horizons.map((h) => {
+    const count = matches.filter((m) => reachedTargetWithin(m.forwardSeries, targetReturnPct, h)).length;
+    return { withinSessions: h, probabilityPct: matches.length > 0 ? Math.round((count / matches.length) * 1000) / 10 : 0 };
+  });
+
+  const peakOffsets = matches.map((m) => {
+    let peakVal = -Infinity, peakOffset = 0;
+    for (const p of m.forwardSeries) if (p.normalizedClose > peakVal) { peakVal = p.normalizedClose; peakOffset = p.sessionOffset; }
+    return peakOffset;
+  });
+  const troughOffsets = matches.map((m) => {
+    let troughVal = Infinity, troughOffset = 0;
+    for (const p of m.forwardSeries) if (p.normalizedClose < troughVal) { troughVal = p.normalizedClose; troughOffset = p.sessionOffset; }
+    return troughOffset;
+  });
+
+  const avg = (arr: number[]) => (arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0);
+
+  return {
+    targetReturnPct,
+    hittingProbability,
+    daysToPeak: Math.round(avg(peakOffsets) * 10) / 10,
+    daysToTrough: Math.round(avg(troughOffsets) * 10) / 10,
+  };
+}
+
+// ============================================================
+// EXPLAINABILITY - NHOM 1
+// ============================================================
+
+export interface ExplainFactorResult { name: string; contributionPct: number; description: string; }
+
+export function computeExplainability(qs: QualityScoreResult, matchCount: number): ExplainFactorResult[] {
+  const weights = { similarity: 0.4, liquidity: 0.2, regime: 0.2, sampleSize: 0.2 };
+  const weighted = {
+    similarity: qs.similarity * weights.similarity,
+    liquidity: qs.liquidity * weights.liquidity,
+    regime: qs.regime * weights.regime,
+    sampleSize: qs.sampleSize * weights.sampleSize,
+  };
+  const total = Object.values(weighted).reduce((a, b) => a + b, 0) || 1e-9;
+
+  return [
+    {
+      name: "Similarity", contributionPct: Math.round((weighted.similarity / total) * 1000) / 10,
+      description: `Cac chu ky lich su tim duoc co do tuong dong trung binh ${Math.round(qs.similarity * 100)}% (DTW) voi mau hinh hien tai.`,
+    },
+    {
+      name: "Liquidity", contributionPct: Math.round((weighted.liquidity / total) * 1000) / 10,
+      description: `Khoi luong giao dich gan day dat ${Math.round(qs.liquidity * 100)}% muc tham chieu (uoc tinh don gian tren chinh lich su cua ma, chua phai xep hang thanh khoan toan thi truong).`,
+    },
+    {
+      name: "Regime", contributionPct: Math.round((weighted.regime / total) * 1000) / 10,
+      description: `Do tin cay nhan dien trang thai thi truong hien tai (xu huong tang/giam/di ngang) dat ${Math.round(qs.regime * 100)}%.`,
+    },
+    {
+      name: "Sample-size", contributionPct: Math.round((weighted.sampleSize / total) * 1000) / 10,
+      description: `Tim duoc ${matchCount} chu ky lich su du dieu kien (toi da 5 de dat diem tuyet doi).`,
+    },
+  ];
+}
