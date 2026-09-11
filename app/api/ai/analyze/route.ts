@@ -8,6 +8,12 @@ import { fetchMacroNews } from "@/lib/news/macro-rss";
 // sau khi khoi dong lai (Turbopack bien dich lan dau).
 export const maxDuration = 60;
 
+// NANG CAP (2026-09-11): giu lich su toi da 3 LAN CHAY gan nhat (khong
+// phai 3 NGAY) - moi lan bam "Chay Phan Tich AI" la 1 run, danh dau bang
+// analysis_run_id (UUID). Sau khi ghi run moi, xoa cac run cu hon 3 lan
+// gan nhat de bang khong phinh to vo han qua thoi gian.
+const MAX_RETAINED_RUNS = 3;
+
 export async function POST(request: Request) {
   const supabase = createServiceClient();
 
@@ -25,12 +31,6 @@ export async function POST(request: Request) {
     }
   }
 
-  // FIX (2026-08-26): ban truoc chi kiem tra !latestMarkets, khong doc
-  // truong `error` ma Supabase JS tra ve khi query that bai (thu vien nay
-  // KHONG throw, tra { data: null, error: {...} }). Neu co loi that (key
-  // sai, RLS chan, ten bang sai...), code cu se hien nham thanh "chua co
-  // du lieu" - sai hoan toan nguyen nhan that, gay kho debug (dung tinh
-  // than "khong suy doan" - phai lo ro nguyen nhan that).
   const { data: latestMarkets, error: queryError } = await supabase
     .from("world_market_pulse").select("*").order("fetched_at", { ascending: false }).limit(10);
 
@@ -51,42 +51,49 @@ export async function POST(request: Request) {
   }));
 
   try {
-    // MUC 3 (2026-08-29): kich hoat News Agent that, thay vi truyen mang
-    // rong nhu truoc day (News Agent chua bao gio duoc goi thuc su).
     const news = await fetchMacroNews();
     const analysis = await runMultiAgentAnalysis(dataPoints, news);
 
+    // NANG CAP: 1 UUID danh dau toan bo cac ban ghi thuoc CUNG 1 lan chay
+    // nay - de frontend co the tach lich su theo tung lan bam nut, thay
+    // vi tron lan nhu truoc day (route impact-table cu chi lay 20 dong
+    // gan nhat khong phan biet lan chay nao).
+    const runId = crypto.randomUUID();
+
     await supabase.from("audit_log").insert({
       action: "ai_analyze", data_sources: dataPoints.map((d: any) => d.id),
-      model_version: "gemini-3.6-flash", confidence: analysis.finalConfidence,
+      model_version: "gemini-3.6-flash", confidence: analysis.sectors.length > 0
+        ? analysis.sectors.reduce((s, x) => s + x.confidence, 0) / analysis.sectors.length
+        : 0,
     });
 
-    // MOI (Bang tong hop tac dong co phieu): ghi vao world_impact_events -
-    // bang nay da co san trong schema tu Buoc 4 nhung chua route nao dung.
-    // Kiem tra loi insert ro rang, khong im lang nuot loi (dung thoi quen
-    // da thiet lap sau bug market_pulse/macro_trends truoc do).
+    // NANG CAP: gio ghi 1 dong / nganh VOI direction/confidence/reasoning
+    // RIENG (truoc day ca N dong deu copy y het 1 ket luan chung).
     let impactEventsWritten = 0;
     let impactEventsError: string | null = null;
-    if (analysis.market?.affectedSectorKeys?.length > 0) {
+    if (analysis.sectors.length > 0) {
       const { lookupSectorMapping } = await import("@/lib/mapping/macro-mapping");
-      const events = analysis.market.affectedSectorKeys
-        .map((key: string) => {
-          const mapping = lookupSectorMapping(key);
+      const events = analysis.sectors
+        .map((sector) => {
+          const mapping = lookupSectorMapping(sector.sectorKey);
           if (!mapping) return null; // Bo qua sector key khong xac dinh, khong bia mapping rong
           return {
-            title: analysis.market.summaryVi,
-            source_category: "market_index", // MOI (Muc 1) - phan biet nguon: chung khoan vs hang hoa (Muc 2 sau)
-            sector_key: key,
-            direction: analysis.market.direction,
-            impact_score: Math.round(analysis.finalConfidence * 100),
-            confidence: analysis.finalConfidence,
+            analysis_run_id: runId,
+            title: analysis.overallSummaryVi, // MOI: dung 1 tieu de chung, frontend chi hien 1 lan o dau bang
+            source_category: "market_index",
+            sector_key: sector.sectorKey,
+            direction: sector.direction, // MOI: "bullish"|"bearish"|"neutral", RIENG cho nganh nay
+            impact_score: Math.round(sector.confidence * 100),
+            confidence: sector.confidence,
+            reasoning_vi: sector.reasoningVi, // MOI
+            evidence_refs: sector.evidenceRefs, // MOI
             horizon: "short_term",
             vn_tickers: mapping.vnTickers,
             sources: [],
             ai_model: "gemini-3.6-flash",
           };
         })
-        .filter((e: unknown): e is NonNullable<typeof e> => e !== null);
+        .filter((e): e is Exclude<typeof e, null> => e !== null);
 
       if (events.length > 0) {
         const { error: impactError, data: insertedRows } = await supabase.from("world_ai_impact_events").insert(events).select("id");
@@ -95,21 +102,43 @@ export async function POST(request: Request) {
           impactEventsError = impactError.message;
         } else {
           impactEventsWritten = insertedRows?.length ?? 0;
+
+          // Don rac: giu lai dung MAX_RETAINED_RUNS lan chay gan nhat.
+          // Tim cac run_id CU HON top-N, xoa het cac dong thuoc run do.
+          const { data: distinctRuns } = await supabase
+            .from("world_ai_impact_events")
+            .select("analysis_run_id, created_at")
+            .not("analysis_run_id", "is", null)
+            .order("created_at", { ascending: false })
+            .limit(500); // du lon de bao quat vai chuc run x vai nganh/run
+
+          if (distinctRuns) {
+            const seen = new Set<string>();
+            const runIdsOrdered: string[] = [];
+            for (const row of distinctRuns) {
+              const rid = row.analysis_run_id as string;
+              if (!seen.has(rid)) { seen.add(rid); runIdsOrdered.push(rid); }
+            }
+            const runIdsToDelete = runIdsOrdered.slice(MAX_RETAINED_RUNS);
+            if (runIdsToDelete.length > 0) {
+              const { error: deleteError } = await supabase
+                .from("world_ai_impact_events").delete().in("analysis_run_id", runIdsToDelete);
+              if (deleteError) {
+                // Khong lam that bai request chinh vi loi don rac - chi log
+                console.error("[/api/ai/analyze] Loi don rac run cu:", deleteError);
+              }
+            }
+          }
         }
       }
     }
 
-    const responsePayload = { ...analysis, impactEventsWritten, impactEventsError };
+    const responsePayload = { ...analysis, runId, impactEventsWritten, impactEventsError };
 
-    // Ghi cache SAU khi da co ket qua thanh cong - lan goi tiep theo trong
-    // 45 phut se doc thang tu day, khong goi Gemini nua.
     await supabase.from("ai_analysis_cache").upsert({ id: "latest", result: responsePayload, generated_at: new Date().toISOString() });
 
     return NextResponse.json({ ...responsePayload, cached: false });
   } catch (err) {
-    // FIX: goi Gemini co the loi (key sai, quota, model name sai...) -
-    // ban truoc khong bat, se lam Next.js tra ve 500 chung chung "Internal
-    // Server Error" khong co chi tiet gi. Gio tra ve ly do that.
     console.error("[/api/ai/analyze] Loi goi Gemini:", err);
     return NextResponse.json(
       { error: `Lỗi khi gọi Gemini AI: ${err instanceof Error ? err.message : String(err)}` },
