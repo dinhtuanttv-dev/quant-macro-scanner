@@ -1,7 +1,12 @@
 ﻿import { NextResponse } from "next/server";
 import { ingestHoseData } from "@/lib/ingestion/hose/hose-ingest";
 
-export const maxDuration = 15;
+// FIX (2026-09-11): 15s qua thap cho khoi luong tin 7 ngay + ghi tuan tu
+// tung dong (khong gop lo) - de gay FUNCTION_INVOCATION_TIMEOUT tren
+// Vercel, KHONG lien quan gi den phan Foreign Flow moi them (chi cong
+// them dung 1 lan ghi). Tang len 60s giong cac route xu ly nang khac
+// trong du an (VD /api/ai/analyze).
+export const maxDuration = 60;
 
 export async function GET(request: Request) {
   const auth = request.headers.get("authorization");
