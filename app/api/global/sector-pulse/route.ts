@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { computeAsiaBasketProxy } from "@/lib/asia-sector-proxy";
 
 // MUC 2: Sector Pulse - GIAI DOAN 1 chi thi truong My, dung 11 Sector ETF
 // chuan SPDR (thanh khoan cao, ticker on dinh - khac han Iron Ore/Rubber
@@ -33,10 +34,21 @@ const EU_SECTOR_ETFS: Record<string, string> = {
   "BRE.PA": "Vật liệu cơ bản",
 };
 
-const VALID_REGIONS = ["us", "eu"] as const;
+// MUC 3 (Chau A, 2026-09-11): KHONG co ETF nganh thong nhat toan khu vuc
+// nhu My/Au - dung PHUONG PHAP RO CO PHIEU DAU NGANH (xem lib/asia-sector-
+// proxy.ts): trung binh cong + loc outlier z-score, KHONG trong so von
+// hoa (Yahoo da khoa endpoint quote/marketCap tu 1/2026). Chi 2/3 rổ da
+// xac minh ticker qua nghien cuu thuc te - Nang luong CHUA co ro dai dien
+// dang tin cay, KHONG dua vao de tranh bia du lieu.
+const ASIA_SECTOR_BASKETS: Record<string, { labelVi: string; tickers: string[] }> = {
+  SEMICONDUCTOR_TECH: { labelVi: "Công nghệ / Bán dẫn", tickers: ["2330.TW", "005930.KS", "000660.KS"] },
+  BANKING_FINANCE: { labelVi: "Tài chính / Ngân hàng", tickers: ["D05.SI", "HDFCBANK.NS"] },
+};
+
+const VALID_REGIONS = ["us", "eu", "asia"] as const;
 type Region = (typeof VALID_REGIONS)[number];
 
-const REGION_CONFIG: Record<Region, { etfs: Record<string, string>; marketLabel: string }> = {
+const REGION_CONFIG: Record<Exclude<Region, "asia">, { etfs: Record<string, string>; marketLabel: string }> = {
   us: { etfs: US_SECTOR_ETFS, marketLabel: "US" },
   eu: { etfs: EU_SECTOR_ETFS, marketLabel: "EU" },
 };
@@ -73,6 +85,41 @@ export async function GET(request: Request) {
     );
   }
   const region = regionParam as Region;
+
+  // Chau A dung co che khac han (ro co phieu + loc outlier, khong phai
+  // 1 ETF/nganh) - tach nhanh xu ly rieng, KHONG dung chung REGION_CONFIG.
+  if (region === "asia") {
+    const entries = Object.entries(ASIA_SECTOR_BASKETS);
+    const basketResults = await Promise.all(
+      entries.map(([sectorKey, basket]) => computeAsiaBasketProxy(basket.tickers)),
+    );
+
+    const quotes = entries
+      .map(([sectorKey, basket], i) => ({
+        etfSymbol: sectorKey, // dung sectorKey lam dinh danh - frontend resolveAsiaSectorKey doi khop truc tiep sectorKey
+        sectorNameVi: basket.labelVi,
+        market: "ASIA",
+        changePercent: basketResults[i].changePercent,
+        fetchedAt: new Date().toISOString(),
+      }))
+      .filter((q): q is { etfSymbol: string; sectorNameVi: string; market: string; changePercent: number; fetchedAt: string } => q.changePercent !== null);
+
+    if (quotes.length === 0) {
+      return NextResponse.json({ error: "Không tính được rổ Châu Á nào (Yahoo Finance lỗi hoặc tất cả mã đều bị loại outlier)." }, { status: 502 });
+    }
+
+    const sorted = [...quotes].sort((a, b) => b.changePercent - a.changePercent);
+    const gainers = sorted.filter((q) => q.changePercent >= 0).slice(0, 3);
+    const losers = sorted.filter((q) => q.changePercent < 0).slice(-3).reverse();
+
+    return NextResponse.json({
+      market: "ASIA",
+      topGainers: gainers,
+      topLosers: losers,
+      fetchedAt: new Date().toISOString(),
+    });
+  }
+
   const { etfs, marketLabel } = REGION_CONFIG[region];
 
   const entries = Object.entries(etfs);
