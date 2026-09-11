@@ -42,6 +42,36 @@ const RAW_SECTOR_MAP: Record<string, string> = {
   exporttextile: "Det may",
   technology: "Cong nghe",
   agriculture: "Nong san",
+
+  // FIX (2026-09-11): PHAT HIEN LOI THAT - hose-ingest.ts dung findSector()
+  // lay thang nhan "sector" tu stockUniverse (lib/quant-data.ts) roi truyen
+  // qua resolveSectorName() giong het cac tin RSS thuong (qua classifier.ts).
+  // Nhung 2 nguon nay dung TU VUNG KHAC NHAU: classifier.ts sinh key kieu
+  // tieng Anh ("Banking", "Steel"...), con stockUniverse dung thang nhan
+  // tieng Viet khong dau ("Ngan hang", "Cao su"...) - lam MOI nhan tu HOSE
+  // deu roi vao quarantine oan, du la nhan da CHUAN, khong can dich them.
+  // Them toan bo 19 nganh THAT trong stockUniverse (khong chi 2 nganh dang
+  // thay tren UI - de tranh cac nganh HOSE khac tiep tuc bi bao "chua anh
+  // xa" oan trong tuong lai). Anh xa "chinh no" vi da la nhan chuan.
+  "cong nghe": "Cong nghe",
+  "dau khi": "Dau khi",
+  "ngan hang": "Ngan hang",
+  "van tai bien": "Van tai bien",
+  "hoa chat": "Hoa chat",
+  "cao su": "Cao su",
+  "ban le": "Ban le",
+  "bat dong san": "Bat dong san",
+  "thep": "Thep",
+  "chung khoan": "Chung khoan",
+  "phan bon/hoa chat": "Phan bon/Hoa chat",
+  "nang luong/dien": "Nang luong/Dien",
+  "hang khong": "Hang khong",
+  "khu cong nghiep": "Khu cong nghiep",
+  "det may": "Det may",
+  "xuat khau (go, thuy san)": "Xuat khau (Go, Thuy san)",
+  "duoc pham": "Duoc pham",
+  "nong nghiep": "Nong nghiep",
+  "vat lieu xay dung": "Vat lieu xay dung",
 };
 
 // Lop 2: gia tri sentinel - KHONG PHAI nganh that, loai truc tiep khong qua Lop 3
@@ -106,10 +136,34 @@ export async function resolveSectorName(rawKey: string): Promise<SectorResolutio
   return { displayName: null, wasUnmapped: true };
 }
 
-// Doc lai danh sach nganh chua anh xa - dung cho admin panel (UI wiring o phase sau)
+// Doc lai danh sach nganh chua anh xa - dung cho admin panel.
+// FIX (2026-09-11): loc bo TU DONG cac key TRUOC DAY bi quarantine nhung
+// GIO DA duoc them vao RAW_SECTOR_MAP (VD sau khi sua loi nay) - neu khong
+// loc, entry cu se "ket dinh" mai trong Redis, hien "chua anh xa" gia du
+// code da sua dung, gay hieu lam. Khong can chay script don dep thu cong
+// moi lan cap nhat RAW_SECTOR_MAP nua.
 export async function getUnmappedSectors(): Promise<Record<string, number>> {
   const data = await redis.hgetall<Record<string, number>>(UNMAPPED_REGISTRY_KEY);
-  return data ?? {};
+  if (!data) return {};
+
+  const stillUnmapped: Record<string, number> = {};
+  const nowResolvedKeys: string[] = [];
+  for (const [rawKey, count] of Object.entries(data)) {
+    if (resolveSectorNameSync(rawKey) !== null) {
+      nowResolvedKeys.push(rawKey); // da co trong RAW_SECTOR_MAP - khong con can admin xem
+    } else {
+      stillUnmapped[rawKey] = count;
+    }
+  }
+
+  // Don dep ngam cac key da duoc giai quyet - khong lam cham response (fire-and-forget)
+  if (nowResolvedKeys.length > 0) {
+    Promise.all(nowResolvedKeys.map((k) => clearResolvedFromQuarantine(k))).catch((err) =>
+      console.warn("[SectorRegistry] Loi don dep quarantine da giai quyet:", err),
+    );
+  }
+
+  return stillUnmapped;
 }
 
 // Sau khi admin them entry moi vao RAW_SECTOR_MAP va deploy, goi ham nay de xoa
