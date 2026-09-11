@@ -77,6 +77,79 @@ export function extractCloses(bars: OhlcvBar[]): number[] {
 }
 
 // ============================================================
+// PRICE-VOLUME TREND (PVT) - HARD_DATA
+// Do "dong tien co trong luong" - khac RS (chi nhin gia) va Volume Spike
+// (chi nhin 1 phien dot bien) o cho PVT tich luy CA huong gia LAN khoi
+// luong qua nhieu phien lien tuc, phat hien dong tien vao/ra ben vung
+// thay vi 1 phien dot bien roi tat.
+// ============================================================
+
+/** PVT tich luy tai TUNG phien (mang cung do dai voi bars). */
+export function calculatePVT(bars: OhlcvBar[]): number[] {
+  const pvt: number[] = [];
+  let cumulative = 0;
+  for (let i = 0; i < bars.length; i++) {
+    if (i > 0) {
+      const prevClose = bars[i - 1].close;
+      if (prevClose !== 0) {
+        cumulative += bars[i].volume * ((bars[i].close - prevClose) / prevClose);
+      }
+    }
+    pvt.push(cumulative);
+  }
+  return pvt;
+}
+
+/**
+ * Diem xu huong PVT trong N phien gan nhat, CHUAN HOA theo bien do PVT
+ * trong chinh ky do (khong dung gia tri tuyet doi - von rat khac nhau
+ * giua ma von hoa lon/nho, khong the so sanh truc tiep giua cac ma).
+ * Tra ve -100 (dong tien rut manh) den +100 (dong tien vao manh).
+ */
+export function calculatePVTTrendScore(bars: OhlcvBar[], lookback: number = 20): number | null {
+  if (bars.length < lookback + 1) return null;
+  const pvtSeries = calculatePVT(bars).slice(-lookback);
+  const first = pvtSeries[0];
+  const last = pvtSeries[pvtSeries.length - 1];
+  const range = Math.max(...pvtSeries) - Math.min(...pvtSeries);
+  if (range === 0) return 0;
+  return Math.round(((last - first) / range) * 100);
+}
+
+// ============================================================
+// ACCUMULATION/DISTRIBUTION LINE (A/D) - HARD_DATA
+// Do ap luc mua/ban THUC SU trong TUNG phien qua vi tri dong cua so voi
+// bien do cao-thap trong phien (dong cua gan dinh = ap luc mua manh, du
+// gia co the chua tang manh) - phat hien tich luy/phan phoi SOM hon RS
+// (von chi phan anh sau khi gia da thay doi ro ret).
+// ============================================================
+
+/** A/D Line tich luy tai TUNG phien (mang cung do dai voi bars). */
+export function calculateADLine(bars: OhlcvBar[]): number[] {
+  const ad: number[] = [];
+  let cumulative = 0;
+  for (const bar of bars) {
+    const range = bar.high - bar.low;
+    // Money Flow Multiplier: -1 (dong cua tai day) den +1 (dong cua tai dinh)
+    const mfm = range === 0 ? 0 : ((bar.close - bar.low) - (bar.high - bar.close)) / range;
+    cumulative += mfm * bar.volume;
+    ad.push(cumulative);
+  }
+  return ad;
+}
+
+/** Diem xu huong A/D trong N phien gan nhat, chuan hoa giong PVTTrendScore. */
+export function calculateADTrendScore(bars: OhlcvBar[], lookback: number = 20): number | null {
+  if (bars.length < lookback + 1) return null;
+  const adSeries = calculateADLine(bars).slice(-lookback);
+  const first = adSeries[0];
+  const last = adSeries[adSeries.length - 1];
+  const range = Math.max(...adSeries) - Math.min(...adSeries);
+  if (range === 0) return 0;
+  return Math.round(((last - first) / range) * 100);
+}
+
+// ============================================================
 // BOLLINGER BAND - HARD_DATA (tinh tu OHLCV thuc)
 // ============================================================
 
