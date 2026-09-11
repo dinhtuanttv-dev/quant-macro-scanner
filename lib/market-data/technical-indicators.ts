@@ -77,6 +77,34 @@ export function extractCloses(bars: OhlcvBar[]): number[] {
 }
 
 // ============================================================
+// AVERAGE TRUE RANGE (ATR) - HARD_DATA
+// Do bien dong tuyet doi trung binh - dung cho truc thoi gian theo ATR
+// cua Cycle Fingerprint (phien bien dong cao "chiem nhieu khong gian thoi
+// gian" hon phien bien dong thap khi so sanh mau hinh gia).
+// ============================================================
+
+/** True Range tai TUNG phien (mang cung do dai voi bars, phien dau = high-low don gian vi chua co dong cua hom truoc). */
+export function calculateTrueRangeSeries(bars: OhlcvBar[]): number[] {
+  return bars.map((bar, i) => {
+    if (i === 0) return bar.high - bar.low;
+    const prevClose = bars[i - 1].close;
+    return Math.max(bar.high - bar.low, Math.abs(bar.high - prevClose), Math.abs(bar.low - prevClose));
+  });
+}
+
+/** ATR (trung binh truot don gian cua True Range, chu ky mac dinh 14 phien) tai TUNG phien. */
+export function calculateAtrSeries(bars: OhlcvBar[], period: number = 14): number[] {
+  const tr = calculateTrueRangeSeries(bars);
+  const atr: number[] = [];
+  for (let i = 0; i < tr.length; i++) {
+    const start = Math.max(0, i - period + 1);
+    const slice = tr.slice(start, i + 1);
+    atr.push(slice.reduce((a, b) => a + b, 0) / slice.length);
+  }
+  return atr;
+}
+
+// ============================================================
 // PRICE-VOLUME TREND (PVT) - HARD_DATA
 // Do "dong tien co trong luong" - khac RS (chi nhin gia) va Volume Spike
 // (chi nhin 1 phien dot bien) o cho PVT tich luy CA huong gia LAN khoi
