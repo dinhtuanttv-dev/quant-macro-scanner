@@ -79,11 +79,18 @@ export function findTopKCycles(bars: OhlcvBar[], windowSize: number, poolSize: n
   return top.map((cand) => {
     const matchEndIdxExclusive = cand.endIndex + 1;
 
-    // Mau hinh (pattern) - base=100 tai DAU cua so, offset AM den 0 (0 = ket thuc mau hinh)
+    // Mau hinh (pattern) - base=100 tai DAU cua so.
+    // FIX (2026-09-11, theo yeu cau khoi phuc dung Giai doan 1): offset
+    // 0..windowSize-1 (0 = DAU cua so, KHONG PHAI -(windowSize-1)..0 nhu
+    // ban "sua loi lech truc" truoc do) - gia tri nay lam duong gia chinh
+    // bi keo dan het 100% chieu rong bieu do (khac han giao dien goc nguoi
+    // dung da quen thuoc tu Giai doan 1). KHONG anh huong Fan Chart/Timing
+    // Forecast/Explainability vi cac tinh nang do dung forwardSeries (quy
+    // uoc offset rieng, khong lien quan gi den alignedSeries).
     const alignedSlice = closes.slice(cand.startIndex, matchEndIdxExclusive);
     const alignedNorm = normalizeToBase100(alignedSlice);
     const alignedSeries: SeriesPoint[] = alignedNorm.map((v, i) => ({
-      sessionOffset: i - (windowSize - 1),
+      sessionOffset: i,
       normalizedClose: v,
     }));
 
