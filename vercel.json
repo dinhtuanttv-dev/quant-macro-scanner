@@ -8,7 +8,7 @@
     "api/stock.py": {
       "maxDuration": 30
     },
-    "api/cluster/index.py": {
+    "api/cluster.py": {
       "maxDuration": 30
     }
   }

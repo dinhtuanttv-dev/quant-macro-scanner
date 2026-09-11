@@ -1,23 +1,22 @@
 """
-api/cluster/index.py — Vercel Python Serverless Function (FastAPI/ASGI).
+api/cluster.py — Vercel Python Serverless Function (FastAPI/ASGI).
 
 Chay HDBSCAN THAT tren ma tran khoang cach DTW ĐÃ TÍNH SẴN ở TypeScript
 (khong tinh lai DTW o day - tranh trung lap logic backend, dung dung
 nguyen tac "khong viet trung logic da co" da thong nhat tu dau du an).
 
-QUAN TRONG - requirements.txt RIENG BIET voi api/requirements.txt (dung
-cho api/stock.py): file nay dat trong thu muc con api/cluster/, kem theo
-1 requirements.txt RIENG cung thu muc - Vercel Python Runtime tu dong tim
-requirements.txt GAN NHAT voi entrypoint (uu tien thu muc con truoc thu
-muc cha). Muc dich: stock.py (chi can vnstock+pandas, nhe) KHONG bi anh
-huong boi cac goi nang hon (numpy/scipy/scikit-learn/hdbscan) ma cluster
-nay can - tranh lam cham/rui ro cho endpoint dang chay tot san.
+FIX (2026-09-11): ban dau dat o api/cluster/index.py (thu muc con) voi
+requirements.txt rieng, ky vong Vercel map thanh "/api/cluster" - THUC TE
+tra ve 404 (khong dung quy uoc nhu gia dinh). Da chuyen ve file PHANG
+"api/cluster.py" (cung cap voi api/stock.py) - dung DUNG pattern da xac
+nhan hoat dong that (api/stock.py -> /api/stock). Danh doi: dung CHUNG
+api/requirements.txt voi stock.py (xem ghi chu chi tiet trong file do).
 
 DA XAC NHAN (khong doan mo): hdbscan 0.8.44 co san wheel binary
-manylinux2014_x86_64 - khop kien truc Linux Vercel Python Runtime dung,
-kha nang cao KHONG can bien dich tu ma nguon khi deploy. Da test that
-logic clustering (3 nhom diem tach biet -> HDBSCAN nhan dung 3 cum) TRUOC
-khi viet endpoint nay.
+manylinux2014_x86_64 - khop kien truc Linux Vercel Python Runtime dung.
+Da test that logic clustering (3 nhom diem tach biet -> HDBSCAN nhan dung
+3 cum) va endpoint FastAPI (200 OK, xu ly dung truong hop bien) truoc khi
+giao code nay.
 """
 import os
 

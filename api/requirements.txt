@@ -6,3 +6,17 @@ vnstock==4.0.5
 fastapi==0.117.1
 pandas==2.2.3
 python-dateutil==2.9.0
+
+# THEM (Cluster Panel - HDBSCAN) - LUU Y QUAN TRONG: da thu tach rieng
+# requirements.txt cho api/cluster/ (thu muc con), nhung gap loi 404 vi
+# Vercel KHONG map "api/cluster/index.py" -> "/api/cluster" nhu ky vong
+# (khac quy uoc file phang "api/stock.py" -> "/api/stock" da xac nhan
+# hoat dong). Da chuyen ve file phang "api/cluster.py" - dung CHUNG file
+# requirements.txt nay voi stock.py. Anh huong THAT: kich thuoc goi trien
+# khai cua stock.py se lon hon (hdbscan+numpy+scipy+scikit-learn duoc cai
+# vao chung environment), co the lam cold start hoi cham hon truoc mot
+# chut - NHUNG code stock.py khong import cac goi nay nen KHONG anh huong
+# toc do CHAY logic cua no, chi anh huong thoi gian tai bundle luc cold
+# start. Day la danh doi da duoc thong bao ro cho nguoi dung.
+hdbscan==0.8.44
+pydantic==2.9.2
