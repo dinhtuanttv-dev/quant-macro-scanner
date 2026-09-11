@@ -7,6 +7,9 @@
   "functions": {
     "api/stock.py": {
       "maxDuration": 30
+    },
+    "api/cluster/index.py": {
+      "maxDuration": 30
     }
   }
 }

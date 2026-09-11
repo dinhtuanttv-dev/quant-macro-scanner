@@ -294,6 +294,30 @@ export function computeTimingForecast(matches: CycleMatchResult[], avgReturnPct:
 
 export interface ExplainFactorResult { name: string; contributionPct: number; description: string; }
 
+// ============================================================
+// PAIRWISE DISTANCE MATRIX (cho Cluster Panel - HDBSCAN) - NHOM 2
+// Tinh khoang cach DTW giua TUNG CAP trong pool ung vien (khong phai giua
+// tung ung vien voi cua so hien tai nhu findTopKCycles da lam) - dung lam
+// dau vao cho HDBSCAN (metric="precomputed") o Python endpoint rieng.
+// KHONG tinh lai DTW o Python - dung DUNG NGUYEN so lieu da tinh o day,
+// tranh trung lap logic giua 2 ngon ngu.
+// ============================================================
+
+export function computePairwiseDistanceMatrix(matches: CycleMatchResult[]): number[][] {
+  const n = matches.length;
+  const matrix: number[][] = Array.from({ length: n }, () => new Array(n).fill(0));
+  const series = matches.map((m) => m.alignedSeries.map((p) => p.normalizedClose));
+
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const d = dtwDistance(series[i], series[j]);
+      matrix[i][j] = d;
+      matrix[j][i] = d; // DTW la doi xung: DTW(a,b) = DTW(b,a)
+    }
+  }
+  return matrix;
+}
+
 export function computeExplainability(qs: QualityScoreResult, matchCount: number): ExplainFactorResult[] {
   const weights = { similarity: 0.4, liquidity: 0.2, regime: 0.2, sampleSize: 0.2 };
   const weighted = {

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { fetchOhlcvHistory } from "@/lib/market-data/yahoo-finance-adapter";
 import { extractCloses, calculateAtrSeries, detectMarketRegime } from "@/lib/market-data/technical-indicators";
-import { findTopKCycles, computeQualityScore, computeSummaryStats, computeFanChart, computeTimingForecast, computeExplainability } from "@/lib/cycle-fingerprint/cycle-scanner";
+import { findTopKCycles, computeQualityScore, computeSummaryStats, computeFanChart, computeTimingForecast, computeExplainability, computePairwiseDistanceMatrix } from "@/lib/cycle-fingerprint/cycle-scanner";
 import { resampleToWeekly, resampleToMonthly } from "@/lib/cycle-fingerprint/resample";
 
 // GIAI DOAN 1 + NHOM 1 (Fan Chart, Timing Forecast, Explainability)
@@ -101,6 +101,11 @@ export async function GET(request: Request) {
     const fanChart = computeFanChart(pool);
     const timingForecast = computeTimingForecast(pool, summary.avgReturnPct);
     const explainabilityFactors = computeExplainability(qualityScore, displayMatches.length);
+    // NHOM 2 (Cluster Panel): ma tran khoang cach DTW giua CAC UNG VIEN
+    // trong pool (khong phai vs cua so hien tai) - dau vao cho HDBSCAN o
+    // Python endpoint rieng (/api/cluster). Frontend goi endpoint do
+    // DOC LAP, khong qua route nay - tranh self-fetch server-to-server.
+    const clusterDistanceMatrix = computePairwiseDistanceMatrix(pool);
 
     const contextBars = Math.min(bars.length, windowSize * 3);
     const priceSeriesBars = bars.slice(-contextBars);
@@ -178,6 +183,15 @@ export async function GET(request: Request) {
       atrSeries: atrSeriesForResponse,
       timingForecast: timingForecastForResponse,
       explainability,
+      clusterInput: {
+        distanceMatrix: clusterDistanceMatrix,
+        candidates: pool.map((m) => ({
+          ticker: rawTicker.toUpperCase(),
+          matchStartDate: m.matchStartDate,
+          matchEndDate: m.matchEndDate,
+          returnD30: { value: m.returns[30], source: "HARD_DATA" as const },
+        })),
+      },
     });
   } catch (err) {
     console.error("[cycle-fingerprint/analyze] Loi:", err);

@@ -1,0 +1,14 @@
+# requirements.txt RIENG cho api/cluster/ (KHONG dung chung voi
+# api/requirements.txt cua api/stock.py) - Vercel Python Runtime tu dong
+# tim requirements.txt gan nhat voi entrypoint, uu tien thu muc con.
+#
+# Ghim dung hdbscan==0.8.44 (DA TEST THAT trong qua trinh phat trien - xac
+# nhan co wheel binary san cho manylinux2014_x86_64, khop kien truc Linux
+# Vercel dung, va da chay thu HDBSCAN that tren du lieu gia lap cho ket
+# qua dung). KHONG ghim cung numpy/scipy/scikit-learn (de pip tu chon bo
+# phien ban tuong thich nhat tai thoi diem build tren Vercel - tranh loi
+# ABI mismatch da gap trong cong dong khi ghim numpy qua cu/qua moi so
+# voi ban hdbscan da bien dich san).
+hdbscan==0.8.44
+fastapi==0.117.1
+pydantic==2.9.2
