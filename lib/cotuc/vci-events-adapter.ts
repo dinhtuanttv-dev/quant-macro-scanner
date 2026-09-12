@@ -36,7 +36,7 @@ function toDateOnly(value: unknown): string | null {
   return d.toISOString().slice(0, 10);
 }
 
-export async function fetchDividendEvents(ticker: string, monthsBack = 12, monthsForward = 6): Promise<DividendEventResult> {
+export async function fetchDividendEvents(ticker: string, monthsBack = 60, monthsForward = 6): Promise<DividendEventResult> {
   try {
     const now = new Date();
     const from = new Date(now); from.setMonth(from.getMonth() - monthsBack);
