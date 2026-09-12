@@ -5,6 +5,11 @@ import { DIVIDEND_STOCKS } from "@/lib/quant-cotuc";
 
 // FIX P0 (2026-09-12): 10s qua thap cho 17 request song song toi VCI.
 export const maxDuration = 30;
+// FIX QUAN TRONG: Next.js App Router MAC DINH co the coi GET route la
+// "static" va CACHE ket qua (khong chay lai code moi) neu thieu khai bao
+// nay - da xac nhan qua trieu chung THAT: code nguon dung nhung response
+// van tra ve cau truc CU/loi. Bat buoc dynamic de LUON chay lai.
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   const tickers = DIVIDEND_STOCKS.map((s) => s.ticker);

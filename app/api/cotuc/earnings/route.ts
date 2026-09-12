@@ -7,6 +7,7 @@ import { DIVIDEND_STOCKS } from "@/lib/quant-cotuc";
 // ro timeout giong het cac route khac da gap trong du an (Loc nganh, HOSE
 // ingest). Tang len 30s.
 export const maxDuration = 30;
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   const tickers = DIVIDEND_STOCKS.map((s) => s.ticker);

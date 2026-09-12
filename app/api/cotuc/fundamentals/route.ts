@@ -11,6 +11,7 @@ import { DIVIDEND_STOCKS } from "@/lib/quant-cotuc";
 // bo du lieu kinh dien). 17 ma x 3 nguon du lieu song song - can thoi
 // gian du (60s) hon route KQKD don gian.
 export const maxDuration = 60;
+export const dynamic = "force-dynamic";
 
 export interface StockFundamentals {
   ticker: string;
