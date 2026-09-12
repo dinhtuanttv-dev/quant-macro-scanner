@@ -70,7 +70,25 @@ export function findTopKCycles(bars: OhlcvBar[], windowSize: number, k: number =
   if (scored.length === 0) return [];
 
   scored.sort((a, b) => a.distance - b.distance);
-  const top = scored.slice(0, k);
+
+  // FIX QUAN TRONG (2026-09-12): TRUOC DAY chi lay k phan tu dau tien theo
+  // khoang cach - nhung vi cua so truot 1 phien 1 lan, cac ung vien LIEN
+  // TIEP (VD startIndex=1032,1033,1034) la BAN SAO GAN NHU Y HET cua CUNG 1
+  // giai doan lich su (chi lech vai ngay), KHONG PHAI cac giai doan doc
+  // lap. Da xac nhan qua du lieu that: pool 20 "ung vien" thuc chat chi co
+  // ~6-7 giai doan THAT, moi giai doan bi dem lap 2-5 lan - lam sai lech ca
+  // Fan Chart/Timing Forecast (phong dai do tin cay thong ke gia tao) LAN
+  // Cluster Panel (HDBSCAN thay qua nhieu "ban sao" gan nhau, coi la
+  // "nhieu" vi cum qua nho). Sua bang non-maximum suppression: bo qua ung
+  // vien qua GAN (chong lan) voi ung vien DA CHON, dam bao k ung vien cuoi
+  // cung la k GIAI DOAN LICH SU THAT SU KHAC BIET.
+  const MIN_GAP_BETWEEN_CANDIDATES = windowSize;
+  const top: typeof scored = [];
+  for (const cand of scored) {
+    if (top.length >= k) break;
+    const tooClose = top.some((s) => Math.abs(s.startIndex - cand.startIndex) < MIN_GAP_BETWEEN_CANDIDATES);
+    if (!tooClose) top.push(cand);
+  }
 
   // Chuan hoa similarityPct THEO PHAM VI DA QUET (min-max trong chinh lan
   // quet nay) - khong phai 1 thang do tuyet doi co san, vi "khoang cach DTW
