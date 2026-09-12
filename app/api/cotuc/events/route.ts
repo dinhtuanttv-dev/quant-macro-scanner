@@ -5,10 +5,10 @@ import { DIVIDEND_STOCKS } from "@/lib/quant-cotuc";
 
 // FIX P0 (2026-09-12): 10s qua thap cho 17 request song song toi VCI.
 export const maxDuration = 30;
-// FIX QUAN TRONG: Next.js App Router MAC DINH co the coi GET route la
-// "static" va CACHE ket qua (khong chay lai code moi) neu thieu khai bao
-// nay - da xac nhan qua trieu chung THAT: code nguon dung nhung response
-// van tra ve cau truc CU/loi. Bat buoc dynamic de LUON chay lai.
+// Dam bao route nay LUON chay lai (khong bi Next.js coi la static va
+// cache) - giu lai nhu 1 best-practice an toan cho du khong phai nguyen
+// nhan cua loi da debug truoc do (loi do la do doc nham JSON qua
+// PowerShell console, khong phai bug code hay cache that).
 export const dynamic = "force-dynamic";
 
 export async function GET() {
@@ -31,24 +31,8 @@ export async function GET() {
       };
     });
 
-    // DEBUG TAM THOI: dua thang vao response JSON (thay vi console.log,
-    // vi kho tim dung cho xem Runtime Logs tren Vercel UI) - CHAC CHAN se
-    // thay duoc ngay trong Invoke-WebRequest, khong phu thuoc dashboard.
-    const debugInfo = {
-      bmpTopLevelKeys: Object.keys(resultsWithLifecycle[0]),
-      bmpAgmEventsLength: resultsWithLifecycle[0].agmEvents.length,
-      bmpLifecycleEventsLength: resultsWithLifecycle[0].lifecycleEvents.length,
-      bmpAgmEventsRaw: resultsWithLifecycle[0].agmEvents,
-      bmpLifecycleEventsRaw: resultsWithLifecycle[0].lifecycleEvents,
-    };
-
     return NextResponse.json({
       generatedAt: new Date().toISOString(),
-      // DEBUG MARKER (tam thoi, se xoa sau khi xac nhan deploy dung):
-      // dung de XAC NHAN CHAC CHAN Vercel dang chay DUNG code moi nhat,
-      // khong phai build cache cu.
-      codeVersionMarker: "P1-lifecycle-fix-v3",
-      debugInfo,
       totalRequested: tickers.length,
       successCount,
       results: resultsWithLifecycle,
