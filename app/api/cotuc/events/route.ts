@@ -33,6 +33,10 @@ export async function GET() {
 
     return NextResponse.json({
       generatedAt: new Date().toISOString(),
+      // DEBUG MARKER (tam thoi, se xoa sau khi xac nhan deploy dung):
+      // dung de XAC NHAN CHAC CHAN Vercel dang chay DUNG code moi nhat,
+      // khong phai build cache cu.
+      codeVersionMarker: "P1-lifecycle-fix-v3",
       totalRequested: tickers.length,
       successCount,
       results: resultsWithLifecycle,
