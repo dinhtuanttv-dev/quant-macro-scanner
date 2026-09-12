@@ -25,6 +25,7 @@ export interface QuarterlyIncomeRow {
   quarter: number;         // 1-4
   revenue: number | null;
   netProfit: number | null;
+  eps: number | null;       // isa23 - da xac nhan khop dung EPS cong bo cong khai VNM 2018
   periodLabel: string;      // "Q3/2026"
 }
 
@@ -66,11 +67,13 @@ export async function fetchQuarterlyIncome(ticker: string): Promise<QuarterlyFin
 
         const revenue = row.isa1 ?? null;
         const netProfit = row.isa22 ?? null;
+        const eps = row.isa23 ?? null;
 
         return {
           ticker, year, quarter,
           revenue: revenue !== null ? Number(revenue) : null,
           netProfit: netProfit !== null ? Number(netProfit) : null,
+          eps: eps !== null ? Number(eps) : null,
           periodLabel: `Q${quarter}/${year}`,
         };
       })
