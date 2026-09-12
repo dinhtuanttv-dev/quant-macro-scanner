@@ -118,3 +118,45 @@ model ImpactEdge {
   @@index([targetType, targetId])
   @@index([sourceId])
 }
+
+// P2 (Bo Loc Co Phieu toan thi truong): luu ket qua quet nen (Cron Job)
+// cho universe VN30+VN100 (100 ma, xac nhan qua /api/universe). CHỈ luu
+// ma DA CO su kien co tuc (loc so bo o tang Cron), khong luu ca 100 ma
+// neu khong co su kien gi - tranh lang phi tinh toan Dividend Quality
+// Score cho ma khong lien quan.
+model DividendUniverseEntry {
+  ticker              String    @id
+  sector              String?
+  name                String?
+
+  // Dividend Quality Score 4 tang (giong cong thuc da dung cho 17 ma)
+  tier1               Float?
+  tier2               Float?
+  tier3               Float?
+  overallScoreTier123  Float?   // Chi Tang 1-3 (Tang 4 RS+RedFlag tinh o frontend, giong 17 ma)
+
+  // Su kien co tuc GAN NHAT (da sap xep dung uu tien: sap toi truoc,
+  // qua khu gan day sau - dung logic sortEventsByRelevance)
+  latestEventType     String?   // CASH | STOCK_DIVIDEND | BONUS_ISSUE | ESOP
+  latestEventTitle    String?
+  publicDate          DateTime?
+  agmDate             DateTime?
+  exrightDate         DateTime?
+  recordDate          DateTime?
+  settlementDate      DateTime?
+  valuePerShare       Float?
+  exerciseRatio       Float?
+
+  // Fundamentals (dung cho bo loc Yield/ROE/PE/Debt/RSI)
+  price               Float?
+  pe                  Float?
+  roe                 Float?
+  debtEquity          Float?
+  rsi14               Float?
+  dividendYieldPct    Float?
+
+  lastScannedAt       DateTime  @default(now()) @updatedAt
+
+  @@index([sector])
+  @@index([exrightDate])
+}
