@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { fetchDividendEventsBatch } from "@/lib/cotuc/vci-events-adapter";
 import { DIVIDEND_STOCKS } from "@/lib/quant-cotuc";
 
-export const maxDuration = 10;
+// FIX P0 (2026-09-12): 10s qua thap cho 17 request song song toi VCI.
+export const maxDuration = 30;
 
 export async function GET() {
   const tickers = DIVIDEND_STOCKS.map((s) => s.ticker);
