@@ -36,6 +36,28 @@ function toDateOnly(value: unknown): string | null {
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * FIX QUAN TRONG: .filter() KHONG dam bao thu tu theo ngay (phu thuoc
+ * thu tu VCI tra ve, khong nhat quan). Neu FE lay [0] lam "su kien gan
+ * nhat" ma mang khong duoc sap xep dung, co the lay NHAM su kien CU du
+ * co su kien MOI hon trong du lieu - gay hien tuong "ma da qua GDKHQ
+ * van hien tren bang chinh" du THUC RA da co dot moi.
+ *
+ * Uu tien: (1) su kien SAP TOI GAN NHAT (exerciseDate >= hom nay, tang
+ * dan - lay cai gan nhat), neu KHONG CO thi (2) su kien DA QUA GAN NHAT
+ * (giam dan - lay cai gan day nhat). Dam bao FE luon nhan dung "su kien
+ * dang can quan tam nhat" o vi tri [0].
+ */
+function sortEventsByRelevance(events: VciEvent[]): VciEvent[] {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const upcoming = events.filter((e) => e.exerciseDate !== null && e.exerciseDate >= todayStr)
+    .sort((a, b) => (a.exerciseDate as string).localeCompare(b.exerciseDate as string));
+  const past = events.filter((e) => e.exerciseDate !== null && e.exerciseDate < todayStr)
+    .sort((a, b) => (b.exerciseDate as string).localeCompare(a.exerciseDate as string));
+  const noDate = events.filter((e) => e.exerciseDate === null);
+  return [...upcoming, ...past, ...noDate];
+}
+
 export async function fetchDividendEvents(ticker: string, monthsBack = 60, monthsForward = 6): Promise<DividendEventResult> {
   try {
     const now = new Date();
@@ -75,8 +97,8 @@ export async function fetchDividendEvents(ticker: string, monthsBack = 60, month
 
     return {
       ticker, available: true,
-      exDividendEvents: events.filter((e) => e.eventCode === "DIV"),
-      agmEvents: events.filter((e) => ["AGME", "AGMR", "EGME"].includes(e.eventCode)),
+      exDividendEvents: sortEventsByRelevance(events.filter((e) => e.eventCode === "DIV")),
+      agmEvents: sortEventsByRelevance(events.filter((e) => ["AGME", "AGMR", "EGME"].includes(e.eventCode))),
       rawEvents,
     };
   } catch (err) {
