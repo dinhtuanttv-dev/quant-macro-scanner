@@ -31,6 +31,14 @@ export async function GET() {
       };
     });
 
+    // DEBUG TAM THOI: in ra Vercel Runtime Logs de so sanh voi response
+    // client THUC SU nhan duoc - neu log nay DUNG (co lifecycleEvents
+    // rieng) nhung response client van SAI, bug nam o tang khac (khong
+    // phai code nay).
+    console.log("[DEBUG] BMP object keys:", Object.keys(resultsWithLifecycle[0]));
+    console.log("[DEBUG] BMP agmEvents length:", resultsWithLifecycle[0].agmEvents.length);
+    console.log("[DEBUG] BMP lifecycleEvents length:", resultsWithLifecycle[0].lifecycleEvents.length);
+
     return NextResponse.json({
       generatedAt: new Date().toISOString(),
       // DEBUG MARKER (tam thoi, se xoa sau khi xac nhan deploy dung):
