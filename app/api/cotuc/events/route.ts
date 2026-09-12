@@ -31,13 +31,16 @@ export async function GET() {
       };
     });
 
-    // DEBUG TAM THOI: in ra Vercel Runtime Logs de so sanh voi response
-    // client THUC SU nhan duoc - neu log nay DUNG (co lifecycleEvents
-    // rieng) nhung response client van SAI, bug nam o tang khac (khong
-    // phai code nay).
-    console.log("[DEBUG] BMP object keys:", Object.keys(resultsWithLifecycle[0]));
-    console.log("[DEBUG] BMP agmEvents length:", resultsWithLifecycle[0].agmEvents.length);
-    console.log("[DEBUG] BMP lifecycleEvents length:", resultsWithLifecycle[0].lifecycleEvents.length);
+    // DEBUG TAM THOI: dua thang vao response JSON (thay vi console.log,
+    // vi kho tim dung cho xem Runtime Logs tren Vercel UI) - CHAC CHAN se
+    // thay duoc ngay trong Invoke-WebRequest, khong phu thuoc dashboard.
+    const debugInfo = {
+      bmpTopLevelKeys: Object.keys(resultsWithLifecycle[0]),
+      bmpAgmEventsLength: resultsWithLifecycle[0].agmEvents.length,
+      bmpLifecycleEventsLength: resultsWithLifecycle[0].lifecycleEvents.length,
+      bmpAgmEventsRaw: resultsWithLifecycle[0].agmEvents,
+      bmpLifecycleEventsRaw: resultsWithLifecycle[0].lifecycleEvents,
+    };
 
     return NextResponse.json({
       generatedAt: new Date().toISOString(),
@@ -45,6 +48,7 @@ export async function GET() {
       // dung de XAC NHAN CHAC CHAN Vercel dang chay DUNG code moi nhat,
       // khong phai build cache cu.
       codeVersionMarker: "P1-lifecycle-fix-v3",
+      debugInfo,
       totalRequested: tickers.length,
       successCount,
       results: resultsWithLifecycle,
