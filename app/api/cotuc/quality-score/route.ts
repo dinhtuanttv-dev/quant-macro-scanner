@@ -90,7 +90,19 @@ export async function GET() {
       return { ticker, sector, debtEquity, pe, payoutRatioPct, consecutiveYears, earningsScore, hasRedFlag, dividendYieldPct };
     });
 
-    // Buoc 2: tinh TRUNG VI theo NGANH (tu 17 ma) cho debtEquity va pe
+    // Buoc 2: tinh TRUNG VI theo NGANH (tu 17 ma) cho debtEquity va pe.
+    // FIX QUAN TRONG: voi danh sach 17 ma co dinh hien tai, 10/17 ma la
+    // "DUY NHAT" trong nganh cua no (VD BMP - Vat lieu XD chi co 1 ma) -
+    // "trung vi nganh" cua cac ma nay se LUON BANG CHINH NO (vo nghia,
+    // luon cho 100 diem). FALLBACK: neu nganh chi co <2 ma, dung trung
+    // vi TOAN BO 17 MA (toan thi truong) thay the, danh dau ro trong
+    // details de biet day la so sanh "toan thi truong", khong phai
+    // "cung nganh".
+    const allDebtEquities = rawByTicker.map((r) => r.debtEquity);
+    const allPe = rawByTicker.map((r) => r.pe);
+    const marketMedianDebtEquity = calculateMedian(allDebtEquities);
+    const marketMedianPe = calculateMedian(allPe);
+
     const sectorGroups = new Map<string, RawMetrics[]>();
     rawByTicker.forEach((r) => {
       const list = sectorGroups.get(r.sector) ?? [];
@@ -99,9 +111,12 @@ export async function GET() {
     });
     const industryMedianDebtEquity = new Map<string, number | null>();
     const industryMedianPe = new Map<string, number | null>();
+    const usedMarketWideFallback = new Map<string, boolean>();
     sectorGroups.forEach((list, sector) => {
-      industryMedianDebtEquity.set(sector, calculateMedian(list.map((r) => r.debtEquity)));
-      industryMedianPe.set(sector, calculateMedian(list.map((r) => r.pe)));
+      const hasEnoughInSector = list.length >= 2;
+      industryMedianDebtEquity.set(sector, hasEnoughInSector ? calculateMedian(list.map((r) => r.debtEquity)) : marketMedianDebtEquity);
+      industryMedianPe.set(sector, hasEnoughInSector ? calculateMedian(list.map((r) => r.pe)) : marketMedianPe);
+      usedMarketWideFallback.set(sector, !hasEnoughInSector);
     });
 
     // Buoc 3: tinh diem Tang 1-3 cho tung ma
@@ -131,6 +146,7 @@ export async function GET() {
           industryMedianPe: industryMedianPe.get(r.sector) ?? null,
           dividendYieldPct: r.dividendYieldPct,
           hasRedFlag: r.hasRedFlag,
+          usedMarketWideMedianFallback: usedMarketWideFallback.get(r.sector) ?? false,
         },
       };
     });

@@ -164,16 +164,27 @@ export function calculateConsecutiveYears(events: DividendLifecycleEvent[]): num
     dpsByYear.set(year, (dpsByYear.get(year) ?? 0) + (e.valuePerShare ?? 0));
   }
 
-  const years = Array.from(dpsByYear.keys()).sort((a, b) => b - a); // moi nhat truoc
+  let years = Array.from(dpsByYear.keys()).sort((a, b) => b - a); // moi nhat truoc
+
+  // FIX QUAN TRONG: NAM HIEN TAI (chua ket thuc) LUON co it dot chi tra
+  // hon nam DA HOAN TAT truoc do (vi chua het nam de tich luy du cac
+  // dot) - so sanh truc tiep se SAI LECH mot cach he thong, gay ngat
+  // "lien tuc" oan cho HAU HET cac ma (da xac nhan bang du lieu that:
+  // VNM tra ve 1 thay vi phai la nhieu nam). Bo qua nam hien tai khoi
+  // phep so sanh, bat dau tinh tu nam DA HOAN TAT gan nhat.
+  const currentYear = new Date().getFullYear();
+  if (years.length > 0 && years[0] === currentYear) {
+    years = years.slice(1);
+  }
   if (years.length === 0) return 0;
 
-  let consecutive = 1; // nam gan nhat luon tinh la 1 (co chi tra)
+  let consecutive = 1; // nam gan nhat (da hoan tat) luon tinh la 1 (co chi tra)
   for (let i = 0; i < years.length - 1; i++) {
-    const currentYear = years[i];
+    const currentYearInLoop = years[i];
     const prevYear = years[i + 1];
     // Chi tinh "lien tuc" neu 2 nam ke tiep nhau (khong bi "hut" 1 nam nao)
-    if (currentYear - prevYear !== 1) break;
-    const currentDps = dpsByYear.get(currentYear) ?? 0;
+    if (currentYearInLoop - prevYear !== 1) break;
+    const currentDps = dpsByYear.get(currentYearInLoop) ?? 0;
     const prevDps = dpsByYear.get(prevYear) ?? 0;
     if (currentDps >= prevDps) {
       consecutive++;
