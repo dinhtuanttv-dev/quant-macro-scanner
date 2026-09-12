@@ -38,7 +38,7 @@ export async function GET() {
       ticker: string; sector: string;
       debtEquity: number | null; pe: number | null;
       payoutRatioPct: number | null; consecutiveYears: number | null;
-      earningsScore: number | null; hasRedFlag: boolean;
+      earningsScore: number | null; hasRedFlag: boolean; profitGrowthYoY: number | null;
       dividendYieldPct: number | null;
     };
 
@@ -87,7 +87,7 @@ export async function GET() {
       // khong nhan doi - vi da la 1 dot cu the) / gia hien tai
       const dividendYieldPct = latestCash?.valuePerShare && price ? (latestCash.valuePerShare / price) * 100 : null;
 
-      return { ticker, sector, debtEquity, pe, payoutRatioPct, consecutiveYears, earningsScore, hasRedFlag, dividendYieldPct };
+      return { ticker, sector, debtEquity, pe, payoutRatioPct, consecutiveYears, earningsScore, hasRedFlag, dividendYieldPct, profitGrowthYoY: growthResult?.profitGrowthYoY ?? null };
     });
 
     // Buoc 2: tinh TRUNG VI theo NGANH (tu 17 ma) cho debtEquity va pe.
@@ -139,6 +139,7 @@ export async function GET() {
         tier1, tier2, tier3,
         details: {
           payoutRatioPct: r.payoutRatioPct,
+          profitGrowthYoY: r.profitGrowthYoY,
           consecutiveYears: r.consecutiveYears,
           debtEquity: r.debtEquity,
           industryMedianDebtEquity: industryMedianDebtEquity.get(r.sector) ?? null,

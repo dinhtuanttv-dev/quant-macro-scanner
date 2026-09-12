@@ -159,7 +159,11 @@ export async function GET() {
 
       await prisma.dividendUniverseEntry.update({
         where: { ticker: entry.ticker },
-        data: { tier1, tier2, tier3, overallScoreTier123, price: raw.price, pe: raw.pe, debtEquity: raw.debtEquity, dividendYieldPct },
+        data: {
+          tier1, tier2, tier3, overallScoreTier123,
+          price: raw.price, pe: raw.pe, debtEquity: raw.debtEquity, dividendYieldPct,
+          payoutRatioPct, profitGrowthYoY: growthResult?.profitGrowthYoY ?? null,
+        },
       });
     }
 
