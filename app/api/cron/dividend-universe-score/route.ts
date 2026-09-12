@@ -6,6 +6,7 @@ import { calculateEarningsGrowth } from "@/lib/cotuc/earnings-scoring";
 import {
   calculateTier1Score, calculateTier2Score, calculateTier3Score,
   calculateConsecutiveYears, calculateMedian, detectDividendRedFlag,
+  calculateDividendQualityScore,
 } from "@/lib/cotuc/dividend-quality-score";
 import { buildLifecycleEvents } from "@/lib/cotuc/dividend-lifecycle";
 import { fetchDividendEventsBatch } from "@/lib/cotuc/vci-events-adapter";
@@ -150,8 +151,11 @@ export async function GET() {
         pe: raw.pe, industryMedianPe: industryMedianPe.get(sector) ?? null, dividendYieldPct,
       });
 
-      const parts = [tier1, tier2, tier3].filter((v): v is number => v !== null);
-      const overallScoreTier123 = parts.length > 0 ? parts.reduce((a, b) => a + b, 0) / parts.length : null;
+      // FIX: dung DUNG ham calculateDividendQualityScore (trong so
+      // 30/30/25, tu dong re-normalize khi thieu tang) - THAY VI trung
+      // binh cong don gian (33.3/33.3/33.3 hieu qua, SAI cong thuc, khong
+      // nhat quan voi 17 ma theo doi goc dung cung ham nay).
+      const { overall: overallScoreTier123 } = calculateDividendQualityScore(tier1, tier2, tier3, null);
 
       await prisma.dividendUniverseEntry.update({
         where: { ticker: entry.ticker },
