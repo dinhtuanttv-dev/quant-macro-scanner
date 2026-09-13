@@ -177,3 +177,23 @@ model DividendAiAnalysis {
   catalystScore Int?     // 1-10, uoc luong dua tren Dividend Quality Score da co
   generatedAt   DateTime @default(now()) @updatedAt
 }
+
+// Timing Engine (P3) - moi dong = 1 SU KIEN CO TUC LICH SU cua 1 ma, voi
+// % loi nhuan da tinh san cho 5 cua so chuan (xem lib/cotuc/dividend-
+// cycle-engine.ts). Cron Job quet TOAN BO lich su (5 nam) cho 88 ma,
+// bootstrap/xep hang tinh REAL-TIME o route doc (nhanh, du lieu da co).
+model DividendCycleWindow {
+  id            String   @id @default(cuid())
+  ticker        String
+  exDate        DateTime
+  divType       String   // CASH | STOCK_DIVIDEND | BONUS_ISSUE | ESOP
+  wM1           Float?
+  wPreAgm       Float?
+  wPreEx        Float?
+  wPostEx       Float?
+  wPostCredit   Float?
+  computedAt    DateTime @default(now()) @updatedAt
+
+  @@unique([ticker, exDate])
+  @@index([ticker])
+}

@@ -15,6 +15,13 @@ export interface OhlcvBar {
   low: number;
   close: number;
   volume: number;
+  // MO RONG (Timing Engine): adjClose - da XAC NHAN qua doi chieu voi
+  // su kien co tuc THAT (VNM dot 2/2025, exrightDate=2026-06-26,
+  // valuePerShare=1850): gia TRUOC GDKHQ da duoc Yahoo TU DONG dieu
+  // chinh giam dung bang gia tri co tuc (58400 -> adjclose=56546.8),
+  // gia TU GDKHQ tro di thi close=adjclose. KHONG CAN tu viet lai logic
+  // back-adjust nhu de xuat trong Python script dinh kem.
+  adjClose: number;
 }
 
 export interface FetchResult<T> {
@@ -62,6 +69,7 @@ export async function fetchOhlcvHistory(
 
     const timestamps: number[] = result.timestamp;
     const quote = result.indicators?.quote?.[0];
+    const adjcloseArr: number[] | undefined = result.indicators?.adjclose?.[0]?.adjclose;
 
     if (!quote) {
       return { success: false, data: null, error: "Thieu truong indicators.quote trong response Yahoo" };
@@ -75,6 +83,7 @@ export async function fetchOhlcvHistory(
         low: quote.low?.[i],
         close: quote.close?.[i],
         volume: quote.volume?.[i],
+        adjClose: adjcloseArr?.[i] ?? quote.close?.[i], // fallback ve close neu Yahoo thieu adjclose
       }))
       .filter((bar) => bar.close !== null && bar.close !== undefined && !Number.isNaN(bar.close));
 
