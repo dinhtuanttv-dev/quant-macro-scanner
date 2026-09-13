@@ -107,15 +107,21 @@ def safe_float(v):
 
 
 def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
-    """Tính SMA20/EMA12/EMA26/RSI14/Bollinger Bands THẬT từ giá đóng cửa
-    thật — thay thế dần cho các field adx/rsi/macd hardcode ở buildMockResponse
-    bên route.ts (những field đó KHÔNG được xóa ở bản vá này để tránh phá
-    vỡ hợp đồng dữ liệu hiện có, nhưng nên được frontend chuyển sang dùng
-    field `computedIndicators` mới này khi sẵn sàng)."""
+    """Tính SMA20/EMA12/EMA26/RSI14/Bollinger Bands + SMA200/EMA100/EMA50/
+    EMA21 (theo yeu cau nguoi dung - bo doi overlay tren chart) THAT tu
+    gia dong cua that. GIU NGUYEN SMA20/EMA12/EMA26 (khong xoa) vi
+    EMA12/26 CAN THIET de tinh MACD (Giai doan 2 sap toi), du khong con
+    dung lam duong overlay chinh tren chart nua."""
     df = df.copy()
     df["sma_20"] = df["close"].rolling(window=20, min_periods=1).mean()
     df["ema_12"] = df["close"].ewm(span=12, adjust=False).mean()
     df["ema_26"] = df["close"].ewm(span=26, adjust=False).mean()
+
+    # MOI (theo yeu cau nguoi dung): bo 4 duong overlay chinh tren chart
+    df["sma_200"] = df["close"].rolling(window=200, min_periods=1).mean()
+    df["ema_100"] = df["close"].ewm(span=100, adjust=False).mean()
+    df["ema_50"] = df["close"].ewm(span=50, adjust=False).mean()
+    df["ema_21"] = df["close"].ewm(span=21, adjust=False).mean()
 
     delta = df["close"].diff()
     gain = delta.clip(lower=0)
@@ -187,6 +193,10 @@ def get_stock(
                 "sma20": safe_float(r.get("sma_20")),
                 "ema12": safe_float(r.get("ema_12")),
                 "ema26": safe_float(r.get("ema_26")),
+                "sma200": safe_float(r.get("sma_200")),
+                "ema100": safe_float(r.get("ema_100")),
+                "ema50": safe_float(r.get("ema_50")),
+                "ema21": safe_float(r.get("ema_21")),
                 "rsi14": safe_float(r.get("rsi_14")),
                 "bbUpper": safe_float(r.get("bb_upper")),
                 "bbMid": safe_float(r.get("bb_mid")),
