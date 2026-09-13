@@ -487,3 +487,29 @@ export function calculateRSI(closes: number[], period: number = 14): number | nu
   const rs = avgGain / avgLoss;
   return 100 - 100 / (1 + rs);
 }
+
+/** EMA (Exponential Moving Average) - can cho MACD. */
+function calculateEMASeries(values: number[], period: number): number[] {
+  if (values.length === 0) return [];
+  const k = 2 / (period + 1);
+  const ema: number[] = [values[0]];
+  for (let i = 1; i < values.length; i++) {
+    ema.push(values[i] * k + ema[i - 1] * (1 - k));
+  }
+  return ema;
+}
+
+/**
+ * MACD Histogram (12,26,9 chuan) - dung cho Sieu Quet AI Confluence
+ * Engine (momentum.macdHistogram). Can it nhat ~35 gia dong cua de co
+ * ket qua on dinh (EMA can thoi gian "warm up").
+ */
+export function calculateMACDHistogram(closes: number[]): number | null {
+  if (closes.length < 26) return null;
+  const ema12 = calculateEMASeries(closes, 12);
+  const ema26 = calculateEMASeries(closes, 26);
+  const macdLine = closes.map((_, i) => ema12[i] - ema26[i]);
+  const signalLine = calculateEMASeries(macdLine, 9);
+  const histogram = macdLine[macdLine.length - 1] - signalLine[signalLine.length - 1];
+  return Math.round(histogram * 100) / 100;
+}
