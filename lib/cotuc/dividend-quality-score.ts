@@ -235,3 +235,97 @@ export function calculateDividendQualityScore(tier1: number | null, tier2: numbe
     passesGate: overall >= 65,
   };
 }
+
+// ============================================================
+// F-SCORE (Piotroski) - RUT GON 6/9 tieu chi. 3 tieu chi con lai KHONG
+// dua vao vi THIEU DU LIEU DA XAC NHAN (khong doan mo):
+//   - CFO duong, CFO > LNST: can Cash Flow Statement - CHUA XAC NHAN
+//     CHAC CHAN field nao la CFO qua doi chieu (chi co goi y do lon hop
+//     ly, KHONG du tin cay de dung).
+//   - Khong phat hanh them CP: can So co phieu luu hanh - KHONG CO
+//     NGUON du lieu nao xac nhan duoc.
+//
+// 6 tieu chi DA DUNG deu XAC NHAN qua PHEP TINH KE TOAN KHOP CHINH XAC
+// voi du lieu that VNM Q1/2018 (xem ghi chu trong vci-balance-sheet-
+// adapter.ts va vci-financials-adapter.ts).
+// ============================================================
+
+export interface FScoreQuarterInput {
+  netProfit: number | null;
+  totalAssets: number | null;
+  longTermDebt: number | null;
+  currentAssets: number | null;
+  currentLiabilities: number | null;
+  revenue: number | null;
+  grossProfit: number | null;
+}
+
+export interface FScoreResult {
+  score: number; // 0-6
+  maxScore: 6;
+  details: {
+    roaPositive: boolean | null;
+    roaIncreasing: boolean | null;
+    leverageDecreasing: boolean | null;
+    currentRatioIncreasing: boolean | null;
+    grossMarginIncreasing: boolean | null;
+    assetTurnoverIncreasing: boolean | null;
+  };
+}
+
+/**
+ * Tinh F-Score rut gon (6/9) tu 2 ky: hien tai (current) va cung ky nam
+ * truoc (yearAgo, cach 4 quy trong mang da sort moi->cu). Neu THIEU du
+ * lieu 1 trong 2 ky cho 1 tieu chi, tieu chi do tra ve null (khong tinh
+ * vao diem cong lan khong tru diem) - KHONG suy dien/gia dinh gia tri.
+ */
+export function calculateFScoreLite(current: FScoreQuarterInput, yearAgo: FScoreQuarterInput | null): FScoreResult {
+  const details: FScoreResult["details"] = {
+    roaPositive: null, roaIncreasing: null, leverageDecreasing: null,
+    currentRatioIncreasing: null, grossMarginIncreasing: null, assetTurnoverIncreasing: null,
+  };
+
+  // 1. ROA duong (chi can ky hien tai)
+  const roaCurrent = current.netProfit !== null && current.totalAssets && current.totalAssets !== 0
+    ? current.netProfit / current.totalAssets : null;
+  if (roaCurrent !== null) details.roaPositive = roaCurrent > 0;
+
+  if (yearAgo) {
+    const roaPrev = yearAgo.netProfit !== null && yearAgo.totalAssets && yearAgo.totalAssets !== 0
+      ? yearAgo.netProfit / yearAgo.totalAssets : null;
+
+    // 2. ROA tang so cung ky nam truoc
+    if (roaCurrent !== null && roaPrev !== null) details.roaIncreasing = roaCurrent > roaPrev;
+
+    // 3. Don bay dai han giam (No dai han/Tong tai san giam)
+    const leverageCurrent = current.longTermDebt !== null && current.totalAssets && current.totalAssets !== 0
+      ? current.longTermDebt / current.totalAssets : null;
+    const leveragePrev = yearAgo.longTermDebt !== null && yearAgo.totalAssets && yearAgo.totalAssets !== 0
+      ? yearAgo.longTermDebt / yearAgo.totalAssets : null;
+    if (leverageCurrent !== null && leveragePrev !== null) details.leverageDecreasing = leverageCurrent < leveragePrev;
+
+    // 4. Current ratio tang (TSNH/NNH tang)
+    const currentRatioCurrent = current.currentAssets !== null && current.currentLiabilities && current.currentLiabilities !== 0
+      ? current.currentAssets / current.currentLiabilities : null;
+    const currentRatioPrev = yearAgo.currentAssets !== null && yearAgo.currentLiabilities && yearAgo.currentLiabilities !== 0
+      ? yearAgo.currentAssets / yearAgo.currentLiabilities : null;
+    if (currentRatioCurrent !== null && currentRatioPrev !== null) details.currentRatioIncreasing = currentRatioCurrent > currentRatioPrev;
+
+    // 5. Bien loi nhuan gop tang
+    const grossMarginCurrent = current.grossProfit !== null && current.revenue && current.revenue !== 0
+      ? current.grossProfit / current.revenue : null;
+    const grossMarginPrev = yearAgo.grossProfit !== null && yearAgo.revenue && yearAgo.revenue !== 0
+      ? yearAgo.grossProfit / yearAgo.revenue : null;
+    if (grossMarginCurrent !== null && grossMarginPrev !== null) details.grossMarginIncreasing = grossMarginCurrent > grossMarginPrev;
+
+    // 6. Vong quay tai san tang (Doanh thu/Tong tai san tang)
+    const assetTurnoverCurrent = current.revenue !== null && current.totalAssets && current.totalAssets !== 0
+      ? current.revenue / current.totalAssets : null;
+    const assetTurnoverPrev = yearAgo.revenue !== null && yearAgo.totalAssets && yearAgo.totalAssets !== 0
+      ? yearAgo.revenue / yearAgo.totalAssets : null;
+    if (assetTurnoverCurrent !== null && assetTurnoverPrev !== null) details.assetTurnoverIncreasing = assetTurnoverCurrent > assetTurnoverPrev;
+  }
+
+  const score = Object.values(details).filter((v) => v === true).length;
+  return { score, maxScore: 6, details };
+}

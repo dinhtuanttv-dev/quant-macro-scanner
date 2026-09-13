@@ -156,6 +156,7 @@ model DividendUniverseEntry {
   dividendYieldPct    Float?
   payoutRatioPct      Float?  // DPS/EPS - da tinh noi bo Cron Job 2, bo sung luu rieng de dong bo voi 17 ma
   profitGrowthYoY     Float?  // % tang truong LNST YoY - da tinh noi bo, bo sung luu rieng
+  fScore              Int?    // F-Score rut gon 6/9 tieu chi (Piotroski, thieu CFO + So CP luu hanh)
 
   lastScannedAt       DateTime  @default(now()) @updatedAt
 

@@ -7,7 +7,7 @@ import { fetchQuoteBatch } from "@/lib/market-data/yahoo-finance-adapter";
 import { calculateEarningsGrowth } from "@/lib/cotuc/earnings-scoring";
 import {
   calculateTier1Score, calculateTier2Score, calculateTier3Score,
-  calculateConsecutiveYears, calculateMedian, detectDividendRedFlag,
+  calculateConsecutiveYears, calculateMedian, detectDividendRedFlag, calculateFScoreLite,
 } from "@/lib/cotuc/dividend-quality-score";
 import { DIVIDEND_STOCKS } from "@/lib/quant-cotuc";
 
@@ -38,7 +38,7 @@ export async function GET() {
       ticker: string; sector: string;
       debtEquity: number | null; pe: number | null;
       payoutRatioPct: number | null; consecutiveYears: number | null;
-      earningsScore: number | null; hasRedFlag: boolean; profitGrowthYoY: number | null;
+      earningsScore: number | null; hasRedFlag: boolean; profitGrowthYoY: number | null; fScore: number;
       dividendYieldPct: number | null;
     };
 
@@ -58,6 +58,26 @@ export async function GET() {
       const totalEquity = latestBalance?.totalEquity ?? null;
       const totalLiabilities = latestBalance?.totalLiabilities ?? null;
       const debtEquity = totalLiabilities !== null && totalEquity ? totalLiabilities / totalEquity : null;
+
+      // F-Score rut gon (6/9): can 2 ky (quy [0] hien tai, quy [4] cung
+      // ky nam truoc). Xem ghi chu day du trong dividend-quality-score.ts.
+      const incomeQ0 = income?.available ? income.quarters[0] : null;
+      const incomeQ4 = income?.available ? income.quarters[4] : null;
+      const balanceQ4 = balance?.available ? balance.quarters[4] : null;
+      const fScoreResult = calculateFScoreLite(
+        {
+          netProfit: incomeQ0?.netProfit ?? null, totalAssets: latestBalance?.totalAssets ?? null,
+          longTermDebt: latestBalance?.longTermDebt ?? null, currentAssets: latestBalance?.currentAssets ?? null,
+          currentLiabilities: latestBalance?.currentLiabilities ?? null, revenue: incomeQ0?.revenue ?? null,
+          grossProfit: incomeQ0?.grossProfit ?? null,
+        },
+        incomeQ4 && balanceQ4 ? {
+          netProfit: incomeQ4.netProfit, totalAssets: balanceQ4.totalAssets,
+          longTermDebt: balanceQ4.longTermDebt, currentAssets: balanceQ4.currentAssets,
+          currentLiabilities: balanceQ4.currentLiabilities, revenue: incomeQ4.revenue,
+          grossProfit: incomeQ4.grossProfit,
+        } : null
+      );
 
       const price = quote?.price ?? null;
       const pe = price !== null && epsTTM !== null && epsTTM > 0 ? price / epsTTM : null;
@@ -87,7 +107,7 @@ export async function GET() {
       // khong nhan doi - vi da la 1 dot cu the) / gia hien tai
       const dividendYieldPct = latestCash?.valuePerShare && price ? (latestCash.valuePerShare / price) * 100 : null;
 
-      return { ticker, sector, debtEquity, pe, payoutRatioPct, consecutiveYears, earningsScore, hasRedFlag, dividendYieldPct, profitGrowthYoY: growthResult?.profitGrowthYoY ?? null };
+      return { ticker, sector, debtEquity, pe, payoutRatioPct, consecutiveYears, earningsScore, hasRedFlag, dividendYieldPct, profitGrowthYoY: growthResult?.profitGrowthYoY ?? null, fScore: fScoreResult.score };
     });
 
     // Buoc 2: tinh TRUNG VI theo NGANH (tu 17 ma) cho debtEquity va pe.
@@ -140,6 +160,7 @@ export async function GET() {
         details: {
           payoutRatioPct: r.payoutRatioPct,
           profitGrowthYoY: r.profitGrowthYoY,
+          fScore: r.fScore,
           consecutiveYears: r.consecutiveYears,
           debtEquity: r.debtEquity,
           industryMedianDebtEquity: industryMedianDebtEquity.get(r.sector) ?? null,

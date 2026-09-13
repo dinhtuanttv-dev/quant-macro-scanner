@@ -8,6 +8,13 @@
 //   Kiem chung: bsa53 - bsa54 = bsa78 (dung tuyet doi voi du lieu VNM
 //   Q1/2018: 35,328,719,216,070 - 9,037,780,154,701 = 26,290,939,061,369)
 //
+// MO RONG (cho F-Score, xac nhan qua PHEP TINH KHOP CHINH XAC voi du
+// lieu that VNM Q1/2018, khong doan mo):
+//   bsa1  = Tai san ngan han  (kiem chung: bsa1 + bsa23 = bsa53)
+//   bsa23 = Tai san dai han
+//   bsa55 = No ngan han       (kiem chung: bsa55 + bsa67 = bsa54)
+//   bsa67 = No dai han
+//
 // LUU Y: bsa54 la TONG NO PHAI TRA (bao gom ca khoan phai tra nguoi ban,
 // thue...), KHONG PHAI rieng "no vay co lai" - dung lam PROXY cho ty le
 // No/Von chu so huu (D/E ratio pho bien trong phan tich tai chinh van
@@ -22,6 +29,9 @@ export interface QuarterlyBalanceRow {
   totalAssets: number | null;
   totalLiabilities: number | null;
   totalEquity: number | null;
+  currentAssets: number | null;
+  currentLiabilities: number | null;
+  longTermDebt: number | null;
   periodLabel: string;
 }
 
@@ -61,12 +71,18 @@ export async function fetchQuarterlyBalance(ticker: string): Promise<QuarterlyBa
         const totalAssets = row.bsa53 ?? null;
         const totalLiabilities = row.bsa54 ?? null;
         const totalEquity = row.bsa78 ?? null;
+        const currentAssets = row.bsa1 ?? null;
+        const currentLiabilities = row.bsa55 ?? null;
+        const longTermDebt = row.bsa67 ?? null;
 
         return {
           ticker, year, quarter,
           totalAssets: totalAssets !== null ? Number(totalAssets) : null,
           totalLiabilities: totalLiabilities !== null ? Number(totalLiabilities) : null,
           totalEquity: totalEquity !== null ? Number(totalEquity) : null,
+          currentAssets: currentAssets !== null ? Number(currentAssets) : null,
+          currentLiabilities: currentLiabilities !== null ? Number(currentLiabilities) : null,
+          longTermDebt: longTermDebt !== null ? Number(longTermDebt) : null,
           periodLabel: `Q${quarter}/${year}`,
         };
       })

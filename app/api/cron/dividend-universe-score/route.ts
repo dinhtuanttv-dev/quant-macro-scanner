@@ -7,7 +7,7 @@ import { calculateEarningsGrowth } from "@/lib/cotuc/earnings-scoring";
 import {
   calculateTier1Score, calculateTier2Score, calculateTier3Score,
   calculateConsecutiveYears, calculateMedian, detectDividendRedFlag,
-  calculateDividendQualityScore,
+  calculateDividendQualityScore, calculateFScoreLite,
 } from "@/lib/cotuc/dividend-quality-score";
 import { buildLifecycleEvents } from "@/lib/cotuc/dividend-lifecycle";
 import { fetchDividendEventsBatch } from "@/lib/cotuc/vci-events-adapter";
@@ -138,6 +138,7 @@ export async function GET() {
       if (!raw) continue;
 
       const income = incomeMap.get(entry.ticker);
+      const balance = balanceMap.get(entry.ticker);
       const events = eventsMap.get(entry.ticker);
       const lifecycle = events?.available ? buildLifecycleEvents(entry.ticker, events.rawEvents) : [];
       const cashEvents = lifecycle.filter((e) => e.eventType === "CASH");
@@ -147,6 +148,29 @@ export async function GET() {
       const last4 = income?.available ? income.quarters.slice(0, 4) : [];
       const hasFull4 = last4.length === 4;
       const epsTTM = hasFull4 ? last4.reduce((s, q) => s + (q.eps ?? 0), 0) : null;
+
+      // F-Score rut gon (6/9): can 2 ky (quy [0] hien tai, quy [4] cung
+      // ky nam truoc). Neu thieu du lieu (chua du 5 quy), calculateFScoreLite
+      // tra ve tung tieu chi = null (khong doan mo), score se thap hon
+      // thuc te - CHAP NHAN DUOC vi minh bach hon suy dien sai.
+      const incomeQ0 = income?.available ? income.quarters[0] : null;
+      const incomeQ4 = income?.available ? income.quarters[4] : null;
+      const balanceQ0 = balance?.available ? balance.quarters[0] : null;
+      const balanceQ4 = balance?.available ? balance.quarters[4] : null;
+      const fScoreResult = calculateFScoreLite(
+        {
+          netProfit: incomeQ0?.netProfit ?? null, totalAssets: balanceQ0?.totalAssets ?? null,
+          longTermDebt: balanceQ0?.longTermDebt ?? null, currentAssets: balanceQ0?.currentAssets ?? null,
+          currentLiabilities: balanceQ0?.currentLiabilities ?? null, revenue: incomeQ0?.revenue ?? null,
+          grossProfit: incomeQ0?.grossProfit ?? null,
+        },
+        incomeQ4 && balanceQ4 ? {
+          netProfit: incomeQ4.netProfit, totalAssets: balanceQ4.totalAssets,
+          longTermDebt: balanceQ4.longTermDebt, currentAssets: balanceQ4.currentAssets,
+          currentLiabilities: balanceQ4.currentLiabilities, revenue: incomeQ4.revenue,
+          grossProfit: incomeQ4.grossProfit,
+        } : null
+      );
 
       const payoutRatioPct = latestCash?.valuePerShare && epsTTM && epsTTM > 0 ? (latestCash.valuePerShare / epsTTM) * 100 : null;
       const consecutiveYears = cashEvents.length > 0 ? calculateConsecutiveYears(lifecycle) : null;
@@ -180,6 +204,7 @@ export async function GET() {
           price: raw.price, pe: raw.pe, debtEquity: raw.debtEquity, dividendYieldPct,
           payoutRatioPct, profitGrowthYoY: growthResult?.profitGrowthYoY ?? null,
           rsi14: rsiMap.get(entry.ticker) ?? null,
+          fScore: fScoreResult.score,
         },
       });
     }

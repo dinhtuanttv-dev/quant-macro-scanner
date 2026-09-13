@@ -16,6 +16,11 @@
 //    - isa22 = Loi nhuan sau thue (da doi chieu dung voi VNM Q1/2018: 2,701 ty)
 //    - yearReport = nam, lengthReport = quy (1-4; gia tri 5 = ca nam,
 //      CHI xuat hien trong mang "years", khong xuat hien trong "quarters")
+//    - isa4  = Gia von hang ban (am) - XAC NHAN qua PHEP TINH KHOP CHINH
+//      XAC: isa1 + isa2 + isa4 = isa5 (Loi nhuan gop), voi du lieu that
+//      VNM Q1/2018: 12,131,963,698,383 + (-11,461,677,471) +
+//      (-6,633,808,703,800) = 5,486,693,317,112 = isa5 (dung tuyet doi)
+//    - isa5  = Loi nhuan gop
 
 const IQ_BASE_URL = "https://iq.vietcap.com.vn/api/iq-insight-service";
 
@@ -26,6 +31,8 @@ export interface QuarterlyIncomeRow {
   revenue: number | null;
   netProfit: number | null;
   eps: number | null;       // isa23 - da xac nhan khop dung EPS cong bo cong khai VNM 2018
+  cogs: number | null;      // isa4 - Gia von hang ban (am)
+  grossProfit: number | null; // isa5 - Loi nhuan gop
   periodLabel: string;      // "Q3/2026"
 }
 
@@ -68,12 +75,16 @@ export async function fetchQuarterlyIncome(ticker: string): Promise<QuarterlyFin
         const revenue = row.isa1 ?? null;
         const netProfit = row.isa22 ?? null;
         const eps = row.isa23 ?? null;
+        const cogs = row.isa4 ?? null;
+        const grossProfit = row.isa5 ?? null;
 
         return {
           ticker, year, quarter,
           revenue: revenue !== null ? Number(revenue) : null,
           netProfit: netProfit !== null ? Number(netProfit) : null,
           eps: eps !== null ? Number(eps) : null,
+          cogs: cogs !== null ? Number(cogs) : null,
+          grossProfit: grossProfit !== null ? Number(grossProfit) : null,
           periodLabel: `Q${quarter}/${year}`,
         };
       })
