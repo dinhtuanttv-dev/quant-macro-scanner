@@ -261,3 +261,65 @@ model SieuQuetStockItem {
 
   @@index([smartScore])
 }
+
+// SIEU QUET AI - GIAI DOAN 3: Multi-AI Consensus (Event System). PORT
+// pipeline logic tu events.py (cap/rate-limit/exit condition/idempotency
+// - co gia tri that), THAY 3 AI gia (_simulate_ai_vote) bang 1 Gemini
+// THAT (co Google Search Grounding qua module gemini-monitor da co san
+// trong du an). Do CHI CO 1 AI provider (khac "Multi-AI" 2-3 provider
+// doc lap cua ban goc), NGUOI DUNG la ben "doi chung" cuoi cung qua
+// Modal xac nhan (dung tinh than "Doi Chung + Xac Nhan Nguoi Dung" cua
+// ten goi thiet ke goc).
+model SieuQuetEvent {
+  id                    String   @id @default(cuid())
+  title                 String
+  category              String   // monetary_policy | geopolitical | earnings | upgrade | other
+  source                String   // ai_discovery | manual_input
+  enteredBy             String   @default("default_user")
+  severity              Int      @default(3) // 1-5
+  description           String
+  expectedDurationDays  Int?
+  sectors               String[]
+  tickers               String[] @default([])
+  magnitude             String   @default("medium") // high | medium | low - can cho computeEventImpactScore
+  direction             String   @default("positive") // positive | negative
+  sourceUrl             String?
+  sourceName            String?
+  verifiedStatus        String   @default("user_confirmed") // CHI gia tri nay moi duoc dua vao eventImpactScore
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([verifiedStatus])
+}
+
+// Candidate cho DISCOVERY (Gemini + Google Search Grounding, 3 lan/ngay:
+// 8h/13h/20h gio VN) - CHO DEN KHI nguoi dung Xac nhan/Bo qua.
+model SieuQuetEventCandidate {
+  id              String   @id @default(cuid())
+  rawTitle        String
+  category        String
+  sectors         String[]
+  magnitude       String   @default("medium") // high | medium | low
+  direction       String   @default("positive") // positive | negative
+  sourceUrl       String?  // BAT BUOC phai co URL that tu Grounding, neu khong co -> khong tao candidate (chong ao giac)
+  sourceName      String?
+  announcementDate String?
+  aiSummary       String   // Gemini tom tat NGAN vi sao day la su kien dang chu y
+  discoveredAt    DateTime @default(now())
+  decision        String?  // null (dang cho) | confirmed | skipped
+  decidedAt       DateTime?
+
+  @@index([decision])
+}
+
+// Rate-limit/skip-streak/cooldown/idempotency state - PHAI luu Database
+// (khac ban goc dung Python dict in-memory) vi Vercel serverless KHONG
+// giu state giua cac request (moi request co the chay instance khac).
+model SieuQuetRateState {
+  userId          String   @id @default("default_user")
+  skipStreak      Int      @default(0)
+  cooldownUntil   DateTime?
+  skipTimestamps  DateTime[] @default([]) // cac lan skip trong gio gan nhat (loc >1h khi doc)
+  lastIdempotencyKeys String[] @default([]) // 20 key gan nhat, chong double-submit
+  updatedAt       DateTime @updatedAt
+}

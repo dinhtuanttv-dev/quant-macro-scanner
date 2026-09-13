@@ -7,7 +7,7 @@ import { fetchQuoteBatch, fetchOhlcvHistory } from "@/lib/market-data/yahoo-fina
 import { fetchIndexOhlcvHistory } from "@/lib/market-data/vndirect-adapter";
 import { calculateSMA, calculateRSI, calculateMACDHistogram, calculateAtrSeries } from "@/lib/market-data/technical-indicators";
 import { computeTrendBias, computeMaAlignmentScore, computeImpulseScore, computeConfluence } from "@/lib/sieu-quet-ai/confluence-engine";
-import { computeFaScore, computeTaScore, computeEventImpactScore, computeSmartScore, computeRiskReward, computeRiskAdjustedMomentum } from "@/lib/sieu-quet-ai/scoring-engine";
+import { computeFaScore, computeTaScore, computeEventImpactScore, computeSmartScore, computeRiskReward, computeRiskAdjustedMomentum, type ActiveEvent } from "@/lib/sieu-quet-ai/scoring-engine";
 import { computeTrendTag, computeQualityTag, computeRsRating, computeReturnOverPeriod } from "@/lib/sieu-quet-ai/market-tags";
 import { calculateFScoreLite } from "@/lib/cotuc/dividend-quality-score";
 
@@ -160,6 +160,28 @@ export async function GET() {
     };
     const universeReturns64d = tickerData.map((t) => t.return64d);
 
+    // GIAI DOAN 3: lay su kien DA XAC NHAN that (verifiedStatus=user_confirmed)
+    // - CHI su kien nay moi duoc tham gia eventImpactScore (bat bien bat
+    // buoc theo yeu cau Phase 3 goc).
+    const confirmedEvents = await prisma.sieuQuetEvent.findMany({ where: { verifiedStatus: "user_confirmed" } });
+    const now = new Date();
+    interface ConfirmedEventRow {
+      verifiedStatus: string; sectors: string[]; magnitude: string; direction: string;
+      expectedDurationDays: number | null; createdAt: Date;
+    }
+    const activeEvents: ActiveEvent[] = (confirmedEvents as ConfirmedEventRow[]).map((e) => {
+      const durationDays = e.expectedDurationDays ?? 14;
+      const daysSinceCreated = Math.floor((now.getTime() - e.createdAt.getTime()) / (1000 * 60 * 60 * 24));
+      const daysRemaining = durationDays - daysSinceCreated;
+      const status: "ongoing" | "upcoming" | "resolved" = daysRemaining < 0 ? "resolved" : daysSinceCreated <= 1 ? "upcoming" : "ongoing";
+      return {
+        verifiedStatus: e.verifiedStatus, sectors: e.sectors,
+        magnitude: e.magnitude as "high" | "medium" | "low",
+        direction: e.direction as "positive" | "negative",
+        status, daysRemaining: daysRemaining >= 0 ? daysRemaining : null,
+      };
+    });
+
     let processed = 0;
     for (const t of tickerData) {
       const trendTag = computeTrendTag(t.price, t.ma20, t.ma50);
@@ -169,7 +191,7 @@ export async function GET() {
 
       const faScore = computeFaScore(t.roe, t.netMargin, t.revenueGrowth, faUniverse.roe, faUniverse.margin, faUniverse.growth);
       const taScore = computeTaScore(rsRating, trendTag, t.liquidity, faUniverse.liq, divergence);
-      const eventScore = computeEventImpactScore(allTickerSectors.get(t.ticker) ?? "Khac", []); // Chua co Event System that (Giai doan 3)
+      const eventScore = computeEventImpactScore(allTickerSectors.get(t.ticker) ?? "Khac", activeEvents);
 
       const confl = computeConfluence(bias, trendTag, rsRating, qualityTag, breakoutProbability);
       const smartScore = computeSmartScore(faScore, taScore, eventScore, confl.boost);
