@@ -128,8 +128,12 @@ export async function GET() {
     const impulseScore = computeImpulseScore(idxRsi, breadthPct, maAlign, idxAtrPct);
     const breakoutProbability = Math.max(0, 100 - idxAtrPct - Math.abs(50 - breadthPct));
 
-    const supportMid = idxCloses[idxCloses.length - 1] * 0.97;
-    const resistMid = idxCloses[idxCloses.length - 1] * 1.03;
+    // FIX QUAN TRONG: KHONG dung support/resist cua VN-Index (don vi
+    // diem chi so, ~1700-1800) de tinh Risk/Reward cho GIA CO PHIEU
+    // (don vi VND, ~20000-250000) - sai don vi hoan toan, gay R/R luon
+    // ~-1 cho MOI ma (da phat hien qua du lieu that). Risk/Reward CAN
+    // dung vung ho tro/khang cu CUA CHINH TUNG MA (dua tren gia rieng
+    // cua ma do), khong phai dung chung 1 muc cua index.
 
     await prisma.sieuQuetIndexState.upsert({
       where: { id: "singleton" },
@@ -169,7 +173,14 @@ export async function GET() {
 
       const confl = computeConfluence(bias, trendTag, rsRating, qualityTag, breakoutProbability);
       const smartScore = computeSmartScore(faScore, taScore, eventScore, confl.boost);
-      const riskReward = computeRiskReward(t.price, supportMid, resistMid);
+      // Support/Resist RIENG cho tung ma: dung MA50 CUA CHINH MA DO lam
+      // tam (+-3%) - KHONG dung gia hien tai lam tam (se luon doi xung,
+      // R/R=1 vo nghia cho moi ma). MA50 la muc tham chieu on dinh, gia
+      // hien tai co the da lech khoi muc nay (len hoac xuong), tao R/R
+      // co y nghia THAT (phan anh vi tri gia so voi vung gia tri).
+      const stockSupportMid = t.ma50 * 0.97;
+      const stockResistMid = t.ma50 * 1.03;
+      const riskReward = computeRiskReward(t.price, stockSupportMid, stockResistMid);
       const riskAdjMomentum = computeRiskAdjustedMomentum(t.closes);
 
       // F-Score rut gon 6/9 (tai dung tu Tab Co Tuc - xem ghi chu trong dividend-quality-score.ts)
