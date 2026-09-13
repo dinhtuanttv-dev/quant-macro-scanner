@@ -61,8 +61,19 @@ export interface ActiveEvent {
 }
 
 // A.5 - eventImpactScore (cong thuc truoc day hoan toan thieu o ban v1.0)
+function normalizeSectorKey(s: string): string {
+  return s.trim().toLowerCase();
+}
+
+// FIX QUAN TRONG (phat hien qua du lieu that): so sanh sector truoc day
+// dung includes() CHINH XAC TUYET DOI (case-sensitive) - nguoi dung go
+// "chung khoan" (thuong) trong form nhap tay trong khi he thong luu
+// nganh "Chung khoan" (hoa dau) -> KHONG KHOP, eventImpactScore luon
+// = 50 du da co su kien xac nhan dung nganh. Chuan hoa (lowercase+trim)
+// truoc khi so sanh.
 export function computeEventImpactScore(sector: string, activeEvents: ActiveEvent[]): number {
-  const relevant = activeEvents.filter((e) => e.verifiedStatus === "user_confirmed" && e.sectors.includes(sector));
+  const sectorKey = normalizeSectorKey(sector);
+  const relevant = activeEvents.filter((e) => e.verifiedStatus === "user_confirmed" && e.sectors.some((s) => normalizeSectorKey(s) === sectorKey));
   if (relevant.length === 0) return 50.0;
 
   const magnitudeW: Record<string, number> = { high: 1.0, medium: 0.6, low: 0.3 };
