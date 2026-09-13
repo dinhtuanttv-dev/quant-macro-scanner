@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { marketAgentSchema, newsAgentSchema, evidenceAgentSchema } from "./schemas";
+import { marketAgentSchema, newsAgentSchema, evidenceAgentSchema, dividendAnalysisSchema } from "./schemas";
 import { VALID_SECTOR_KEYS } from "@/lib/mapping/macro-mapping";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
@@ -45,6 +45,31 @@ QUY TẮC BẮT BUỘC:
 6. Với News Agent: so sánh với TIN TỨC GỐC (mục riêng trong prompt, không phải dữ liệu thị trường), trả về "newsVerified"/"newsDiscrepancies".`;
 
 interface DataPoint { id: string; label: string; value: number | string; timestamp: string; }
+
+// P2 (Bo Loc Co Phieu - Nhom B): agent RIENG cho Pros/Cons + Catalyst
+// Score cua 1 ma co tuc, dua HOAN TOAN tren so lieu dinh luong da co -
+// KHONG duoc bia them thong tin dinh tinh khong co trong du lieu.
+const DIVIDEND_ANALYSIS_SYSTEM_PROMPT = `Bạn là Dividend Analysis Agent trong hệ thống Global Quanta.
+
+NHIỆM VỤ DUY NHẤT: Từ CÁC CHỈ SỐ ĐỊNH LƯỢNG được cung cấp (P/E, ROE, Nợ/Vốn chủ sở hữu, F-Score, Tăng trưởng lợi nhuận, Tỷ lệ chi trả cổ tức, Dividend Quality Score, sự kiện cổ tức gần nhất...), rút ra 2-4 điểm mạnh (pros), 2-4 điểm yếu/rủi ro (cons), và ước lượng Catalyst Score (1-10).
+
+QUY TẮC BẮT BUỘC:
+1. CHỈ được suy luận từ CÁC CON SỐ được cung cấp trong phần "DỮ LIỆU ĐẦU VÀO". TUYỆT ĐỐI KHÔNG bịa thêm thông tin về ban lãnh đạo, chiến lược kinh doanh, tin tức, giao dịch nội bộ, hay bất kỳ dữ liệu định tính nào KHÔNG có trong phần dữ liệu đầu vào.
+2. Mỗi điểm mạnh/yếu PHẢI gắn trực tiếp với 1 con số cụ thể đã cung cấp (VD "Nợ/Vốn chủ sở hữu thấp (0.3x)" hợp lệ; "Ban lãnh đạo có tầm nhìn tốt" KHÔNG hợp lệ vì không có căn cứ số liệu).
+3. Nếu 1 chỉ số bị thiếu (null/không có trong dữ liệu), KHÔNG được giả định giá trị cho nó - chỉ dùng những chỉ số THẬT SỰ có.
+4. catalystScore là ước lượng khách quan dựa trên các chỉ số, KHÔNG PHẢI khuyến nghị mua/bán.
+5. Viết bằng tiếng Việt, ngắn gọn, mỗi điểm 1 câu.`;
+
+export async function runDividendAnalysisAgent(stockData: Record<string, unknown>) {
+  const model = genAI.getGenerativeModel({
+    model: "gemini-3.6-flash",
+    systemInstruction: DIVIDEND_ANALYSIS_SYSTEM_PROMPT,
+    generationConfig: { responseMimeType: "application/json", responseSchema: dividendAnalysisSchema as any },
+  });
+  const prompt = `DỮ LIỆU ĐẦU VÀO:\n${JSON.stringify(stockData, null, 2)}\n\nRút ra pros/cons/catalystScore CHỈ dựa trên các con số trên.`;
+  const result = await model.generateContent(prompt);
+  return JSON.parse(result.response.text());
+}
 
 export async function runMarketAgent(dataPoints: DataPoint[]) {
   const model = genAI.getGenerativeModel({

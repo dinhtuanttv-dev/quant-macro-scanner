@@ -163,3 +163,17 @@ model DividendUniverseEntry {
   @@index([sector])
   @@index([exrightDate])
 }
+
+// P2 (AI Nhom B) - bang DUNG CHUNG cho CA 17 ma theo doi goc VA Universe
+// (khac voi DividendUniverseEntry chi danh cho Universe). Luu KET QUA
+// AI (Gemini) cho Pros/Cons + Catalyst Score - CHI 2 truong nay, vi CAC
+// truong khac (insider/macro/global/news/agmAgenda) THIEU NGUON TIN THAT
+// de AI dua vao, se BIA neu co ep sinh - da quyet dinh BO HAN, khong
+// dua AI sinh noi dung khong co can cu.
+model DividendAiAnalysis {
+  ticker        String   @id
+  pros          String[]
+  cons          String[]
+  catalystScore Int?     // 1-10, uoc luong dua tren Dividend Quality Score da co
+  generatedAt   DateTime @default(now()) @updatedAt
+}

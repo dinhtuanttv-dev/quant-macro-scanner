@@ -80,3 +80,28 @@ export const evidenceAgentSchema = {
   },
   required: ["sectorVerifications", "newsVerified", "newsDiscrepancies"],
 };
+
+// P2 (Bo Loc Co Phieu - Nhom B): CHI sinh Pros/Cons + Catalyst Score, vi
+// day la 2 truong DUY NHAT co the suy luan AN TOAN tu du lieu dinh luong
+// da co (P/E, ROE, Debt/Equity, F-Score, Growth, Payout, su kien co
+// tuc) MA KHONG CAN tin tuc/du lieu ben ngoai - tranh AI bia noi dung
+// khong co can cu (da quyet dinh BO HAN insider/macro/global/news/
+// agmAgenda vi thieu nguon).
+export const dividendAnalysisSchema = {
+  type: "object",
+  properties: {
+    pros: {
+      type: "array", items: { type: "string" },
+      description: "2-4 diem MANH, MOI diem 1 cau ngan, CHI dua tren so lieu dinh luong da cung cap (P/E, ROE, Debt/Equity, F-Score, Growth, Payout Ratio, su kien co tuc) - TUYET DOI KHONG bia them thong tin dinh tinh (tin tuc, ban lanh dao, chien luoc kinh doanh...) khong co trong du lieu duoc cung cap.",
+    },
+    cons: {
+      type: "array", items: { type: "string" },
+      description: "2-4 diem YEU/rui ro, cung dieu kien nhu pros - CHI dua tren so lieu da cung cap.",
+    },
+    catalystScore: {
+      type: "integer",
+      description: "Diem 1-10 uoc luong suc hap dan tong the CHI dua tren Dividend Quality Score va cac chi so da cung cap - KHONG phai khuyen nghi dau tu.",
+    },
+  },
+  required: ["pros", "cons", "catalystScore"],
+};
