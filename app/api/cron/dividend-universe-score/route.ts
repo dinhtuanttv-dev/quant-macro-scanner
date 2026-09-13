@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { fetchQuarterlyIncomeBatch } from "@/lib/cotuc/vci-financials-adapter";
 import { fetchQuarterlyBalanceBatch } from "@/lib/cotuc/vci-balance-sheet-adapter";
-import { fetchQuoteBatch } from "@/lib/market-data/yahoo-finance-adapter";
+import { fetchQuoteBatch, fetchOhlcvHistory } from "@/lib/market-data/yahoo-finance-adapter";
+import { calculateRSI } from "@/lib/market-data/technical-indicators";
 import { calculateEarningsGrowth } from "@/lib/cotuc/earnings-scoring";
 import {
   calculateTier1Score, calculateTier2Score, calculateTier3Score,
@@ -63,6 +64,21 @@ export async function GET() {
       fetchQuoteBatch(tickers),
       fetchDividendEventsBatch(tickers),
     ]);
+
+    // RSI: dong bo voi 17 ma (route /api/cotuc/fundamentals cung tinh
+    // theo cach nay) - lay lich su gia 1 thang (du 14+ phien cho RSI-14),
+    // tinh rieng tung ma (fetchOhlcvHistory khong co ban batch san).
+    const ohlcvResults = await Promise.allSettled(tickers.map((t) => fetchOhlcvHistory(t, "1mo")));
+    const rsiMap = new Map<string, number | null>();
+    tickers.forEach((ticker, i) => {
+      const r = ohlcvResults[i];
+      if (r.status === "fulfilled" && r.value.success && r.value.data) {
+        const closes = r.value.data.map((bar) => bar.close);
+        rsiMap.set(ticker, calculateRSI(closes));
+      } else {
+        rsiMap.set(ticker, null);
+      }
+    });
 
     const incomeMap = new Map(incomeResults.map((r) => [r.ticker, r]));
     const balanceMap = new Map(balanceResults.map((r) => [r.ticker, r]));
@@ -163,6 +179,7 @@ export async function GET() {
           tier1, tier2, tier3, overallScoreTier123,
           price: raw.price, pe: raw.pe, debtEquity: raw.debtEquity, dividendYieldPct,
           payoutRatioPct, profitGrowthYoY: growthResult?.profitGrowthYoY ?? null,
+          rsi14: rsiMap.get(entry.ticker) ?? null,
         },
       });
     }
