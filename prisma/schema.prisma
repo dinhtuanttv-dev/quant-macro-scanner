@@ -250,6 +250,14 @@ model SieuQuetStockItem {
   confluenceReasonCodes String[]
   breakoutBoostBadge    Boolean @default(false)
 
+  // B.6 Foreign Flow (DON GIAN HOA - trung thuc voi du lieu that co san):
+  // TRUE neu ma nam trong Top 5 duoc khoi ngoai mua rong manh nhat hom
+  // do (tu ban tin chinh thuc HOSE, bang hose_foreign_net_buy da co san
+  // trong du an). KHONG PHAI percentile lien tuc nhu ban goc (khong co
+  // du lieu de tinh), va CHI co tin hieu "mua", KHONG co "ban" (HOSE
+  // khong cong bo danh sach ban rong tuong ung).
+  foreignNetBuyFlag     Boolean @default(false)
+
   piotroskiFScore     Int?     // RUT GON 6/9 (dung lai calculateFScoreLite da lam cho Tab
                                 // Co Tuc - VAN THIEU CFO/So CP luu hanh, KHONG bia them)
   fScoreMax           Int      @default(6)

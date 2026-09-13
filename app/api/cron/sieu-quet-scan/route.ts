@@ -11,6 +11,24 @@ import { computeFaScore, computeTaScore, computeEventImpactScore, computeSmartSc
 import { computeTrendTag, computeQualityTag, computeRsRating, computeReturnOverPeriod } from "@/lib/sieu-quet-ai/market-tags";
 import { calculateFScoreLite } from "@/lib/cotuc/dividend-quality-score";
 
+// B.6 Foreign Flow - doc bang cache hose_foreign_net_buy DA CO SAN (ghi
+// boi lib/ingestion/hose/hose-ingest.ts, dung chung cho Tab Xuc Tac).
+// CHI co "buy" (Top 5 mua rong manh nhat), KHONG suy dien "sell" cho ma
+// con lai (HOSE khong cong bo danh sach ban rong tuong ung).
+async function fetchForeignNetBuySet(): Promise<Set<string>> {
+  try {
+    const rows = await prisma.$queryRaw<{ tickers: unknown }[]>`
+      SELECT tickers FROM hose_foreign_net_buy WHERE id = 'latest' LIMIT 1
+    `;
+    const tickers = rows[0]?.tickers;
+    if (Array.isArray(tickers)) return new Set(tickers.map((t) => String(t)));
+    return new Set();
+  } catch (err) {
+    console.error("[cron/sieu-quet-scan] Lỗi đọc hose_foreign_net_buy (bỏ qua, dùng Set rỗng):", err);
+    return new Set();
+  }
+}
+
 // SIEU QUET AI - GIAI DOAN 2: Cron Job tinh Confluence Engine + Scoring
 // THAT cho 88 ma (17 + 71 Universe), dung Yahoo OHLCV (TA rieng tung ma)
 // + VCI (FA) THAY THE market_sim.py (random-walk gia lap trong ban goc).
@@ -192,6 +210,7 @@ export async function GET() {
     // - CHI su kien nay moi duoc tham gia eventImpactScore (bat bien bat
     // buoc theo yeu cau Phase 3 goc).
     const confirmedEvents = await prisma.sieuQuetEvent.findMany({ where: { verifiedStatus: "user_confirmed" } });
+    const foreignNetBuySet = await fetchForeignNetBuySet();
     const now = new Date();
     interface ConfirmedEventRow {
       verifiedStatus: string; sectors: string[]; magnitude: string; direction: string;
@@ -264,6 +283,7 @@ export async function GET() {
           confluenceStatusCode: confl.statusCode, confluenceStatusLabel: confl.statusLabel,
           confluenceBoost: confl.boost, confluenceReasonCodes: confl.reasonCodes, breakoutBoostBadge: confl.breakoutBoostBadge,
           piotroskiFScore: fScoreResult.score, fScoreMax: fScoreResult.maxScore,
+          foreignNetBuyFlag: foreignNetBuySet.has(t.ticker),
         },
         update: {
           sector: allTickerSectors.get(t.ticker) ?? null,
@@ -273,6 +293,7 @@ export async function GET() {
           confluenceStatusCode: confl.statusCode, confluenceStatusLabel: confl.statusLabel,
           confluenceBoost: confl.boost, confluenceReasonCodes: confl.reasonCodes, breakoutBoostBadge: confl.breakoutBoostBadge,
           piotroskiFScore: fScoreResult.score, fScoreMax: fScoreResult.maxScore,
+          foreignNetBuyFlag: foreignNetBuySet.has(t.ticker),
         },
       });
       processed++;
