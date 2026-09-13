@@ -108,7 +108,13 @@ const universeMap = new Map<string, StockAnalysisInput>(
     );
 
     const succeeded = results.filter((r) => r.status === "fulfilled").length;
-    const failed = results.filter((r) => r.status === "rejected");
+    const failed = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
+    // FIX: tra ve CHI TIET loi (khong chi dem so luong) de debug chinh
+    // xac nguyen nhan, tranh doan mo.
+    const failedDetails = failed.map((r, i) => ({
+      ticker: batch[results.indexOf(r)],
+      reason: r.reason instanceof Error ? r.reason.message : String(r.reason),
+    }));
 
     return NextResponse.json({
       processedAt: new Date().toISOString(),
@@ -116,6 +122,7 @@ const universeMap = new Map<string, StockAnalysisInput>(
       batchSize: batch.length,
       succeeded,
       failedCount: failed.length,
+      failedDetails,
       batch,
     });
   } catch (err) {
