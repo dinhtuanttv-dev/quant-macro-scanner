@@ -197,3 +197,67 @@ model DividendCycleWindow {
   @@unique([ticker, exDate])
   @@index([ticker])
 }
+
+// SIEU QUET AI - port tu SieuQuetAI_v2_0_full_package (Confluence
+// Engine + Scoring da vas loi), nuoi bang du lieu THAT (Yahoo OHLCV +
+// VCI FA) thay cho market_sim.py (random-walk gia lap trong ban goc).
+//
+// 1 dong duy nhat - trang thai VN-INDEX THAT (VNDirect dchart, da xac
+// nhan hoat dong tot, dung boi nhieu route khac trong du an).
+model SieuQuetIndexState {
+  id                String   @id @default("singleton")
+  asOf              DateTime
+  ma20              Float
+  ma50              Float
+  ma200             Float
+  maAlignmentScore  Float
+  trendBias         String   // uptrend | accumulation | distribution | defensive | downtrend
+  trendLabel        String
+  rsi14             Float
+  macdHistogram     Float
+  marketBreadthPct  Float
+  divergence        String   // none | bullish | bearish
+  atr14             Float
+  atrPercentile     Float
+  breakoutProbability Float
+  impulseScore      Float
+  narrative         String
+  updatedAt         DateTime @updatedAt
+}
+
+model SieuQuetStockItem {
+  ticker              String   @id
+  companyName         String?
+  sector              String?
+  price               Float?
+  changePct           Float?
+
+  faScore             Float?
+  taScore             Float?
+  eventImpactScore    Float?
+  smartScore          Float?
+
+  rsRating            Float?
+  riskAdjustedMomentum Float?
+  riskRewardRatio     Float?
+
+  trendTag            String?  // Up-Trend | Down-Trend | Accumulation | Distribution
+  qualityTag          String?  // Low Debt | High Margin | Core Cash Flow
+
+  confluenceStatusCode  String?
+  confluenceStatusLabel String?
+  confluenceBoost       Float?
+  confluenceReasonCodes String[]
+  breakoutBoostBadge    Boolean @default(false)
+
+  piotroskiFScore     Int?     // RUT GON 6/9 (dung lai calculateFScoreLite da lam cho Tab
+                                // Co Tuc - VAN THIEU CFO/So CP luu hanh, KHONG bia them)
+  fScoreMax           Int      @default(6)
+  // Altman Z-Score: BO KHOI PHIEN BAN NAY - can retainedEarnings, ebit,
+  // marketCap (can So CP luu hanh) - CHUA CO NGUON nao xac nhan duoc
+  // (giong ly do F-Score chi lam 6/9). Se bo sung neu tim duoc nguon sau.
+
+  computedAt          DateTime @default(now()) @updatedAt
+
+  @@index([smartScore])
+}
