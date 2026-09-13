@@ -137,6 +137,47 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df["bb_lower"] = bb_mid - 2 * bb_std
     df["bb_mid"] = bb_mid
 
+    # GIAI DOAN 2: ADX + DI+/DI- THAT (Wilder's DMI chuan) - dung cung
+    # phuong phap Wilder smoothing (alpha=1/14) da dung dung cho RSI o
+    # tren. Cong thuc chuan (J. Welles Wilder, "New Concepts in Technical
+    # Trading Systems", 1978):
+    #   TR = max(High-Low, |High-PrevClose|, |Low-PrevClose|)
+    #   +DM = High-PrevHigh neu > 0 VA > (PrevLow-Low), nguoc lai 0
+    #   -DM = PrevLow-Low neu > 0 VA > (High-PrevHigh), nguoc lai 0
+    #   +DI = 100 * Wilder(+DM) / Wilder(TR)
+    #   -DI = 100 * Wilder(-DM) / Wilder(TR)
+    #   DX = 100 * |+DI - -DI| / (+DI + -DI)
+    #   ADX = Wilder(DX)
+    high, low, close = df["high"], df["low"], df["close"]
+    prev_close, prev_high, prev_low = close.shift(1), high.shift(1), low.shift(1)
+
+    tr = pd.concat([high - low, (high - prev_close).abs(), (low - prev_close).abs()], axis=1).max(axis=1)
+    up_move = high - prev_high
+    down_move = prev_low - low
+    plus_dm = ((up_move > down_move) & (up_move > 0)) * up_move.clip(lower=0)
+    minus_dm = ((down_move > up_move) & (down_move > 0)) * down_move.clip(lower=0)
+
+    atr_wilder = tr.ewm(alpha=1 / 14, min_periods=14, adjust=False).mean()
+    plus_dm_smooth = plus_dm.ewm(alpha=1 / 14, min_periods=14, adjust=False).mean()
+    minus_dm_smooth = minus_dm.ewm(alpha=1 / 14, min_periods=14, adjust=False).mean()
+
+    plus_di = 100 * (plus_dm_smooth / atr_wilder.replace(0, pd.NA))
+    minus_di = 100 * (minus_dm_smooth / atr_wilder.replace(0, pd.NA))
+    dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, pd.NA)
+    adx = dx.ewm(alpha=1 / 14, min_periods=14, adjust=False).mean()
+
+    df["plus_di"] = plus_di
+    df["minus_di"] = minus_di
+    df["adx"] = adx
+
+    # GIAI DOAN 2: MACD THAT - dung EMA12/26 da co san (khong tinh lai),
+    # Signal Line = EMA9 cua MACD line (cong thuc chuan Gerald Appel).
+    macd_line = df["ema_12"] - df["ema_26"]
+    macd_signal = macd_line.ewm(span=9, adjust=False).mean()
+    df["macd_line"] = macd_line
+    df["macd_signal"] = macd_signal
+    df["macd_histogram"] = macd_line - macd_signal
+
     return df
 
 
@@ -201,6 +242,12 @@ def get_stock(
                 "bbUpper": safe_float(r.get("bb_upper")),
                 "bbMid": safe_float(r.get("bb_mid")),
                 "bbLower": safe_float(r.get("bb_lower")),
+                "adx": safe_float(r.get("adx")),
+                "plusDi": safe_float(r.get("plus_di")),
+                "minusDi": safe_float(r.get("minus_di")),
+                "macdLine": safe_float(r.get("macd_line")),
+                "macdSignal": safe_float(r.get("macd_signal")),
+                "macdHistogram": safe_float(r.get("macd_histogram")),
             }
             for r in records
         ],
