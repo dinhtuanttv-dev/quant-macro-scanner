@@ -9,7 +9,7 @@ import { runDividendAnalysisAgent } from "@/lib/ai/gemini-agents";
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
-const BATCH_SIZE = 15; // Nho hon Cron Job 2 vi goi Gemini co do tre rieng
+const BATCH_SIZE = 3; // Giam manh (tu 15) - Gemini Free Tier chi 5 req/phut, goi tuan tu co delay
 const APP_BASE_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://tuan-quant-scanner-psi.vercel.app";
 
 interface StockAnalysisInput {
@@ -91,21 +91,34 @@ const universeMap = new Map<string, StockAnalysisInput>(
     });
     const batch = sortedTickers.slice(0, BATCH_SIZE);
 
-    // Buoc 3: goi Gemini SONG SONG cho batch, luu ket qua
-    const results = await Promise.allSettled(
-      batch.map(async (ticker) => {
+    // Buoc 3: goi Gemini TUAN TU (khong song song) + DO TRE giua cac
+    // lan goi - BAT BUOC vi gói Gemini Free Tier CHI CHO PHEP 5 request/
+    // phut (da xac nhan qua loi that: 429 Too Many Requests khi goi
+    // song song 15 ma). Batch giam con 3, delay 15s/lan -> an toan tuyet
+    // doi duoi quota, doi lai chu ky refresh 88 ma cham hon (~30 ngay/vong,
+    // da duoc nguoi dung chap nhan - Phuong an A).
+    const DELAY_MS = 15000;
+    const results: PromiseSettledResult<{ ticker: string; success?: boolean; skipped?: boolean }>[] = [];
+    for (let i = 0; i < batch.length; i++) {
+      const ticker = batch[i];
+      try {
         const data = allStockData.get(ticker);
-        if (!data) return { ticker, skipped: true };
-
-        const analysis = await runDividendAnalysisAgent(data as unknown as Record<string, unknown>);
-        await prisma.dividendAiAnalysis.upsert({
-          where: { ticker },
-          create: { ticker, pros: analysis.pros ?? [], cons: analysis.cons ?? [], catalystScore: analysis.catalystScore ?? null },
-          update: { pros: analysis.pros ?? [], cons: analysis.cons ?? [], catalystScore: analysis.catalystScore ?? null },
-        });
-        return { ticker, success: true };
-      })
-    );
+        if (!data) {
+          results.push({ status: "fulfilled", value: { ticker, skipped: true } });
+        } else {
+          const analysis = await runDividendAnalysisAgent(data as unknown as Record<string, unknown>);
+          await prisma.dividendAiAnalysis.upsert({
+            where: { ticker },
+            create: { ticker, pros: analysis.pros ?? [], cons: analysis.cons ?? [], catalystScore: analysis.catalystScore ?? null },
+            update: { pros: analysis.pros ?? [], cons: analysis.cons ?? [], catalystScore: analysis.catalystScore ?? null },
+          });
+          results.push({ status: "fulfilled", value: { ticker, success: true } });
+        }
+      } catch (err) {
+        results.push({ status: "rejected", reason: err });
+      }
+      if (i < batch.length - 1) await new Promise((resolve) => setTimeout(resolve, DELAY_MS));
+    }
 
     const succeeded = results.filter((r) => r.status === "fulfilled").length;
     const failed = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
