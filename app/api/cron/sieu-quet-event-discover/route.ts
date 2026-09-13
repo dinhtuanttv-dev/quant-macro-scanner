@@ -81,6 +81,7 @@ export async function GET() {
   } catch (err) {
     // FALLBACK AN TOAN: loi Gemini (vd het quota) khong lam hong pipeline
     console.error("[cron/sieu-quet-event-discover] Lỗi (bỏ qua lần này):", err);
-    return NextResponse.json({ discovered: false, reason: "Lỗi gọi Gemini, bỏ qua lần này", created: 0 });
+    const errMsg = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ discovered: false, reason: "Lỗi gọi Gemini, bỏ qua lần này", errorDetail: errMsg, created: 0 });
   }
 }
