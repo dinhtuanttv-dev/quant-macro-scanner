@@ -17,6 +17,12 @@ import { calculateFScoreLite } from "@/lib/cotuc/dividend-quality-score";
 // VN-Index THAT tu VNDirect dchart (da xac nhan hoat dong, dung boi 4
 // route khac trong du an: vnindex-value-estimate, liquidity-1030,
 // indices-compare, ohlcv) - KHONG suy dien tu trung binh gia cac ma.
+//
+// MO RONG UNIVERSE (Top 200 tu TradingView) + VONG XOAY: voi ~275+ ma
+// (75 goc + Top 200), khong the tinh trong 1 lan (gioi han 60s Hobby).
+// HAN CHE CAN LUU Y: RS Rating (percentile rank) tinh SO VOI BATCH HIEN
+// TAI (toi da 100 ma/lan), KHONG PHAI toan bo universe - se "troi" nhe
+// giua cac lan chay cho toi khi TAT CA cac batch duoc tinh du 1 vong.
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
@@ -29,9 +35,31 @@ export async function GET() {
       ...(universeEntries as UniverseTickerSector[]).map((e): [string, string] => [e.ticker, e.sector ?? "Khac"]),
       ...Array.from(dividendSectorMap.entries()),
     ]);
-    const tickers = Array.from(allTickerSectors.keys());
 
-    // Buoc 1: lay OHLCV (1 nam, du cho MA200 + RS 64 phien) + VCI Income/Balance cho TOAN BO 88 ma
+    // MO RONG UNIVERSE: hop nhat voi Top 200 (TradingView Scanner, da
+    // xac nhan hoat dong that) - loai trung voi danh sach 75 ma da co,
+    // giu nguyen sector cua danh sach cu (uu tien) neu trung ma.
+    interface Top200Row { ticker: string; sector: string | null; }
+    const top200: Top200Row[] = await prisma.sieuQuetUniverseTicker.findMany({ select: { ticker: true, sector: true } });
+    for (const t of top200) {
+      if (!allTickerSectors.has(t.ticker)) {
+        allTickerSectors.set(t.ticker, t.sector ?? "Khac");
+      }
+    }
+
+    // VONG XOAY: voi ~200+ ma, khong the tinh het trong 1 lan (gioi han
+    // 60s Hobby) - uu tien ma CHUA duoc tinh GAN DAY NHAT (computedAt
+    // cu nhat truoc), moi lan xu ly toi da BATCH_SIZE ma.
+    const BATCH_SIZE = 100;
+    const existingScores = await prisma.sieuQuetStockItem.findMany({ select: { ticker: true, computedAt: true } });
+    interface ScoredRow { ticker: string; computedAt: Date; }
+    const lastComputedMap = new Map((existingScores as ScoredRow[]).map((s) => [s.ticker, s.computedAt.getTime()]));
+    const allTickersSorted = Array.from(allTickerSectors.keys()).sort(
+      (a, b) => (lastComputedMap.get(a) ?? 0) - (lastComputedMap.get(b) ?? 0)
+    );
+    const tickers = allTickersSorted.slice(0, BATCH_SIZE);
+
+    // Buoc 1: lay OHLCV (1 nam, du cho MA200 + RS 64 phien) + VCI Income/Balance cho batch ma nay
     const [ohlcvResults, incomeResults, balanceResults, quotes] = await Promise.all([
       Promise.allSettled(tickers.map((t) => fetchOhlcvHistory(t, "1y"))),
       fetchQuarterlyIncomeBatch(tickers),

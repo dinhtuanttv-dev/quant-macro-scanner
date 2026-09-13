@@ -323,3 +323,21 @@ model SieuQuetRateState {
   lastIdempotencyKeys String[] @default([]) // 20 key gan nhat, chong double-submit
   updatedAt       DateTime @updatedAt
 }
+
+// TOP 200 UNIVERSE - danh sach ma xep hang theo Score = 0.4*norm(MarketCap)
+// + 0.6*norm(Volume30D), lay tu TradingView Scanner API (cong khai, khong
+// chinh thuc). Cap nhat boi Cron Job rieng (tan suat thap hon Cron Job
+// tinh diem chinh, vi thanh phan Top 200 it doi hang ngay).
+model SieuQuetUniverseTicker {
+  ticker        String   @id
+  name          String?
+  exchange      String?
+  sector        String?
+  marketCap     Float?
+  volume        Float?
+  score         Float
+  rank          Int
+  updatedAt     DateTime @updatedAt
+
+  @@index([rank])
+}
