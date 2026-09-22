@@ -47,7 +47,11 @@ function bullCase(profile: ConfluenceProfile): CaseItem[] {
 function bearCase(profile: ConfluenceProfile): CaseItem[] {
   const cases: CaseItem[] = [];
   const macro = profile.sources.macro;
-  if (macro && "foreign_flow_desc" in macro.raw) {
+  // FIX (ra soat 2026-09-22): truoc day chi check "key in raw" (ton tai
+  // key), khong check GIA TRI THAT - gay hien thi "Khoi ngoai null, du
+  // lieu tre ? ngay" khi foreign_flow_desc=null (key ton tai nhung rong).
+  // GIO chi them case item khi CO GIA TRI THAT, khong bia/hien thi rac.
+  if (macro && macro.raw.foreign_flow_desc !== null && macro.raw.foreign_flow_desc !== undefined) {
     cases.push({
       point: `Khối ngoại ${macro.raw.foreign_flow_desc}, dữ liệu trễ ${macro.raw.lag_days ?? "?"} ngày so với snapshot hiện tại.`,
       sourceField: "macro.foreign_flow", citedValue: String(macro.raw.foreign_flow_desc), dataStatus: macro.status ?? "STALE",
