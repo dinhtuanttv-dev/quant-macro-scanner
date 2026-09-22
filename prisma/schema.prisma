@@ -198,6 +198,21 @@ model DividendCycleWindow {
   @@index([ticker])
 }
 
+// Elite 10 - Vung 2.5 Time Engine, template AGM (Dai Hoi Dong Co Dong).
+// Tuong tu DividendCycleWindow nhung 2 cua so (A1/A2), ngay su kien la
+// ngay hop DHCD THAT (eventCode AGME/AGMR/EGME tu VCI).
+model AgmCycleWindow {
+  id          String   @id @default(cuid())
+  ticker      String
+  agmDate     DateTime
+  wA1         Float?
+  wA2         Float?
+  computedAt  DateTime @default(now()) @updatedAt
+
+  @@unique([ticker, agmDate])
+  @@index([ticker])
+}
+
 // SIEU QUET AI - port tu SieuQuetAI_v2_0_full_package (Confluence
 // Engine + Scoring da vas loi), nuoi bang du lieu THAT (Yahoo OHLCV +
 // VCI FA) thay cho market_sim.py (random-walk gia lap trong ban goc).
@@ -348,4 +363,52 @@ model SieuQuetUniverseTicker {
   updatedAt     DateTime @updatedAt
 
   @@index([rank])
+}
+
+// Elite 10 - Vung 1-6 "Giai Trinh Hoi Tu v2" (Confluence Engine, package
+// global-quanta-confluence). Port tu SQLAlchemy (SQLite) sang Prisma
+// (Postgres). Thay "Event Bus in-memory pub/sub" (khong tuong thich
+// Vercel serverless - moi request la 1 instance moi, khong giu state)
+// bang bang "ConfluenceSignalCache": moi tru cot (6 tab) GHI tin hieu
+// moi nhat cua minh vao day (qua Cron Job/route da co cua tab do),
+// SnapshotWindow logic DOC LAI tu bang nay thay vi Event Bus in-memory.
+model ConfluenceSignalCache {
+  ticker         String
+  pillar         String   // ta | core | sector | catalyst | macro | dividend
+  signalValue    Float
+  rollingMean90d Float    @default(50)
+  rollingStd90d  Float    @default(10)
+  raw            Json     @default("{}")
+  updatedAt      DateTime @default(now()) @updatedAt
+
+  @@id([ticker, pillar])
+  @@index([ticker])
+}
+
+model ConfluenceAuditLog {
+  id               Int      @id @default(autoincrement())
+  ticker           String
+  profileId        String   @default("default")
+  regime           String
+  weightsEffective Json
+  nAvailable       Int
+  penaltyTotal     Float
+  penaltyBreakdown Json
+  score            Float
+  ciLow            Float
+  ciHigh           Float
+  starRating       Int
+  riskFlags        Json
+  createdAt        DateTime @default(now())
+
+  @@index([ticker])
+}
+
+model ConfluenceScoreHistory {
+  id        Int      @id @default(autoincrement())
+  ticker    String
+  score     Float
+  createdAt DateTime @default(now())
+
+  @@index([ticker])
 }
