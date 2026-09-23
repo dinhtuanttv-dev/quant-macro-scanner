@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@/lib/generated/prisma/client";
 import { buildDebateDataPackage } from "@/lib/elite10/debate-data-summary";
-import { runBullAgent, runBearAgent, DEBATE_MODEL_NAME, IS_SINGLE_PROVIDER_DEBATE } from "@/lib/elite10/debate-agents";
+import { runBullAgent, runBearAgent, runJury, resolveJuryVerdict, DEBATE_MODEL_NAME, IS_SINGLE_PROVIDER_DEBATE, IS_SINGLE_PROVIDER_JURY } from "@/lib/elite10/debate-agents";
 import { runLmsrSession } from "@/lib/elite10/lmsr-market";
 
-// Elite 10 - Muc A/B (Tech Spec v2) Giai doan 2/4: Multi-Agent Debate
-// THAT (Bull=Claude vs Bear=Gemini) + LMSR - CHUA CO Jury (Giai doan
-// 3). Route on-demand (POST, nguoi dung bam nut "Chay Debate AI" cho 1
-// ma cu the) - KHONG tu dong chay cho toan bo thi truong (kiem soat
-// chi phi API, dung nhu da thong nhat).
+// Elite 10 - Muc A/B (Tech Spec v2) Giai doan 3/4: Multi-Agent Debate
+// THAT (Bull+Bear = Gemini, xem ghi chu debate-agents.ts) + LMSR + Jury
+// of Judges (2 Judge doc lap, tong hop finalVerdict). Route on-demand
+// (POST, nguoi dung bam nut "Chay Debate AI" cho 1 ma cu the) - KHONG
+// tu dong chay cho toan bo thi truong (kiem soat chi phi API, dung nhu
+// da thong nhat).
 export const dynamic = "force-dynamic";
 export const maxDuration = 60; // debate 3 luot AI co the mat 15-30s
 
@@ -58,16 +60,26 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tic
         status: "completed", rounds,
         lmsrQYes: lmsrResult.finalState.qYes, lmsrQNo: lmsrResult.finalState.qNo,
         lmsrFinalPricePct: lmsrResult.finalPriceYesPct,
-        // finalVerdict/judgeVotes de trong - Giai doan 3 (Jury) se dien
       },
+    });
+
+    // Giai doan 3: Jury of Judges - 2 Judge doc lap (Gemini, temperature
+    // khac nhau) doc toan bo transcript + LMSR, phan quyet khach quan.
+    const judgeVotes = await runJury(rounds, lmsrResult.finalPriceYesPct);
+    const { finalVerdict, isTieBreak, avgConfidencePct } = resolveJuryVerdict(judgeVotes);
+
+    await prisma.debateSession.update({
+      where: { id: session.id },
+      data: { judgeVotes: judgeVotes as unknown as Prisma.InputJsonValue, finalVerdict },
     });
 
     return NextResponse.json({
       sessionId: session.id, ticker, status: "completed",
       rounds, lmsrFinalPricePct: lmsrResult.finalPriceYesPct,
+      judgeVotes, finalVerdict, isTieBreak, avgConfidencePct,
       dataSourcesUsed: 3 - dataPackage.fetchErrors.length, dataSourcesTotal: 3,
-      isSingleProviderDebate: IS_SINGLE_PROVIDER_DEBATE,
-      note: `Đây là kết quả Debate + LMSR (Mục A). Cả Bull và Bear Agent đều dùng ${DEBATE_MODEL_NAME} (2 vai trò khác nhau qua system prompt, KHÔNG PHẢI 2 model độc lập như thiết kế ban đầu Claude vs Gemini) — xem "isSingleProviderDebate". Jury of Judges (Mục B, kết luận cuối cùng) sẽ được thêm ở giai đoạn tiếp theo — hiện chưa có 'finalVerdict', chỉ có xác suất thị trường nội bộ (lmsrFinalPricePct).`,
+      isSingleProviderDebate: IS_SINGLE_PROVIDER_DEBATE, isSingleProviderJury: IS_SINGLE_PROVIDER_JURY,
+      note: `Cả Bull, Bear và 2 Judge đều dùng ${DEBATE_MODEL_NAME} (vai trò khác nhau qua system prompt + temperature khác nhau cho Judge, KHÔNG PHẢI các model độc lập như thiết kế ban đầu Claude vs Gemini vs GPT) — xem "isSingleProviderDebate"/"isSingleProviderJury". finalVerdict là phán quyết của Jury (không phải trung bình cộng đơn giản của Bull/Bear); nếu "isTieBreak"=true nghĩa là 2 Judge bất đồng, đã chọn theo Judge tự tin hơn.`,
     });
   } catch (err) {
     console.error("[api/elite10/debate] Lỗi:", err);
