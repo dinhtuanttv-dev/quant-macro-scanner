@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { detectWyckoffSchematic } from "@/lib/elite10/smc-detector";
 
 export const maxDuration = 30;
 
@@ -77,6 +78,37 @@ async function fetchRealPriceSeries(origin: string, ticker: string, timeframe: s
   return res.json();
 }
 
+/** Giai doan 1 (nang cap Pattern Scanner): tinh Wyckoff Accumulation
+ * THAT tu priceSeries that, tai dung 100% detectWyckoffSchematic() da
+ * co san (lib/elite10/smc-detector.ts, da test khop 8/8 vi du tinh tay
+ * o Giai doan 3) - KHONG viet lai gi ca, chi ket noi. Tra ve null neu
+ * khong tim thay range hop le nao (giu nguyen mock trong truong hop do,
+ * khong bia so). historicalWinRatePct de null (chua backtest duoc o
+ * day - detectWyckoffSchematic chi tra ve 1 schematic GAN NHAT, khong
+ * du mau de co y nghia thong ke, giong dung gioi han da ghi trong route
+ * /api/elite10/smc). */
+function computeRealWyckoffPatternEntry(ticker: string, priceSeries: any[]) {
+  if (!Array.isArray(priceSeries) || priceSeries.length < 30) return null;
+  const bars = priceSeries.map((b) => ({ date: b.time, open: b.open, high: b.high, low: b.low, close: b.close, volume: b.volume }));
+  const schematic = detectWyckoffSchematic(bars);
+  if (!schematic) return null;
+
+  const MATCH_PCT_BY_STATUS: Record<string, number> = { range_only: 25, spring_confirmed: 50, sos_confirmed: 75, lps_confirmed: 100 };
+  const STATUS_LABEL: Record<string, string> = {
+    range_only: "Đang trong vùng tích lũy", spring_confirmed: "Spring đã xác nhận",
+    sos_confirmed: "Sign of Strength (SOS)", lps_confirmed: "Last Point of Support (LPS)",
+  };
+
+  return {
+    ticker, sector: "-", // sector that chua co nguon dang tin cay cho toan thi truong o day, de "-" thay vi bia
+    patternName: `Wyckoff Accumulation — ${STATUS_LABEL[schematic.status]}`,
+    geometricMatchPct: { value: MATCH_PCT_BY_STATUS[schematic.status], source: "HARD_DATA" as const },
+    historicalWinRatePct: null, // chua du mau lich su de backtest (chi 1 schematic gan nhat)
+    dampenedConfidencePct: { value: MATCH_PCT_BY_STATUS[schematic.status], source: "HARD_DATA" as const },
+    isDampened: false, // decorrelation nganh se lam o Giai doan 3 rieng
+  };
+}
+
 function buildMockResponse(ticker: string, timeframe: string) {
   const priceSeries = buildOhlcSeries(ticker, timeframe);
   const lastBar = priceSeries[priceSeries.length - 1];
@@ -153,6 +185,16 @@ export async function GET(req: NextRequest) {
 
   try {
     const real = await fetchRealPriceSeries(req.nextUrl.origin, ticker, timeframe);
+
+    // Giai doan 1 (nang cap Pattern Scanner): thay entry "Wyckoff
+    // Accumulation" mock bang THAT neu tim thay schematic hop le. VCP
+    // van giu nguyen mock (Giai doan 2 se lam), sector/dampening cung
+    // vay (Giai doan 3).
+    const realWyckoffEntry = computeRealWyckoffPatternEntry(ticker, real.priceSeries);
+    const patternScanner = realWyckoffEntry
+      ? [mock.patternScanner[0], realWyckoffEntry]
+      : mock.patternScanner;
+
     return NextResponse.json({
       ...mock,
       priceSeries: real.priceSeries,
@@ -160,7 +202,9 @@ export async function GET(req: NextRequest) {
       isMock: false, // priceSeries giờ thật
       priceDataSource: "vnstock",
       barCount: real.barCount,
-      // analysisIsMock vẫn giữ nguyên true từ `mock` — smc/wyckoff/... chưa đổi
+      patternScanner,
+      // analysisIsMock van giu true: VCP + SMC/Elliott/VSA/ADX-comment
+      // van con mock 1 phan, chi Wyckoff (khi tim thay) la that o day.
     });
   } catch (err) {
     console.error(`[ta-vn-index/analyze] Không lấy được dữ liệu thật cho ${ticker}, dùng mock:`, err);
