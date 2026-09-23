@@ -3,6 +3,7 @@ import { fetchOhlcvHistory } from "@/lib/market-data/yahoo-finance-adapter";
 import { detectSwingPoints, detectFvgZones, detectStructureEvents, detectOrderBlocks, detectVsaSignals, detectWyckoffSchematic } from "@/lib/elite10/smc-detector";
 import { backtestPattern } from "@/lib/elite10/pattern-backtest";
 import { backtestWithTripleBarrier } from "@/lib/elite10/triple-barrier";
+import { computeTimeSeriesStability } from "@/lib/elite10/pbo-stability";
 import { calculateAtrSeries } from "@/lib/market-data/technical-indicators";
 
 // Elite 10 - SMC THAT (Giai doan 1: FVG + BOS/CHoCH), ROUTE HOAN TOAN
@@ -66,14 +67,36 @@ export async function GET(_req: Request, { params }: { params: Promise<{ ticker:
     const dateToIndex = new Map(bars.map((b, i) => [b.date, i]));
     const toIndices = (dates: string[]) => dates.map((d) => dateToIndex.get(d)).filter((i): i is number => i !== undefined);
 
-    const tbFvgBull = backtestWithTripleBarrier(bars, toIndices(fvgZones.filter((z) => z.direction === "bullish").map((z) => z.endDate)), atrSeries);
-    const tbFvgBear = backtestWithTripleBarrier(bars, toIndices(fvgZones.filter((z) => z.direction === "bearish").map((z) => z.endDate)), atrSeries);
-    const tbBosBull = backtestWithTripleBarrier(bars, toIndices(structureEvents.filter((e) => e.type === "BOS" && e.direction === "bullish").map((e) => e.date)), atrSeries);
-    const tbBosBear = backtestWithTripleBarrier(bars, toIndices(structureEvents.filter((e) => e.type === "BOS" && e.direction === "bearish").map((e) => e.date)), atrSeries);
-    const tbChochBull = backtestWithTripleBarrier(bars, toIndices(structureEvents.filter((e) => e.type === "CHoCH" && e.direction === "bullish").map((e) => e.date)), atrSeries);
-    const tbChochBear = backtestWithTripleBarrier(bars, toIndices(structureEvents.filter((e) => e.type === "CHoCH" && e.direction === "bearish").map((e) => e.date)), atrSeries);
-    const tbObBull = backtestWithTripleBarrier(bars, toIndices(orderBlocks.filter((z) => z.direction === "bullish").map((z) => z.date)), atrSeries);
-    const tbObBear = backtestWithTripleBarrier(bars, toIndices(orderBlocks.filter((z) => z.direction === "bearish").map((z) => z.date)), atrSeries);
+    const idxFvgBull = toIndices(fvgZones.filter((z) => z.direction === "bullish").map((z) => z.endDate));
+    const idxFvgBear = toIndices(fvgZones.filter((z) => z.direction === "bearish").map((z) => z.endDate));
+    const idxBosBull = toIndices(structureEvents.filter((e) => e.type === "BOS" && e.direction === "bullish").map((e) => e.date));
+    const idxBosBear = toIndices(structureEvents.filter((e) => e.type === "BOS" && e.direction === "bearish").map((e) => e.date));
+    const idxChochBull = toIndices(structureEvents.filter((e) => e.type === "CHoCH" && e.direction === "bullish").map((e) => e.date));
+    const idxChochBear = toIndices(structureEvents.filter((e) => e.type === "CHoCH" && e.direction === "bearish").map((e) => e.date));
+    const idxObBull = toIndices(orderBlocks.filter((z) => z.direction === "bullish").map((z) => z.date));
+    const idxObBear = toIndices(orderBlocks.filter((z) => z.direction === "bearish").map((z) => z.date));
+
+    const tbFvgBull = backtestWithTripleBarrier(bars, idxFvgBull, atrSeries);
+    const tbFvgBear = backtestWithTripleBarrier(bars, idxFvgBear, atrSeries);
+    const tbBosBull = backtestWithTripleBarrier(bars, idxBosBull, atrSeries);
+    const tbBosBear = backtestWithTripleBarrier(bars, idxBosBear, atrSeries);
+    const tbChochBull = backtestWithTripleBarrier(bars, idxChochBull, atrSeries);
+    const tbChochBear = backtestWithTripleBarrier(bars, idxChochBear, atrSeries);
+    const tbObBull = backtestWithTripleBarrier(bars, idxObBull, atrSeries);
+    const tbObBear = backtestWithTripleBarrier(bars, idxObBear, atrSeries);
+
+    // MUC H (Tech Spec v2, ban rut gon phu hop dung bai toan - Time-
+    // Series K-Fold Stability THAY THE PBO/CSCV chuan, xem giai thich
+    // day du trong lib/elite10/pbo-stability.ts). Tai dung CUNG cac
+    // indices da tinh o tren, KHONG tinh lai occurrences.
+    const stabilityFvgBull = computeTimeSeriesStability(bars, idxFvgBull, atrSeries);
+    const stabilityFvgBear = computeTimeSeriesStability(bars, idxFvgBear, atrSeries);
+    const stabilityBosBull = computeTimeSeriesStability(bars, idxBosBull, atrSeries);
+    const stabilityBosBear = computeTimeSeriesStability(bars, idxBosBear, atrSeries);
+    const stabilityChochBull = computeTimeSeriesStability(bars, idxChochBull, atrSeries);
+    const stabilityChochBear = computeTimeSeriesStability(bars, idxChochBear, atrSeries);
+    const stabilityObBull = computeTimeSeriesStability(bars, idxObBull, atrSeries);
+    const stabilityObBear = computeTimeSeriesStability(bars, idxObBear, atrSeries);
 
     const unmitigatedFvg = fvgZones.filter((z) => !z.isMitigated);
     const recentEvents = structureEvents.slice(-5);
@@ -119,6 +142,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ ticker:
         chochBullish: tbChochBull, chochBearish: tbChochBear,
         orderBlockBullish: tbObBull, orderBlockBearish: tbObBear,
         note: "Phương pháp Triple-Barrier (López de Prado): gắn 3 rào chắn (chốt lời = entry+1.5×ATR14, cắt lỗ = entry-1.5×ATR14, giới hạn thời gian = 20 phiên), xem rào chắn nào chạm trước — chính xác hơn cách backtest đơn giản (chỉ nhìn giá sau N ngày). Khoảng tin cậy dùng Wilson Score Interval, phù hợp cho tỷ lệ nhị phân mẫu nhỏ hơn phương pháp bootstrap.",
+      },
+      stability: {
+        fvgBullish: stabilityFvgBull, fvgBearish: stabilityFvgBear,
+        bosBullish: stabilityBosBull, bosBearish: stabilityBosBear,
+        chochBullish: stabilityChochBull, chochBearish: stabilityChochBear,
+        orderBlockBullish: stabilityObBull, orderBlockBearish: stabilityObBear,
+        note: "Chia dữ liệu thành 6 giai đoạn liên tiếp theo thời gian, tính riêng tỷ lệ thắng mỗi giai đoạn — Stability Score = % giai đoạn có tỷ lệ thắng ≥50% (xác suất quan sát trực tiếp, không suy diễn). Đây là bản rút gọn thay thế PBO/CSCV chuẩn (vốn thiết kế cho bài toán chọn tham số tối ưu giữa nhiều chiến lược — không phù hợp với các pattern quy tắc cố định ở đây). Cờ 'không ổn định' bật khi tỷ lệ thắng tổng thể trông cao (≥60%) nhưng thực chất chỉ đến từ 1-2 giai đoạn, không nhất quán qua thời gian — đáng tin cậy thấp hơn cho quyết định đầu tư dù con số tổng có vẻ đẹp.",
       },
       methodologyNote: "FVG: mẫu hình 3 nến (wick nến 1/nến 3 không chồng lấp). BOS/CHoCH: dựa trên swing high/low fractal N=2. Order Block: nến đối nghịch cuối cùng trước 1 nến impulsive (range ≥ 1.5×ATR14) dẫn tới BOS/CHoCH. VSA No Demand/Supply: nến tăng/giảm có volume dưới percentile 40 (20 phiên gần nhất) và spread hẹp hơn trung bình. Wyckoff Spring/SOS/LPS: chỉ phát hiện 3 sự kiện có định nghĩa định lượng rõ ràng, KHÔNG phải toàn bộ chu kỳ Wyckoff A-E (giai đoạn PS/SC/AR/ST cần phán đoán chủ quan, không đưa vào để tránh dùng số liệu giả), chỉ xét 6 tháng gần nhất để giữ tính thời sự. Backtest (cả 2 phương pháp): tính trên dữ liệu 2 năm gần nhất (mở rộng từ 6 tháng để tăng cỡ mẫu) — mẫu vẫn có thể nhỏ với pattern hiếm gặp (<30), luôn kiểm tra cờ isLowSample/n<30 trước khi tin vào con số. Đây là định nghĩa cấu trúc giá khách quan, không phải khẳng định về ý đồ 'dòng tiền thông minh' — xem báo cáo rà soát để biết giới hạn phương pháp luận.",
     });
