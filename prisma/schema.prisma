@@ -435,3 +435,25 @@ model InsightOutcome {
   @@index([ticker])
   @@index([status])
 }
+
+// Muc A/B (Tech Spec v2) - Multi-Agent Debate: Bull=Claude vs
+// Bear=Gemini tranh luan nhieu luot, LMSR tong hop thanh 1 xac suat,
+// Jury (Claude + Gemini doc lap) vote ket luan cuoi. MODULE HOAN TOAN
+// MOI, KHONG dong vao ConfluenceEngine/TimeEngine dang hoat dong.
+model DebateSession {
+  id                Int       @id @default(autoincrement())
+  ticker            String
+  createdAt         DateTime  @default(now())
+  status            String    @default("pending") // pending | running | completed | failed
+  triggeredBy       String    @default("on_demand") // on_demand | cron
+  rounds            Json      @default("[]") // [{round, side, model, argument, confidencePct}]
+  lmsrQYes          Float     @default(0)
+  lmsrQNo           Float     @default(0)
+  lmsrFinalPricePct Float?
+  judgeVotes        Json?     // [{judge, model, verdict, confidencePct, reasoning}]
+  finalVerdict      String?   // bullish | bearish | neutral
+  errorMessage      String?
+
+  @@index([ticker])
+  @@index([status])
+}
