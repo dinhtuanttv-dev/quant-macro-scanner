@@ -200,3 +200,129 @@ export function detectVsaSignals(bars: OhlcBarInput[], lookback = 20, volumePerc
   }
   return signals;
 }
+
+// ============================================================
+// GIAI DOAN 3 (them, KHONG sua Giai doan 1+2): Wyckoff Spring/SOS/LPS.
+//
+// PHAM VI CO CHU DINH GIOI HAN: day KHONG PHAI phat hien toan bo chu ky
+// Wyckoff A-E (PS/SC/AR/ST...) - chinh tai lieu ky thuat chuyen sau nhat
+// (vd bai bao MQL5 "Automating Classic Market Methods") cung xac nhan
+// "full phase detection requires subjective judgment that is difficult
+// to codify reliably". O day CHI phat hien 3 SU KIEN CO DINH NGHIA
+// DINH LUONG RO RANG: Spring (gia PHA VO support nhung dong cua QUAY
+// LAI tren, volume THAP), SOS/Sign of Strength (breakout resistance voi
+// volume+spread MO RONG), LPS/Last Point of Support (pullback sau SOS,
+// volume THAP, giu tren muc breakout).
+//
+// THAM SO (minh bach - CO THE dieu chinh, khong phai "chuan tuyet doi"
+// duy nhat trong tai lieu Wyckoff):
+//   rangeWindow=30 phien, rangeWidthThreshold=15% (range phai du "hep"),
+//   springTolerance=2% (gia pha support bao nhieu % thi tinh la Spring),
+//   lowVolMult=0.8x / highVolMult=1.3x trung binh volume trong range,
+//   lpsPullbackTolerance=3% (pullback sau SOS duoc phep sau bao nhieu %
+//   truoc khi bi coi la vo hieu).
+
+export interface WyckoffRange { startDate: string; endDate: string; support: number; resistance: number; avgVolume: number; avgSpread: number; }
+export interface WyckoffEvent { date: string; type: "spring" | "sos" | "lps"; price: number; volume: number; volumeVsAvgPct: number; }
+export interface WyckoffSchematic { range: WyckoffRange; spring: WyckoffEvent | null; sos: WyckoffEvent | null; lps: WyckoffEvent | null; status: "range_only" | "spring_confirmed" | "sos_confirmed" | "lps_confirmed"; }
+
+interface WyckoffParams {
+  rangeWindow: number; rangeWidthThreshold: number; springTolerance: number;
+  lowVolMult: number; highVolMult: number; lpsPullbackTolerance: number;
+  maxBarsToSos: number; maxBarsToLps: number;
+}
+const DEFAULT_WYCKOFF_PARAMS: WyckoffParams = {
+  rangeWindow: 30, rangeWidthThreshold: 0.15, springTolerance: 0.02,
+  lowVolMult: 0.8, highVolMult: 1.3, lpsPullbackTolerance: 0.03,
+  maxBarsToSos: 20, maxBarsToLps: 15,
+};
+
+/** Tim schematic Wyckoff GAN NHAT (chi 1 ket qua, uu tien schematic MOI
+ * NHAT trong lich su). Tra ve null neu khong tim thay 1 range hop le
+ * nao trong toan bo lich su. */
+export function detectWyckoffSchematic(bars: OhlcBarInput[], params: Partial<WyckoffParams> = {}): WyckoffSchematic | null {
+  const p = { ...DEFAULT_WYCKOFF_PARAMS, ...params };
+  let bestSchematic: WyckoffSchematic | null = null;
+  // Thu tu uu tien de QUYET DINH co GHI DE bestSchematic hay khong -
+  // FIX: truoc day moi vong lap "end" GHI DE vo dieu kien, khien 1 range
+  // "range_only" tim thay O VONG LAP SAU xoa mat ket qua "lps_confirmed"
+  // tot hon da tim thay o vong lap TRUOC. Gio CHI ghi de khi rank moi >= rank cu.
+  const statusRank: Record<WyckoffSchematic["status"], number> = { range_only: 0, spring_confirmed: 1, sos_confirmed: 2, lps_confirmed: 3 };
+
+  for (let end = p.rangeWindow; end < bars.length; end++) {
+    const windowBars = bars.slice(end - p.rangeWindow, end);
+    const support = Math.min(...windowBars.map((b) => b.low));
+    const resistance = Math.max(...windowBars.map((b) => b.high));
+    const rangeWidth = (resistance - support) / support;
+    if (rangeWidth > p.rangeWidthThreshold) continue; // range qua rong, khong hop le
+
+    const avgVolume = windowBars.reduce((s, b) => s + (b.volume ?? 0), 0) / windowBars.length;
+    const avgSpread = windowBars.reduce((s, b) => s + (b.high - b.low), 0) / windowBars.length;
+    const range: WyckoffRange = { startDate: windowBars[0].date, endDate: windowBars[windowBars.length - 1].date, support, resistance, avgVolume, avgSpread };
+
+    // Tim Spring: SAU end, gia pha support (trong tolerance) nhung dong
+    // cua quay lai tren support, volume thap.
+    let springIdx = -1;
+    for (let i = end; i < Math.min(bars.length, end + p.maxBarsToSos); i++) {
+      const bar = bars[i];
+      const brokeSupport = bar.low < support * (1 - p.springTolerance);
+      const closedBackAbove = bar.close > support;
+      const lowVolume = (bar.volume ?? 0) < avgVolume * p.lowVolMult;
+      if (brokeSupport && closedBackAbove && lowVolume) { springIdx = i; break; }
+    }
+    if (springIdx === -1) {
+      // Range hop le nhung CHUA CO Spring - van la thong tin co ich
+      // ("dang trong vung tich luy, chua co su kien xac nhan"), KHONG
+      // bo qua hoan toan nhu truoc (gay mat thong tin khi thi truong
+      // dang trong range nhung chua kip xay ra Spring). CHI ghi de neu
+      // chua co ket qua nao TOT HON tu vong lap truoc.
+      if (!bestSchematic || statusRank["range_only"] >= statusRank[bestSchematic.status]) {
+        bestSchematic = { range, spring: null, sos: null, lps: null, status: "range_only" };
+      }
+      continue;
+    }
+
+    const springBar = bars[springIdx];
+    const spring: WyckoffEvent = { date: springBar.date, type: "spring", price: springBar.low, volume: springBar.volume ?? 0, volumeVsAvgPct: Math.round(((springBar.volume ?? 0) / avgVolume) * 100) };
+
+    // Tim SOS: SAU Spring, breakout resistance voi volume+spread mo rong.
+    let sosIdx = -1;
+    for (let i = springIdx + 1; i < Math.min(bars.length, springIdx + 1 + p.maxBarsToSos); i++) {
+      const bar = bars[i];
+      const brokeResistance = bar.close > resistance;
+      const highVolume = (bar.volume ?? 0) > avgVolume * p.highVolMult;
+      const wideSpread = (bar.high - bar.low) > avgSpread;
+      if (brokeResistance && highVolume && wideSpread) { sosIdx = i; break; }
+    }
+
+    let sos: WyckoffEvent | null = null;
+    let lps: WyckoffEvent | null = null;
+    let status: WyckoffSchematic["status"] = "spring_confirmed";
+
+    if (sosIdx !== -1) {
+      const sosBar = bars[sosIdx];
+      sos = { date: sosBar.date, type: "sos", price: sosBar.close, volume: sosBar.volume ?? 0, volumeVsAvgPct: Math.round(((sosBar.volume ?? 0) / avgVolume) * 100) };
+      status = "sos_confirmed";
+
+      // Tim LPS: SAU SOS, pullback nhe (giu tren muc breakout trong
+      // tolerance) voi volume thap (xac nhan khong co ban manh).
+      for (let i = sosIdx + 1; i < Math.min(bars.length, sosIdx + 1 + p.maxBarsToLps); i++) {
+        const bar = bars[i];
+        const heldAboveBreakout = bar.low >= resistance * (1 - p.lpsPullbackTolerance);
+        const isPullback = bar.close < sosBar.close;
+        const lowVolume = (bar.volume ?? 0) < avgVolume;
+        if (heldAboveBreakout && isPullback && lowVolume) {
+          lps = { date: bar.date, type: "lps", price: bar.low, volume: bar.volume ?? 0, volumeVsAvgPct: Math.round(((bar.volume ?? 0) / avgVolume) * 100) };
+          status = "lps_confirmed";
+          break;
+        }
+      }
+    }
+
+    const newSchematic: WyckoffSchematic = { range, spring, sos, lps, status };
+    if (!bestSchematic || statusRank[status] >= statusRank[bestSchematic.status]) {
+      bestSchematic = newSchematic;
+    }
+  }
+  return bestSchematic; // ket qua la schematic co status TOT NHAT tim duoc (uu tien lps > sos > spring > range_only), va MOI NHAT trong so cac schematic cung status
+}
