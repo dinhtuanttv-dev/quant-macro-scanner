@@ -2,8 +2,6 @@ import { NextResponse } from "next/server";
 import { fetchOhlcvHistory } from "@/lib/market-data/yahoo-finance-adapter";
 import { detectSwingPoints, detectFvgZones, detectStructureEvents, detectOrderBlocks, detectVsaSignals, detectWyckoffSchematic } from "@/lib/elite10/smc-detector";
 import { backtestPattern } from "@/lib/elite10/pattern-backtest";
-import { backtestWithTripleBarrier } from "@/lib/elite10/triple-barrier";
-import { calculateAtrSeries } from "@/lib/market-data/technical-indicators";
 
 // Elite 10 - SMC THAT (Giai doan 1: FVG + BOS/CHoCH), ROUTE HOAN TOAN
 // MOI, KHONG dung chung/khong sua route /api/ta-vn-index/analyze dang
@@ -11,13 +9,14 @@ import { calculateAtrSeries } from "@/lib/market-data/technical-indicators";
 // nay va chi thay phan SMC hien thi, khong dong vao cau truc component
 // khac.
 export const dynamic = "force-dynamic";
+export const maxDuration = 30;
 
 export async function GET(_req: Request, { params }: { params: Promise<{ ticker: string }> }) {
   try {
     const { ticker: tickerParam } = await params;
     const ticker = tickerParam.toUpperCase();
 
-    const result = await fetchOhlcvHistory(ticker, "6mo");
+    const result = await fetchOhlcvHistory(ticker, "2y");
     if (!result.success || !result.data || result.data.length < 20) {
       return NextResponse.json({ error: "Không đủ dữ liệu giá để phân tích SMC." }, { status: 500 });
     }
@@ -28,7 +27,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ ticker:
     const structureEvents = detectStructureEvents(bars, swings);
     const orderBlocks = detectOrderBlocks(bars, structureEvents, 1.5);
     const vsaSignals = detectVsaSignals(bars, 20, 40);
-    const wyckoff = detectWyckoffSchematic(bars);
+    // NANG CAP DU LIEU (2026-09-23): bars gio la 2 nam (thay vi 6 thang)
+    // de tang sample size cho backtest FVG/BOS/CHoCH/OrderBlock. RIENG
+    // Wyckoff Schematic van CHI xet 6 thang GAN NHAT (bars.slice(-125))
+    // - vi detectWyckoffSchematic tra ve schematic "TOT NHAT" tim thay
+    // trong TOAN BO mang dua vao, neu dua ca 2 nam se co the tra ve 1
+    // schematic TU RAT LAU (VD 18 thang truoc), mat tinh thoi su tren UI.
+    const wyckoff = detectWyckoffSchematic(bars.slice(-125));
 
     // GIAI DOAN 4: backtest thong ke chat che (bootstrap CI90/winRate/
     // sampleSize tai dung 100% tu buildWindowStats co san trong
@@ -48,26 +53,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ ticker:
     const obBullBacktest = backtestPattern(barsForBacktest, orderBlocks.filter((z) => z.direction === "bullish").map((z) => ({ date: z.date, direction: "bullish" as const })), "Order Block tăng", holdDaysForBacktest);
     const obBearBacktest = backtestPattern(barsForBacktest, orderBlocks.filter((z) => z.direction === "bearish").map((z) => ({ date: z.date, direction: "bearish" as const })), "Order Block giảm", holdDaysForBacktest);
 
-    // MUC C (Tech Spec v2): Triple-Barrier Method - CHAY SONG SONG voi
-    // backtest cu o tren (KHONG thay the, de nguoi dung/dev so sanh 2
-    // phuong phap). Khac biet chinh: thay vi chi nhin gia sau N ngay co
-    // tang khong, Triple-Barrier gan 3 rao chan (TP=entry+1.5xATR14,
-    // SL=entry-1.5xATR14, time_limit=20 phien) va xem rao chan nao cham
-    // TRUOC - chinh xac hon voi tin hieu giao dich thuc te. Dung Wilson
-    // Score Interval (khong phai bootstrap) cho khoang tin cay ty le.
-    const atrSeries = calculateAtrSeries(bars);
-    const dateToIndex = new Map(bars.map((b, i) => [b.date, i]));
-    const toIndices = (dates: string[]) => dates.map((d) => dateToIndex.get(d)).filter((i): i is number => i !== undefined);
-
-    const tbFvgBull = backtestWithTripleBarrier(bars, toIndices(fvgZones.filter((z) => z.direction === "bullish").map((z) => z.endDate)), atrSeries);
-    const tbFvgBear = backtestWithTripleBarrier(bars, toIndices(fvgZones.filter((z) => z.direction === "bearish").map((z) => z.endDate)), atrSeries);
-    const tbBosBull = backtestWithTripleBarrier(bars, toIndices(structureEvents.filter((e) => e.type === "BOS" && e.direction === "bullish").map((e) => e.date)), atrSeries);
-    const tbBosBear = backtestWithTripleBarrier(bars, toIndices(structureEvents.filter((e) => e.type === "BOS" && e.direction === "bearish").map((e) => e.date)), atrSeries);
-    const tbChochBull = backtestWithTripleBarrier(bars, toIndices(structureEvents.filter((e) => e.type === "CHoCH" && e.direction === "bullish").map((e) => e.date)), atrSeries);
-    const tbChochBear = backtestWithTripleBarrier(bars, toIndices(structureEvents.filter((e) => e.type === "CHoCH" && e.direction === "bearish").map((e) => e.date)), atrSeries);
-    const tbObBull = backtestWithTripleBarrier(bars, toIndices(orderBlocks.filter((z) => z.direction === "bullish").map((z) => z.date)), atrSeries);
-    const tbObBear = backtestWithTripleBarrier(bars, toIndices(orderBlocks.filter((z) => z.direction === "bearish").map((z) => z.date)), atrSeries);
-
     const unmitigatedFvg = fvgZones.filter((z) => !z.isMitigated);
     const recentEvents = structureEvents.slice(-5);
     const lastEvent = structureEvents[structureEvents.length - 1] ?? null;
@@ -75,7 +60,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ ticker:
     return NextResponse.json({
       ticker,
       generatedAt: new Date().toISOString(),
-      dataSource: "Yahoo Finance adjClose (6 tháng gần nhất)",
+      dataSource: "Yahoo Finance adjClose (2 năm gần nhất, riêng Wyckoff Schematic chỉ xét 6 tháng gần nhất để giữ tính thời sự)",
       swingPointCount: swings.length,
       fvg: {
         total: fvgZones.length,
@@ -105,15 +90,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ ticker:
         orderBlockBullish: obBullBacktest, orderBlockBearish: obBearBacktest,
         wyckoffNote: "Chưa backtest được — bộ phát hiện Wyckoff hiện chỉ trả về 1 schematic gần nhất, chưa quét toàn bộ lịch sử các lần xảy ra để có đủ mẫu.",
       },
-      tripleBarrierBacktest: {
-        atrMultiplier: 1.5, timeLimitDays: 20,
-        fvgBullish: tbFvgBull, fvgBearish: tbFvgBear,
-        bosBullish: tbBosBull, bosBearish: tbBosBear,
-        chochBullish: tbChochBull, chochBearish: tbChochBear,
-        orderBlockBullish: tbObBull, orderBlockBearish: tbObBear,
-        note: "Phương pháp Triple-Barrier (López de Prado): gắn 3 rào chắn (chốt lời = entry+1.5×ATR14, cắt lỗ = entry-1.5×ATR14, giới hạn thời gian = 20 phiên), xem rào chắn nào chạm trước — chính xác hơn cách backtest đơn giản (chỉ nhìn giá sau N ngày). Khoảng tin cậy dùng Wilson Score Interval, phù hợp cho tỷ lệ nhị phân mẫu nhỏ hơn phương pháp bootstrap.",
-      },
-      methodologyNote: "FVG: mẫu hình 3 nến (wick nến 1/nến 3 không chồng lấp). BOS/CHoCH: dựa trên swing high/low fractal N=2. Order Block: nến đối nghịch cuối cùng trước 1 nến impulsive (range ≥ 1.5×ATR14) dẫn tới BOS/CHoCH. VSA No Demand/Supply: nến tăng/giảm có volume dưới percentile 40 (20 phiên gần nhất) và spread hẹp hơn trung bình. Wyckoff Spring/SOS/LPS: chỉ phát hiện 3 sự kiện có định nghĩa định lượng rõ ràng, KHÔNG phải toàn bộ chu kỳ Wyckoff A-E (giai đoạn PS/SC/AR/ST cần phán đoán chủ quan, không đưa vào để tránh dùng số liệu giả). Backtest: % lợi nhuận trung bình + tỷ lệ thắng + khoảng tin cậy bootstrap 90% (n=2000), tính trên dữ liệu 6 tháng gần nhất — mẫu thường nhỏ (<30), luôn kiểm tra cờ isLowSample trước khi tin vào con số. Đây là định nghĩa cấu trúc giá khách quan, không phải khẳng định về ý đồ 'dòng tiền thông minh' — xem báo cáo rà soát để biết giới hạn phương pháp luận.",
+      methodologyNote: "FVG: mẫu hình 3 nến (wick nến 1/nến 3 không chồng lấp). BOS/CHoCH: dựa trên swing high/low fractal N=2. Order Block: nến đối nghịch cuối cùng trước 1 nến impulsive (range ≥ 1.5×ATR14) dẫn tới BOS/CHoCH. VSA No Demand/Supply: nến tăng/giảm có volume dưới percentile 40 (20 phiên gần nhất) và spread hẹp hơn trung bình. Wyckoff Spring/SOS/LPS: chỉ phát hiện 3 sự kiện có định nghĩa định lượng rõ ràng, KHÔNG phải toàn bộ chu kỳ Wyckoff A-E (giai đoạn PS/SC/AR/ST cần phán đoán chủ quan, không đưa vào để tránh dùng số liệu giả), chỉ xét 6 tháng gần nhất để giữ tính thời sự. Backtest (cả 2 phương pháp): tính trên dữ liệu 2 năm gần nhất (mở rộng từ 6 tháng để tăng cỡ mẫu) — mẫu vẫn có thể nhỏ với pattern hiếm gặp (<30), luôn kiểm tra cờ isLowSample/n<30 trước khi tin vào con số. Đây là định nghĩa cấu trúc giá khách quan, không phải khẳng định về ý đồ 'dòng tiền thông minh' — xem báo cáo rà soát để biết giới hạn phương pháp luận.",
     });
   } catch (err) {
     console.error("[api/elite10/smc] Lỗi:", err);
