@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { detectWyckoffSchematic, detectVCP } from "@/lib/elite10/smc-detector";
+import { stockUniverse } from "@/lib/quant-data";
 
 export const maxDuration = 30;
 
@@ -99,13 +100,14 @@ function computeRealWyckoffPatternEntry(ticker: string, priceSeries: any[]) {
     sos_confirmed: "Sign of Strength (SOS)", lps_confirmed: "Last Point of Support (LPS)",
   };
 
+  const realSector = stockUniverse.find((s) => s.ticker === ticker)?.sector ?? "-";
   return {
-    ticker, sector: "-", // sector that chua co nguon dang tin cay cho toan thi truong o day, de "-" thay vi bia
+    ticker, sector: realSector,
     patternName: `Wyckoff Accumulation — ${STATUS_LABEL[schematic.status]}`,
     geometricMatchPct: { value: MATCH_PCT_BY_STATUS[schematic.status], source: "HARD_DATA" as const },
     historicalWinRatePct: null, // chua du mau lich su de backtest (chi 1 schematic gan nhat)
-    dampenedConfidencePct: { value: MATCH_PCT_BY_STATUS[schematic.status], source: "HARD_DATA" as const },
-    isDampened: false, // decorrelation nganh se lam o Giai doan 3 rieng
+    dampenedConfidencePct: { value: MATCH_PCT_BY_STATUS[schematic.status], source: "HARD_DATA" as "HARD_DATA" | "ESTIMATED" },
+    isDampened: false, // se duoc cap nhat o GET handler qua computeSectorDecorrelation neu co sector
   };
 }
 
@@ -126,14 +128,51 @@ function computeRealVcpPatternEntry(ticker: string, priceSeries: any[]) {
     ? (vcp.isTightening && vcp.hasHigherLows ? "Đủ điều kiện (Trend Template + Contraction)" : "Trend Template đạt, contraction chưa đủ chuẩn")
     : "Chưa đạt Trend Template (Stage 2)";
 
+  const realSector = stockUniverse.find((s) => s.ticker === ticker)?.sector ?? "-";
   return {
-    ticker, sector: "-",
+    ticker, sector: realSector,
     patternName: `VCP — ${statusLabel}`,
     geometricMatchPct: { value: vcp.compositeScorePct, source: "HARD_DATA" as const },
     historicalWinRatePct: null,
-    dampenedConfidencePct: { value: vcp.compositeScorePct, source: "HARD_DATA" as const },
+    dampenedConfidencePct: { value: vcp.compositeScorePct, source: "HARD_DATA" as "HARD_DATA" | "ESTIMATED" },
     isDampened: false,
   };
+}
+
+/** Giai doan 3 (nang cap Pattern Scanner): Decorrelation Nganh THAT.
+ *
+ * DANH DOI VE HIEU NANG (minh bach, khong giau): de tranh phai fetch +
+ * tinh VCP/Wyckoff MOI cho 10-15 ma cung nganh MOI LAN 1 ticker duoc
+ * xem (se cham/de timeout, route nay maxDuration=30s), Decorrelation
+ * TAI DUNG /api/convergence-scan DA CO SAN (quet san TOAN BO VN30/VN100
+ * moi 20 phut qua cache, dung mot implementation SMC/Wyckoff KHAC -
+ * don gian hon - so voi detectVCP/detectWyckoffSchematic moi). Day la
+ * lua chon THUC TE nhat hien tai; neu can nhat quan hoan toan 1
+ * implementation, buoc tiep theo la 1 cron job rieng tinh truoc va luu
+ * DB (giong Top 200 Universe), co the lam sau neu can.
+ *
+ * Cong thuc: dem so ma KHAC (cung sector) co compositeScore >= 60 trong
+ * cung 1 lan quet gan nhat (tuc "gan nhu cung luc" - convergence-scan
+ * chi luu 1 snapshot MOI NHAT, khong co timestamp rieng tung ma). Neu
+ * >=2 ma khac cung sector cung dat nguong, GIAM trong so hien thi toi
+ * da 30% (giong % da cong bo tu truoc trong UI). */
+async function computeSectorDecorrelation(origin: string, ticker: string, sector: string, geometricMatchPct: number): Promise<{ isDampened: boolean; dampenedConfidencePct: number; sameSectorMatchCount: number }> {
+  try {
+    const res = await fetch(`${origin}/api/convergence-scan`, { cache: "no-store" });
+    if (!res.ok) return { isDampened: false, dampenedConfidencePct: geometricMatchPct, sameSectorMatchCount: 0 };
+    const data = await res.json();
+    const results: { ticker: string; sector: string; compositeScore: number }[] = data.results ?? [];
+
+    const sameSectorMatches = results.filter((r) => r.ticker !== ticker && r.sector === sector && r.compositeScore >= 60);
+    const n = sameSectorMatches.length;
+    if (n < 2) return { isDampened: false, dampenedConfidencePct: geometricMatchPct, sameSectorMatchCount: n };
+
+    const dampeningPct = Math.min(30, (n - 1) * 10); // giam toi da 30%
+    const dampenedConfidencePct = Math.round(geometricMatchPct * (1 - dampeningPct / 100));
+    return { isDampened: true, dampenedConfidencePct, sameSectorMatchCount: n };
+  } catch {
+    return { isDampened: false, dampenedConfidencePct: geometricMatchPct, sameSectorMatchCount: 0 };
+  }
 }
 
 function buildMockResponse(ticker: string, timeframe: string) {
@@ -214,10 +253,24 @@ export async function GET(req: NextRequest) {
     const real = await fetchRealPriceSeries(req.nextUrl.origin, ticker, timeframe);
 
     // Giai doan 1+2 (nang cap Pattern Scanner): thay entry "Wyckoff
-    // Accumulation" va "VCP" mock bang THAT neu tim thay. Decorrelation
-    // nganh van giu nguyen mock (Giai doan 3 se lam).
+    // Accumulation" va "VCP" mock bang THAT neu tim thay.
     const realWyckoffEntry = computeRealWyckoffPatternEntry(ticker, real.priceSeries);
     const realVcpEntry = computeRealVcpPatternEntry(ticker, real.priceSeries);
+
+    // Giai doan 3: Decorrelation Nganh THAT - chi ap dung cho entry co
+    // sector that (khac "-") va co diem du cao (>=50) de dang ban tan
+    // xet decorrelation.
+    if (realVcpEntry && realVcpEntry.sector !== "-" && realVcpEntry.geometricMatchPct.value >= 50) {
+      const decorr = await computeSectorDecorrelation(req.nextUrl.origin, ticker, realVcpEntry.sector, realVcpEntry.geometricMatchPct.value);
+      realVcpEntry.isDampened = decorr.isDampened;
+      realVcpEntry.dampenedConfidencePct = { value: decorr.dampenedConfidencePct, source: decorr.isDampened ? "ESTIMATED" : "HARD_DATA" };
+    }
+    if (realWyckoffEntry && realWyckoffEntry.sector !== "-" && realWyckoffEntry.geometricMatchPct.value >= 50) {
+      const decorr = await computeSectorDecorrelation(req.nextUrl.origin, ticker, realWyckoffEntry.sector, realWyckoffEntry.geometricMatchPct.value);
+      realWyckoffEntry.isDampened = decorr.isDampened;
+      realWyckoffEntry.dampenedConfidencePct = { value: decorr.dampenedConfidencePct, source: decorr.isDampened ? "ESTIMATED" : "HARD_DATA" };
+    }
+
     const patternScanner = [
       realVcpEntry ?? mock.patternScanner[0],
       realWyckoffEntry ?? mock.patternScanner[1],
