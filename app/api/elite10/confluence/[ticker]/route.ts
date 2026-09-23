@@ -78,6 +78,24 @@ export async function GET(req: Request, { params }: { params: Promise<{ ticker: 
     });
     await prisma.confluenceScoreHistory.create({ data: { ticker, score: result.score } });
 
+    // Nen tang Outcome-Tracking (Tech Spec v2, dieu kien tien quyet cho
+    // Conformal Prediction/Concept-Drift/PBO/Thompson Sampling ve sau):
+    // ghi 1 "du bao" MOI neu CHUA CO ban ghi pending nao cho ticker nay
+    // trong 24h gan nhat (tranh trung lap khi nguoi dung xem di xem lai
+    // cung 1 ma) VA co gia tham chieu that (khong bia gia). Cron rieng
+    // se cham dung/sai sau horizonDays - KHONG lam gi them o day.
+    const referencePrice = profile.taMeta.referencePrice;
+    if (referencePrice !== undefined && referencePrice !== null && referencePrice > 0) {
+      const recentPending = await prisma.insightOutcome.findFirst({
+        where: { ticker, status: "pending", predictedAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } },
+      });
+      if (!recentPending) {
+        await prisma.insightOutcome.create({
+          data: { ticker, predictedScore: result.score, starRating: result.star, priceAtPrediction: referencePrice, horizonDays: 20 },
+        });
+      }
+    }
+
     return NextResponse.json({
       ticker, score: result.score, confidenceInterval: result.ci,
       sourcesUsed: `${result.nAvailable}/6`, nAvailable: result.nAvailable,

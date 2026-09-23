@@ -412,3 +412,26 @@ model ConfluenceScoreHistory {
 
   @@index([ticker])
 }
+
+// Nen tang Outcome-Tracking (theo Tech Spec v2, dieu kien tien quyet cho
+// Conformal Prediction/Concept-Drift/PBO/Thompson Sampling ve sau): ghi
+// lai MOI du bao (Confluence Score tai 1 thoi diem), sau horizonDays
+// TU DONG cham dung/sai dua tren gia that. KHONG lien quan gi den cac
+// bang/logic dang hoat dong (Confluence Engine, Time Engine...).
+model InsightOutcome {
+  id                Int       @id @default(autoincrement())
+  ticker            String
+  predictedAt       DateTime  @default(now())
+  predictedScore    Float
+  starRating        Int
+  priceAtPrediction Float
+  horizonDays       Int       @default(20)
+  status            String    @default("pending") // pending | resolved | no_price_data
+  resolvedAt        DateTime?
+  priceAtResolve    Float?
+  actualReturnPct   Float?
+  wasCorrect        Boolean?
+
+  @@index([ticker])
+  @@index([status])
+}

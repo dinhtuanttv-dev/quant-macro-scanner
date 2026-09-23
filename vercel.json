@@ -12,7 +12,8 @@
     { "path": "/api/cron/sieu-quet-event-discover", "schedule": "0 1 * * *" },
     { "path": "/api/cron/sieu-quet-event-discover", "schedule": "0 6 * * *" },
     { "path": "/api/cron/sieu-quet-event-discover", "schedule": "0 13 * * *" },
-    { "path": "/api/cron/sieu-quet-universe-sync", "schedule": "30 23 * * 0" }
+    { "path": "/api/cron/sieu-quet-universe-sync", "schedule": "30 23 * * 0" },
+    { "path": "/api/cron/resolve-insight-outcomes", "schedule": "15 23 * * *" }
   ],
   "functions": {
     "api/stock.py": {
