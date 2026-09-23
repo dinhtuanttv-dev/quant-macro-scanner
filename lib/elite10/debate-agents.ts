@@ -1,18 +1,25 @@
 // Elite 10 - Muc A/B (Tech Spec v2) Giai doan 2/4: Multi-Agent Debate
-// THAT - Bull Agent = Claude Sonnet 4.6, Bear Agent = Gemini. MODULE
-// HOAN TOAN MOI, dung LAI pattern goi API da co san (chat/route.ts cho
-// Claude, gemini-agents.ts cho Gemini), KHONG sua file nao dang chay.
+// THAT - CA Bull VA Bear Agent DEU dung Gemini (theo yeu cau cap nhat
+// 2026-09-24 - khong dung Claude nua vi van de tai khoan Anthropic).
+//
+// MINH BACH QUAN TRONG: day la "self-consistency debate" (CUNG 1
+// provider AI, 2 VAI TRO KHAC NHAU qua system prompt khac nhau), KHONG
+// PHAI "true multi-model debate" nhu thiet ke ban dau (Claude vs
+// Gemini) - vi CHI CON 1 kien truc model, khong con da dang goc nhin
+// tu 2 provider khac nhau. Field "isSingleProviderDebate: true" duoc
+// tra ve o response de UI/nguoi dung biet ro dieu nay, khong ngo nhan
+// day la 2 AI doc lap thuc su.
 //
 // NGUYEN TAC BAT BUOC (giong moi Agent khac trong du an): CHI duoc lap
 // luan tu DU LIEU DINH LUONG duoc cung cap trong prompt - TUYET DOI
 // KHONG bia them tin tuc/su kien/so lieu khong co. Neu du lieu khong du
 // manh de lac quan/bi quan, PHAI thua nhan bang confidence THAP thay vi
 // guong ep ket luan.
-import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+export const DEBATE_MODEL_NAME = "gemini-3.6-flash";
+export const IS_SINGLE_PROVIDER_DEBATE = true;
 
 export interface DebateArgument { argument: string; confidencePct: number; citedFields: string[]; }
 
@@ -44,60 +51,39 @@ function buildDataSection(dataPackageJson: string): string {
   return `DỮ LIỆU ĐẦU VÀO:\n${dataPackageJson}`;
 }
 
-/** Bull Agent = Claude Sonnet 4.6, dung "tool use" de ep JSON output
- * chat che (Anthropic SDK khong co responseSchema nhu Gemini). */
-export async function runBullAgent(dataPackageJson: string, bearArgument?: string): Promise<DebateArgument> {
-  const prompt = bearArgument
-    ? `${buildDataSection(dataPackageJson)}\n\nLUẬN ĐIỂM PHẢN BIỆN CỦA BEAR AGENT (cần phản hồi trực tiếp):\n"${bearArgument}"\n\nHãy đưa ra luận điểm ủng hộ, PHẢN HỒI vào đúng điểm Bear Agent vừa nêu.`
-    : `${buildDataSection(dataPackageJson)}\n\nHãy đưa ra luận điểm ủng hộ khả năng giá tăng.`;
-
-  const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 500,
-    system: BULL_SYSTEM_PROMPT,
-    messages: [{ role: "user", content: prompt }],
-    tools: [{
-      name: "submit_argument",
-      description: "Nộp luận điểm và độ tin cậy",
-      input_schema: {
-        type: "object",
-        properties: {
-          argument: { type: "string", description: "Luận điểm ủng hộ, 2-4 câu tiếng Việt" },
-          confidencePct: { type: "number", description: "Độ tin cậy 0-100" },
-          citedFields: { type: "array", items: { type: "string" }, description: "Các trường dữ liệu đã trích dẫn" },
-        },
-        required: ["argument", "confidencePct", "citedFields"],
-      },
-    }],
-    tool_choice: { type: "tool", name: "submit_argument" },
-  });
-
-  const toolUse = response.content.find((c) => c.type === "tool_use");
-  if (!toolUse || toolUse.type !== "tool_use") throw new Error("Bull Agent (Claude) không trả về tool_use hợp lệ.");
-  const input = toolUse.input as { argument: string; confidencePct: number; citedFields: string[] };
-  return { argument: input.argument, confidencePct: Math.max(0, Math.min(100, input.confidencePct)), citedFields: input.citedFields ?? [] };
-}
-
-const bearResponseSchema = {
+const debateResponseSchema = {
   type: "object" as const,
   properties: {
-    argument: { type: "string" as const, description: "Luận điểm phản biện, 2-4 câu tiếng Việt" },
+    argument: { type: "string" as const, description: "Luận điểm, 2-4 câu tiếng Việt" },
     confidencePct: { type: "number" as const, description: "Độ tin cậy 0-100" },
     citedFields: { type: "array" as const, items: { type: "string" as const }, description: "Các trường dữ liệu đã trích dẫn" },
   },
   required: ["argument", "confidencePct", "citedFields"],
 };
 
-/** Bear Agent = Gemini, dung responseSchema co san pattern (giong
- * gemini-agents.ts) de ep JSON output. */
-export async function runBearAgent(dataPackageJson: string, bullArgument: string): Promise<DebateArgument> {
+async function callGeminiAgent(systemPrompt: string, userPrompt: string): Promise<DebateArgument> {
   const model = genAI.getGenerativeModel({
-    model: "gemini-3.6-flash",
-    systemInstruction: BEAR_SYSTEM_PROMPT,
-    generationConfig: { responseMimeType: "application/json", responseSchema: bearResponseSchema as any },
+    model: DEBATE_MODEL_NAME,
+    systemInstruction: systemPrompt,
+    generationConfig: { responseMimeType: "application/json", responseSchema: debateResponseSchema as any },
   });
-  const prompt = `${buildDataSection(dataPackageJson)}\n\nLUẬN ĐIỂM CỦA BULL AGENT (cần chỉ ra điểm yếu):\n"${bullArgument}"\n\nHãy đưa ra luận điểm phản biện.`;
-  const result = await model.generateContent(prompt);
+  const result = await model.generateContent(userPrompt);
   const parsed = JSON.parse(result.response.text()) as { argument: string; confidencePct: number; citedFields: string[] };
   return { argument: parsed.argument, confidencePct: Math.max(0, Math.min(100, parsed.confidencePct)), citedFields: parsed.citedFields ?? [] };
+}
+
+/** Bull Agent - Gemini voi BULL_SYSTEM_PROMPT (lac quan). */
+export async function runBullAgent(dataPackageJson: string, bearArgument?: string): Promise<DebateArgument> {
+  const prompt = bearArgument
+    ? `${buildDataSection(dataPackageJson)}\n\nLUẬN ĐIỂM PHẢN BIỆN CỦA BEAR AGENT (cần phản hồi trực tiếp):\n"${bearArgument}"\n\nHãy đưa ra luận điểm ủng hộ, PHẢN HỒI vào đúng điểm Bear Agent vừa nêu.`
+    : `${buildDataSection(dataPackageJson)}\n\nHãy đưa ra luận điểm ủng hộ khả năng giá tăng.`;
+  return callGeminiAgent(BULL_SYSTEM_PROMPT, prompt);
+}
+
+/** Bear Agent - Gemini voi BEAR_SYSTEM_PROMPT (bi quan). CUNG provider
+ * voi Bull Agent (khac voi thiet ke ban dau dung Claude) - xem ghi chu
+ * dau file ve "self-consistency debate". */
+export async function runBearAgent(dataPackageJson: string, bullArgument: string): Promise<DebateArgument> {
+  const prompt = `${buildDataSection(dataPackageJson)}\n\nLUẬN ĐIỂM CỦA BULL AGENT (cần chỉ ra điểm yếu):\n"${bullArgument}"\n\nHãy đưa ra luận điểm phản biện.`;
+  return callGeminiAgent(BEAR_SYSTEM_PROMPT, prompt);
 }

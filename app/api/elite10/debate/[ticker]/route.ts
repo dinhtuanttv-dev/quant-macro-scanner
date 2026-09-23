@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { buildDebateDataPackage } from "@/lib/elite10/debate-data-summary";
-import { runBullAgent, runBearAgent } from "@/lib/elite10/debate-agents";
+import { runBullAgent, runBearAgent, DEBATE_MODEL_NAME, IS_SINGLE_PROVIDER_DEBATE } from "@/lib/elite10/debate-agents";
 import { runLmsrSession } from "@/lib/elite10/lmsr-market";
 
 // Elite 10 - Muc A/B (Tech Spec v2) Giai doan 2/4: Multi-Agent Debate
@@ -47,9 +47,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tic
     const lmsrResult = runLmsrSession(trades);
 
     const rounds = [
-      { round: 1, side: "bull", model: "claude-sonnet-4-6", argument: bullRound1.argument, confidencePct: bullRound1.confidencePct, citedFields: bullRound1.citedFields },
-      { round: 1, side: "bear", model: "gemini-3.6-flash", argument: bearRound1.argument, confidencePct: bearRound1.confidencePct, citedFields: bearRound1.citedFields },
-      { round: 2, side: "bull", model: "claude-sonnet-4-6", argument: bullRound2.argument, confidencePct: bullRound2.confidencePct, citedFields: bullRound2.citedFields },
+      { round: 1, side: "bull", model: DEBATE_MODEL_NAME, argument: bullRound1.argument, confidencePct: bullRound1.confidencePct, citedFields: bullRound1.citedFields },
+      { round: 1, side: "bear", model: DEBATE_MODEL_NAME, argument: bearRound1.argument, confidencePct: bearRound1.confidencePct, citedFields: bearRound1.citedFields },
+      { round: 2, side: "bull", model: DEBATE_MODEL_NAME, argument: bullRound2.argument, confidencePct: bullRound2.confidencePct, citedFields: bullRound2.citedFields },
     ];
 
     await prisma.debateSession.update({
@@ -66,7 +66,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tic
       sessionId: session.id, ticker, status: "completed",
       rounds, lmsrFinalPricePct: lmsrResult.finalPriceYesPct,
       dataSourcesUsed: 3 - dataPackage.fetchErrors.length, dataSourcesTotal: 3,
-      note: "Đây là kết quả Debate + LMSR (Mục A). Jury of Judges (Mục B, kết luận cuối cùng) sẽ được thêm ở giai đoạn tiếp theo — hiện chưa có 'finalVerdict', chỉ có xác suất thị trường nội bộ (lmsrFinalPricePct).",
+      isSingleProviderDebate: IS_SINGLE_PROVIDER_DEBATE,
+      note: `Đây là kết quả Debate + LMSR (Mục A). Cả Bull và Bear Agent đều dùng ${DEBATE_MODEL_NAME} (2 vai trò khác nhau qua system prompt, KHÔNG PHẢI 2 model độc lập như thiết kế ban đầu Claude vs Gemini) — xem "isSingleProviderDebate". Jury of Judges (Mục B, kết luận cuối cùng) sẽ được thêm ở giai đoạn tiếp theo — hiện chưa có 'finalVerdict', chỉ có xác suất thị trường nội bộ (lmsrFinalPricePct).`,
     });
   } catch (err) {
     console.error("[api/elite10/debate] Lỗi:", err);
