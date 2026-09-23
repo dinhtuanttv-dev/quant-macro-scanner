@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { detectWyckoffSchematic } from "@/lib/elite10/smc-detector";
+import { detectWyckoffSchematic, detectVCP } from "@/lib/elite10/smc-detector";
 
 export const maxDuration = 30;
 
@@ -109,6 +109,33 @@ function computeRealWyckoffPatternEntry(ticker: string, priceSeries: any[]) {
   };
 }
 
+/** Giai doan 2 (nang cap Pattern Scanner): tinh VCP (Volatility
+ * Contraction Pattern, Mark Minervini) THAT tu priceSeries that, tai
+ * dung 100% detectVCP() da co san. historicalWinRatePct de null (VCP
+ * la mau hinh HIEM, detectVCP chi tra ve trang thai HIEN TAI - khong du
+ * mau lich su de backtest, giong dung nguyen tac minh bach da ap dung
+ * cho Wyckoff Accumulation). Chi tra ve entry neu tim thay contraction
+ * (khong bia diem cho ma khong co du lieu dang tin cay). */
+function computeRealVcpPatternEntry(ticker: string, priceSeries: any[]) {
+  if (!Array.isArray(priceSeries) || priceSeries.length < 200) return null;
+  const bars = priceSeries.map((b) => ({ date: b.time, open: b.open, high: b.high, low: b.low, close: b.close, volume: b.volume }));
+  const vcp = detectVCP(bars);
+  if (!vcp || vcp.contractions.length === 0) return null;
+
+  const statusLabel = vcp.passesTrendTemplate
+    ? (vcp.isTightening && vcp.hasHigherLows ? "Đủ điều kiện (Trend Template + Contraction)" : "Trend Template đạt, contraction chưa đủ chuẩn")
+    : "Chưa đạt Trend Template (Stage 2)";
+
+  return {
+    ticker, sector: "-",
+    patternName: `VCP — ${statusLabel}`,
+    geometricMatchPct: { value: vcp.compositeScorePct, source: "HARD_DATA" as const },
+    historicalWinRatePct: null,
+    dampenedConfidencePct: { value: vcp.compositeScorePct, source: "HARD_DATA" as const },
+    isDampened: false,
+  };
+}
+
 function buildMockResponse(ticker: string, timeframe: string) {
   const priceSeries = buildOhlcSeries(ticker, timeframe);
   const lastBar = priceSeries[priceSeries.length - 1];
@@ -186,14 +213,15 @@ export async function GET(req: NextRequest) {
   try {
     const real = await fetchRealPriceSeries(req.nextUrl.origin, ticker, timeframe);
 
-    // Giai doan 1 (nang cap Pattern Scanner): thay entry "Wyckoff
-    // Accumulation" mock bang THAT neu tim thay schematic hop le. VCP
-    // van giu nguyen mock (Giai doan 2 se lam), sector/dampening cung
-    // vay (Giai doan 3).
+    // Giai doan 1+2 (nang cap Pattern Scanner): thay entry "Wyckoff
+    // Accumulation" va "VCP" mock bang THAT neu tim thay. Decorrelation
+    // nganh van giu nguyen mock (Giai doan 3 se lam).
     const realWyckoffEntry = computeRealWyckoffPatternEntry(ticker, real.priceSeries);
-    const patternScanner = realWyckoffEntry
-      ? [mock.patternScanner[0], realWyckoffEntry]
-      : mock.patternScanner;
+    const realVcpEntry = computeRealVcpPatternEntry(ticker, real.priceSeries);
+    const patternScanner = [
+      realVcpEntry ?? mock.patternScanner[0],
+      realWyckoffEntry ?? mock.patternScanner[1],
+    ];
 
     return NextResponse.json({
       ...mock,

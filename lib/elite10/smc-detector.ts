@@ -27,7 +27,7 @@
 //   - VSA No Demand/No Supply: nen tang/giam voi volume THAP (duoi
 //     percentile 40 cua N=20 phien gan nhat) VA spread hep (duoi trung
 //     binh N=20 phien) - dinh nghia VSA chuan (Tom Williams).
-import { calculateAtrSeries } from "@/lib/market-data/technical-indicators";
+import { calculateAtrSeries, calculateSMA } from "@/lib/market-data/technical-indicators";
 
 export interface OhlcBarInput { date: string; open: number; high: number; low: number; close: number; volume?: number; }
 
@@ -325,4 +325,112 @@ export function detectWyckoffSchematic(bars: OhlcBarInput[], params: Partial<Wyc
     }
   }
   return bestSchematic; // ket qua la schematic co status TOT NHAT tim duoc (uu tien lps > sos > spring > range_only), va MOI NHAT trong so cac schematic cung status
+}
+
+// ============================================================
+// PATTERN SCANNER GIAI DOAN 2 - VCP (Volatility Contraction Pattern,
+// Mark Minervini) THAT.
+//
+// DINH NGHIA (da xac nhan qua nhieu nguon tai lieu dong nhat 2026,
+// khong tu bia):
+//   1. Trend Template (Stage 2 filter): gia hien tai > SMA150 > SMA200,
+//      SMA200 dang TANG, gia trong 25% dinh 52 tuan, gia it nhat 30%
+//      tren day 52 tuan.
+//   2. Chuoi 2-6 "contraction" (khoang tu Swing High den Swing Low ke
+//      tiep) CO HEP DAN (contraction sau < contraction truoc), voi
+//      DAY SAU CAO HON DAY TRUOC (higher lows - bang chung nguoi mua
+//      chiu tra gia cao hon).
+//   3. Volume co hep trong pullback cuoi cung so voi pullback truoc do
+//      (volume dry-up).
+//
+// Composite score = trung binh co trong so 3 dieu kien tren, KHONG
+// PHAI nhi phan match/khong-match, de phan anh MUC DO khop thay vi chi
+// mot ket luan duy nhat (giong tinh than "hien thi do tin cay" da ap
+// dung xuyen suot du an cho Elliott/Wyckoff).
+
+export interface VcpContraction { fromDate: string; toDate: string; depthPct: number; volumeAvg: number; }
+export interface VcpResult {
+  passesTrendTemplate: boolean;
+  trendTemplateDetail: { aboveSma150: boolean; aboveSma200: boolean; sma200Rising: boolean; within25PctOfHigh: boolean; above30PctOfLow: boolean };
+  contractions: VcpContraction[];
+  isTightening: boolean; hasHigherLows: boolean; hasVolumeDryUp: boolean;
+  compositeScorePct: number; // 0-100, trung binh co trong so 3 nhom dieu kien
+  pivotPrice: number | null; // dinh cua contraction cuoi cung (tightest) - diem breakout
+}
+
+const VCP_TREND_TEMPLATE_WEIGHT = 0.4;
+const VCP_CONTRACTION_WEIGHT = 0.4;
+const VCP_VOLUME_WEIGHT = 0.2;
+
+export function detectVCP(bars: OhlcBarInput[]): VcpResult | null {
+  if (bars.length < 200) return null; // can toi thieu ~200 phien de tinh SMA200 dang tin cay
+
+  const closes = bars.map((b) => b.close);
+  const currentPrice = closes[closes.length - 1];
+  const sma150 = calculateSMA(closes, 150);
+  const sma200 = calculateSMA(closes, 200);
+  const sma200Prior = calculateSMA(closes.slice(0, -20), 200); // SMA200 20 phien truoc, de kiem tra dang tang
+  if (sma150 === null || sma200 === null) return null;
+
+  const last252 = bars.slice(-252);
+  const high52w = Math.max(...last252.map((b) => b.high));
+  const low52w = Math.min(...last252.map((b) => b.low));
+
+  const trendTemplateDetail = {
+    aboveSma150: currentPrice > sma150,
+    aboveSma200: currentPrice > sma200,
+    sma200Rising: sma200Prior !== null ? sma200 > sma200Prior : false,
+    within25PctOfHigh: currentPrice >= high52w * 0.75,
+    above30PctOfLow: currentPrice >= low52w * 1.30,
+  };
+  const trendTemplatePassCount = Object.values(trendTemplateDetail).filter(Boolean).length;
+  const passesTrendTemplate = trendTemplatePassCount === 5;
+
+  // Chuoi contraction: ghep Swing High -> Swing Low KE TIEP thanh 1
+  // contraction, chi xet trong 6 thang gan nhat (~125 phien) - VCP la
+  // mau hinh NGAN HAN, khong xet toan bo lich su nhieu nam.
+  const recentBars = bars.slice(-125);
+  const recentOffset = bars.length - recentBars.length;
+  const swings = detectSwingPoints(recentBars, 2);
+  const contractions: VcpContraction[] = [];
+  for (let i = 0; i < swings.length - 1; i++) {
+    if (swings[i].type === "high" && swings[i + 1].type === "low") {
+      const depthPct = ((swings[i].price - swings[i + 1].price) / swings[i].price) * 100;
+      const fromIdx = swings[i].index, toIdx = swings[i + 1].index;
+      const windowBars = recentBars.slice(fromIdx, toIdx + 1);
+      const volumeAvg = windowBars.reduce((s, b) => s + (b.volume ?? 0), 0) / Math.max(1, windowBars.length);
+      contractions.push({ fromDate: bars[fromIdx + recentOffset].date, toDate: bars[toIdx + recentOffset].date, depthPct: Math.round(depthPct * 100) / 100, volumeAvg });
+    }
+  }
+
+  let isTightening = false;
+  let hasHigherLows = false;
+  if (contractions.length >= 2) {
+    isTightening = contractions.every((c, i) => i === 0 || c.depthPct < contractions[i - 1].depthPct);
+    const lows = contractions.map((c) => {
+      const toIdx = bars.findIndex((b) => b.date === c.toDate);
+      return toIdx >= 0 ? bars[toIdx].low : 0;
+    });
+    hasHigherLows = lows.every((l, i) => i === 0 || l > lows[i - 1]);
+  }
+
+  let hasVolumeDryUp = false;
+  if (contractions.length >= 2) {
+    const lastVol = contractions[contractions.length - 1].volumeAvg;
+    const priorVol = contractions[contractions.length - 2].volumeAvg;
+    hasVolumeDryUp = lastVol < priorVol;
+  }
+
+  const trendScore = (trendTemplatePassCount / 5) * 100;
+  const contractionScore = contractions.length >= 2 ? ((isTightening ? 50 : 0) + (hasHigherLows ? 50 : 0)) : 0;
+  const volumeScore = hasVolumeDryUp ? 100 : 0;
+  const compositeScorePct = Math.round(trendScore * VCP_TREND_TEMPLATE_WEIGHT + contractionScore * VCP_CONTRACTION_WEIGHT + volumeScore * VCP_VOLUME_WEIGHT);
+
+  const pivotPrice = contractions.length > 0 ? (() => {
+    const lastContraction = contractions[contractions.length - 1];
+    const fromIdx = bars.findIndex((b) => b.date === lastContraction.fromDate);
+    return fromIdx >= 0 ? bars[fromIdx].high : null;
+  })() : null;
+
+  return { passesTrendTemplate, trendTemplateDetail, contractions, isTightening, hasHigherLows, hasVolumeDryUp, compositeScorePct, pivotPrice };
 }
