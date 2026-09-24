@@ -18,7 +18,13 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-export const DEBATE_MODEL_NAME = "gemini-3.6-flash";
+// Doi tu "gemini-3.6-flash" (Free Tier chi 20 request/ngay - qua thap,
+// het quota chi sau ~4 lan chay debate) sang "gemini-3.5-flash-lite"
+// (Free Tier 500 request/ngay - gap 25 lan, du cho ca cron va nguoi
+// dung bam nut nhieu lan/ngay). Flash-Lite duoc Google khuyen nghi
+// chinh thuc cho "structured JSON parsing" - dung use case cua debate
+// nay (dung responseSchema cho moi luot).
+export const DEBATE_MODEL_NAME = "gemini-3.5-flash-lite";
 export const IS_SINGLE_PROVIDER_DEBATE = true;
 export const IS_SINGLE_PROVIDER_JURY = true;
 
@@ -52,6 +58,26 @@ function buildDataSection(dataPackageJson: string): string {
   return `DỮ LIỆU ĐẦU VÀO:\n${dataPackageJson}`;
 }
 
+/** Retry khi Gemini tra ve 503 (qua tai tam thoi, khong phai loi that
+ * su ve code/key) - toi da 2 lan thu lai, delay tang dan (2s, 5s). Cac
+ * loi KHAC (401, 400...) khong retry - fail ngay vi retry se khong
+ * giai quyet duoc (loi thuc su ve cau hinh/du lieu). */
+async function withGeminiRetry<T>(fn: () => Promise<T>): Promise<T> {
+  const delaysMs = [1000, 3000];
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= delaysMs.length; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      const is503 = err instanceof Error && (err.message.includes("503") || err.message.includes("Service Unavailable") || err.message.includes("overloaded"));
+      if (!is503 || attempt === delaysMs.length) throw err;
+      await new Promise((resolve) => setTimeout(resolve, delaysMs[attempt]));
+    }
+  }
+  throw lastErr;
+}
+
 const debateResponseSchema = {
   type: "object" as const,
   properties: {
@@ -63,14 +89,16 @@ const debateResponseSchema = {
 };
 
 async function callGeminiAgent(systemPrompt: string, userPrompt: string): Promise<DebateArgument> {
-  const model = genAI.getGenerativeModel({
-    model: DEBATE_MODEL_NAME,
-    systemInstruction: systemPrompt,
-    generationConfig: { responseMimeType: "application/json", responseSchema: debateResponseSchema as any },
+  return withGeminiRetry(async () => {
+    const model = genAI.getGenerativeModel({
+      model: DEBATE_MODEL_NAME,
+      systemInstruction: systemPrompt,
+      generationConfig: { responseMimeType: "application/json", responseSchema: debateResponseSchema as any },
+    });
+    const result = await model.generateContent(userPrompt);
+    const parsed = JSON.parse(result.response.text()) as { argument: string; confidencePct: number; citedFields: string[] };
+    return { argument: parsed.argument, confidencePct: Math.max(0, Math.min(100, parsed.confidencePct)), citedFields: parsed.citedFields ?? [] };
   });
-  const result = await model.generateContent(userPrompt);
-  const parsed = JSON.parse(result.response.text()) as { argument: string; confidencePct: number; citedFields: string[] };
-  return { argument: parsed.argument, confidencePct: Math.max(0, Math.min(100, parsed.confidencePct)), citedFields: parsed.citedFields ?? [] };
 }
 
 /** Bull Agent - Gemini voi BULL_SYSTEM_PROMPT (lac quan). */
@@ -124,15 +152,17 @@ const judgeResponseSchema = {
 };
 
 async function callJudge(judgeLabel: string, temperature: number, debateTranscript: string, lmsrFinalPricePct: number): Promise<JudgeVote> {
-  const model = genAI.getGenerativeModel({
-    model: DEBATE_MODEL_NAME,
-    systemInstruction: JUDGE_SYSTEM_PROMPT,
-    generationConfig: { responseMimeType: "application/json", responseSchema: judgeResponseSchema as any, temperature },
+  return withGeminiRetry(async () => {
+    const model = genAI.getGenerativeModel({
+      model: DEBATE_MODEL_NAME,
+      systemInstruction: JUDGE_SYSTEM_PROMPT,
+      generationConfig: { responseMimeType: "application/json", responseSchema: judgeResponseSchema as any, temperature },
+    });
+    const prompt = `TOÀN BỘ CUỘC TRANH LUẬN (rounds):\n${debateTranscript}\n\nXác suất thị trường nội bộ (LMSR) sau debate: ${lmsrFinalPricePct}% nghiêng về phía tăng.\n\nHãy đưa ra phán quyết khách quan.`;
+    const result = await model.generateContent(prompt);
+    const parsed = JSON.parse(result.response.text()) as { verdict: "bullish" | "bearish" | "neutral"; confidencePct: number; reasoning: string };
+    return { judge: judgeLabel, verdict: parsed.verdict, confidencePct: Math.max(0, Math.min(100, parsed.confidencePct)), reasoning: parsed.reasoning };
   });
-  const prompt = `TOÀN BỘ CUỘC TRANH LUẬN (rounds):\n${debateTranscript}\n\nXác suất thị trường nội bộ (LMSR) sau debate: ${lmsrFinalPricePct}% nghiêng về phía tăng.\n\nHãy đưa ra phán quyết khách quan.`;
-  const result = await model.generateContent(prompt);
-  const parsed = JSON.parse(result.response.text()) as { verdict: "bullish" | "bearish" | "neutral"; confidencePct: number; reasoning: string };
-  return { judge: judgeLabel, verdict: parsed.verdict, confidencePct: Math.max(0, Math.min(100, parsed.confidencePct)), reasoning: parsed.reasoning };
 }
 
 /** Chay 2 Judge DOC LAP (temperature khac nhau) tren CUNG 1 debate
