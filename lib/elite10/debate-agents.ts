@@ -20,6 +20,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 export const DEBATE_MODEL_NAME = "gemini-3.6-flash";
 export const IS_SINGLE_PROVIDER_DEBATE = true;
+export const IS_SINGLE_PROVIDER_JURY = true;
 
 export interface DebateArgument { argument: string; confidencePct: number; citedFields: string[]; }
 
@@ -86,4 +87,76 @@ export async function runBullAgent(dataPackageJson: string, bearArgument?: strin
 export async function runBearAgent(dataPackageJson: string, bullArgument: string): Promise<DebateArgument> {
   const prompt = `${buildDataSection(dataPackageJson)}\n\nLUẬN ĐIỂM CỦA BULL AGENT (cần chỉ ra điểm yếu):\n"${bullArgument}"\n\nHãy đưa ra luận điểm phản biện.`;
   return callGeminiAgent(BEAR_SYSTEM_PROMPT, prompt);
+}
+
+// ============================================================
+// MUC B (Tech Spec v2) Giai doan 3/4: Jury of Judges.
+//
+// MINH BACH: thiet ke goc de xuat 3 MODEL PROVIDER khac nhau (Gemini +
+// GPT + Claude). Vi CHI CON Gemini kha dung (xem ghi chu dau file), 2
+// Judge o day CUNG la Gemini nhung VOI TEMPERATURE KHAC NHAU (0.2 va
+// 0.9) - tao do da dang goc nhin trong pham vi 1 provider (self-
+// consistency), KHONG PHAI "true multi-model jury". Field
+// "isSingleProviderJury: true" tra ve o response de minh bach dieu nay.
+
+export interface JudgeVote { judge: string; verdict: "bullish" | "bearish" | "neutral"; confidencePct: number; reasoning: string; }
+
+const JUDGE_SYSTEM_PROMPT = `Bạn là Judge (trọng tài độc lập) trong hệ thống Multi-Agent Debate Global Quanta.
+
+NHIỆM VỤ DUY NHẤT: Đọc toàn bộ cuộc tranh luận giữa Bull Agent (lạc quan) và Bear Agent (bi quan) — cả 2 đều lập luận dựa trên CÙNG 1 bộ dữ liệu định lượng thật — và đưa ra phán quyết KHÁCH QUAN bên nào có lập luận chắc chắn hơn.
+
+QUY TẮC BẮT BUỘC:
+1. Đánh giá dựa trên CHẤT LƯỢNG bằng chứng và tính logic của lập luận trong "rounds" — KHÔNG được chỉ copy lại confidencePct mà mỗi Agent tự báo cho chính mình (đó là tự đánh giá, không phải phán quyết khách quan của bạn).
+2. Nếu 1 bên trích dẫn nhiều số liệu cụ thể hơn và phản biện trực tiếp vào điểm yếu của bên kia, bên đó đáng tin hơn — dù confidence tự báo của họ thấp hơn.
+3. verdict = "neutral" nếu cả 2 bên đều có lập luận mạnh ngang nhau, hoặc dữ liệu thực sự không đủ để nghiêng hẳn về 1 phía.
+4. confidencePct là ĐỘ TỰ TIN CỦA CHÍNH BẠN vào phán quyết này (0-100), không phải trung bình cộng của 2 Agent.
+5. reasoning ngắn gọn (2-3 câu), giải thích TẠI SAO bạn chọn verdict này dựa trên chất lượng lập luận đã đọc.
+6. Viết bằng tiếng Việt.`;
+
+const judgeResponseSchema = {
+  type: "object" as const,
+  properties: {
+    verdict: { type: "string" as const, enum: ["bullish", "bearish", "neutral"] },
+    confidencePct: { type: "number" as const, description: "Độ tự tin của chính Judge vào phán quyết, 0-100" },
+    reasoning: { type: "string" as const, description: "2-3 câu giải thích tiếng Việt" },
+  },
+  required: ["verdict", "confidencePct", "reasoning"],
+};
+
+async function callJudge(judgeLabel: string, temperature: number, debateTranscript: string, lmsrFinalPricePct: number): Promise<JudgeVote> {
+  const model = genAI.getGenerativeModel({
+    model: DEBATE_MODEL_NAME,
+    systemInstruction: JUDGE_SYSTEM_PROMPT,
+    generationConfig: { responseMimeType: "application/json", responseSchema: judgeResponseSchema as any, temperature },
+  });
+  const prompt = `TOÀN BỘ CUỘC TRANH LUẬN (rounds):\n${debateTranscript}\n\nXác suất thị trường nội bộ (LMSR) sau debate: ${lmsrFinalPricePct}% nghiêng về phía tăng.\n\nHãy đưa ra phán quyết khách quan.`;
+  const result = await model.generateContent(prompt);
+  const parsed = JSON.parse(result.response.text()) as { verdict: "bullish" | "bearish" | "neutral"; confidencePct: number; reasoning: string };
+  return { judge: judgeLabel, verdict: parsed.verdict, confidencePct: Math.max(0, Math.min(100, parsed.confidencePct)), reasoning: parsed.reasoning };
+}
+
+/** Chay 2 Judge DOC LAP (temperature khac nhau) tren CUNG 1 debate
+ * transcript, tra ve ca 2 vote de nguoi dung tu xem xet (khong an di
+ * truong hop bat dong). */
+export async function runJury(rounds: { round: number; side: string; argument: string }[], lmsrFinalPricePct: number): Promise<JudgeVote[]> {
+  const transcript = rounds.map((r) => `[Round ${r.round} - ${r.side === "bull" ? "Bull" : "Bear"}]: ${r.argument}`).join("\n\n");
+  const [judge1, judge2] = await Promise.all([
+    callJudge("Judge-A", 0.2, transcript, lmsrFinalPricePct),
+    callJudge("Judge-B", 0.9, transcript, lmsrFinalPricePct),
+  ]);
+  return [judge1, judge2];
+}
+
+/** Tong hop 2 vote thanh 1 finalVerdict:
+ *   - Neu 2 Judge DONG THUAN (cung verdict) -> dung luon, confidence = trung binh.
+ *   - Neu BAT DONG -> tie-breaker: verdict cua Judge co confidencePct CAO HON
+ *     thang the (Judge tu tin hon duoc uu tien), ghi ro day la tie-break. */
+export function resolveJuryVerdict(votes: JudgeVote[]): { finalVerdict: "bullish" | "bearish" | "neutral"; isTieBreak: boolean; avgConfidencePct: number } {
+  const [v1, v2] = votes;
+  const avgConfidencePct = Math.round((v1.confidencePct + v2.confidencePct) / 2);
+  if (v1.verdict === v2.verdict) {
+    return { finalVerdict: v1.verdict, isTieBreak: false, avgConfidencePct };
+  }
+  const winner = v1.confidencePct >= v2.confidencePct ? v1 : v2;
+  return { finalVerdict: winner.verdict, isTieBreak: true, avgConfidencePct };
 }
