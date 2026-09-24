@@ -86,6 +86,14 @@ export function estimateMsGarchParams(returns: number[]): MsGarchEstimationResul
   const [r1, r2] = params.regimes;
   if (r1.alpha + r1.beta > 0.97) warnings.push("Regime 1: alpha+beta gần sát ngưỡng ổn định (0.98) — tham số có thể không đáng tin.");
   if (r2.alpha + r2.beta > 0.97) warnings.push("Regime 2: alpha+beta gần sát ngưỡng ổn định (0.98) — tham số có thể không đáng tin.");
+  // MOI: kiem tra tung tham so RIENG LE sat bien (khong chi tong
+  // alpha+beta) - VD alpha sat muc tran 0.3 cho phep, hoac omega gan
+  // bang 0 (dau hieu regime khong co y nghia thong ke rieng biet, GARCH
+  // suy bien ve gan nhu hang so).
+  if (r1.alpha > 0.28) warnings.push("Regime 1: alpha gần sát ngưỡng tối đa cho phép (0.3) — tham số có thể không đáng tin.");
+  if (r2.alpha > 0.28) warnings.push("Regime 2: alpha gần sát ngưỡng tối đa cho phép (0.3) — tham số có thể không đáng tin.");
+  if (r1.omega < unconditionalVar * 0.01) warnings.push("Regime 1: omega gần bằng 0 — regime này có thể không có ý nghĩa thống kê riêng biệt (GARCH gần như suy biến).");
+  if (r2.omega < unconditionalVar * 0.01) warnings.push("Regime 2: omega gần bằng 0 — regime này có thể không có ý nghĩa thống kê riêng biệt (GARCH gần như suy biến).");
   const p11 = params.transitionMatrix[0][0], p22 = params.transitionMatrix[1][1];
   if (p11 > 0.995 || p11 < 0.5) warnings.push("Xác suất duy trì regime 1 (p11) ở mức cực đoan — mô hình có thể không phân biệt được 2 regime rõ ràng.");
   if (p22 > 0.995 || p22 < 0.5) warnings.push("Xác suất duy trì regime 2 (p22) ở mức cực đoan — mô hình có thể không phân biệt được 2 regime rõ ràng.");

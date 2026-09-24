@@ -75,7 +75,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tic
       },
       fanChart: mc.fanChart,
       dataSource: "Yahoo Finance adjClose (2 năm gần nhất), log-return %",
-      methodologyNote: "Markov-Switching GARCH (Gray 1996, path-independent specification) — 2 chế độ biến động (yên tĩnh/mạnh), ước lượng bằng Maximum Likelihood + Nelder-Mead (Hamilton Filter tính log-likelihood). Đây là bước ước lượng thống kê không có công thức đóng — luôn kiểm tra 'isConverged' và 'warnings' trước khi tin vào kết quả, đặc biệt khi mẫu dữ liệu ngắn. Fan chart (dải phân vị 10/50/90) từ mô phỏng Monte Carlo, không phải dự báo chắc chắn — phản ánh phân phối xác suất dựa trên mô hình đã ước lượng.",
+      methodologyNote: "Markov-Switching GARCH (Gray 1996, path-independent specification) — 2 chế độ biến động (yên tĩnh/mạnh), ước lượng bằng Maximum Likelihood + Nelder-Mead (Hamilton Filter tính log-likelihood). Đây là bước ước lượng thống kê không có công thức đóng — luôn kiểm tra 'isConverged' và 'warnings' trước khi tin vào kết quả, đặc biệt khi mẫu dữ liệu ngắn. Fan chart (dải phân vị 10/50/90) từ mô phỏng Monte Carlo, không phải dự báo chắc chắn — phản ánh phân phối xác suất dựa trên mô hình đã ước lượng. QUAN TRỌNG: mô hình chỉ ước lượng ĐỘ BIẾN ĐỘNG (variance) thay đổi theo thời gian — phần xu hướng trung tâm (medianReturn, đường p50) dùng drift trung bình (mu) không đổi, ước lượng từ lịch sử. Đây KHÔNG PHẢI dự báo xu hướng giá tương lai (mô hình không 'biết' giá sẽ tăng hay giảm) — nếu p50 lệch khỏi giá hiện tại, đó phản ánh drift lịch sử trung bình của mã, không phải khuyến nghị hay tín hiệu mua/bán.",
     });
   } catch (err) {
     console.error("[api/elite10/ms-garch] Lỗi:", err);
