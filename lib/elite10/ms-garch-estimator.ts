@@ -14,7 +14,7 @@
 // luon tim trong MIEN HOP LE): dung sigmoid/exp de ep tham so ve dung
 // khoang gia tri hop ly ve mat kinh te luong (omega>0, 0<alpha<0.3,
 // alpha+beta<0.98 dam bao stationarity co margin an toan, 0<p_ii<1).
-import { nelderMead } from "fmin";
+import { nelderMead } from "./nelder-mead";
 import { runHamiltonFilter, type MsGarchParams } from "./ms-garch-hamilton-filter";
 
 function sigmoid(x: number): number { return 1 / (1 + Math.exp(-x)); }
