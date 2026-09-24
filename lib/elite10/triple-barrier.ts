@@ -25,6 +25,12 @@ export interface TripleBarrierResult {
   label: 0 | 1;
   actualReturnPct: number;
   daysToHit: number;
+  // MO RONG (2026-09-24, tich hop bieu do): cac field THEM cho Lop 2
+  // (chi tiet 1 occurrence tren chart, ve TP/SL + vung to mau khi
+  // nguoi dung click) - KHONG xoa/doi field nao o tren, giu nguyen
+  // 100% logic/test da co (12/12 test truoc do van dung).
+  signalDate: string; entryPrice: number;
+  tpBarrier: number; slBarrier: number; resolvedDate: string;
 }
 
 /** Ap dung Triple-Barrier cho 1 tin hieu tai signalIndex. Can atrSeries
@@ -56,16 +62,25 @@ export function applyTripleBarrier(
     // chan - phan anh dung gia THUC TE da chay qua trong phien, giong
     // tinh than "intrabar" cua Triple-Barrier goc.
     if (bar.high >= tpBarrier) {
-      return { barrierHit: "take_profit", label: 1, actualReturnPct: ((tpBarrier - entryPrice) / entryPrice) * 100, daysToHit: i - signalIndex };
+      return {
+        barrierHit: "take_profit", label: 1, actualReturnPct: ((tpBarrier - entryPrice) / entryPrice) * 100, daysToHit: i - signalIndex,
+        signalDate: bars[signalIndex].date, entryPrice, tpBarrier, slBarrier, resolvedDate: bar.date,
+      };
     }
     if (bar.low <= slBarrier) {
-      return { barrierHit: "stop_loss", label: 0, actualReturnPct: ((slBarrier - entryPrice) / entryPrice) * 100, daysToHit: i - signalIndex };
+      return {
+        barrierHit: "stop_loss", label: 0, actualReturnPct: ((slBarrier - entryPrice) / entryPrice) * 100, daysToHit: i - signalIndex,
+        signalDate: bars[signalIndex].date, entryPrice, tpBarrier, slBarrier, resolvedDate: bar.date,
+      };
     }
   }
 
   const finalBar = bars[pathEnd - 1];
   const ret = ((finalBar.close - entryPrice) / entryPrice) * 100;
-  return { barrierHit: "time_limit", label: ret > 0 ? 1 : 0, actualReturnPct: ret, daysToHit: pathEnd - 1 - signalIndex };
+  return {
+    barrierHit: "time_limit", label: ret > 0 ? 1 : 0, actualReturnPct: ret, daysToHit: pathEnd - 1 - signalIndex,
+    signalDate: bars[signalIndex].date, entryPrice, tpBarrier, slBarrier, resolvedDate: finalBar.date,
+  };
 }
 
 /** Wilson Score Interval 90% cho ty le nhi phan - phu hop hon bootstrap
@@ -84,6 +99,9 @@ export interface TripleBarrierStats {
   sampleSize: number; winRatePct: number; wilsonCi90: [number, number];
   breakdown: { takeProfitPct: number; stopLossPct: number; timeLimitPct: number };
   avgReturnPct: number; avgDaysToHit: number; isLowSample: boolean;
+  // MO RONG (2026-09-24): chi tiet TUNG occurrence, dung cho Lop 1+2
+  // tren bieu do (markers tong quan + chi tiet TP/SL khi click).
+  occurrences: TripleBarrierResult[];
 }
 
 /** Ap dung Triple-Barrier cho TOAN BO occurrences cua 1 pattern, tong
@@ -119,5 +137,6 @@ export function backtestWithTripleBarrier(
     avgReturnPct: Math.round((results.reduce((s, r) => s + r.actualReturnPct, 0) / n) * 100) / 100,
     avgDaysToHit: Math.round((results.reduce((s, r) => s + r.daysToHit, 0) / n) * 10) / 10,
     isLowSample: n < 30,
+    occurrences: results,
   };
 }
