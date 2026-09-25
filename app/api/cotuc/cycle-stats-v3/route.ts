@@ -17,8 +17,9 @@ export async function GET(req: Request) {
     if (!ticker) return NextResponse.json({ error: "Thiếu tham số ticker." }, { status: 400 });
 
     const ctx = await buildCycleContext(ticker);
-    if (!ctx) {
-      return NextResponse.json({ error: "Không đủ dữ liệu giá/lịch sử cổ tức cho mã này." }, { status: 422 });
+    if ("reason" in ctx) {
+      console.error(`[api/cotuc/cycle-stats-v3] ${ticker}: ${ctx.reason} - ${ctx.detail}`);
+      return NextResponse.json({ error: "Không đủ dữ liệu giá/lịch sử cổ tức cho mã này.", reason: ctx.reason, detail: ctx.detail }, { status: 422 });
     }
 
     return NextResponse.json(buildCycleStatsV3(ctx));

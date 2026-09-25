@@ -28,19 +28,41 @@ export interface CycleComputeContext {
   eventExDates: string[];
 }
 
+export interface CycleContextFailure {
+  reason: "STOCK_PRICE_FETCH_FAILED" | "BENCHMARK_PRICE_FETCH_FAILED" | "NO_DIVIDEND_HISTORY";
+  detail: string;
+}
+
 /** Buoc chung: lay gia that (ma + VN-Index) + lich su GDKHQ that, roi
  * tinh CAR path (computeCyclePaths) - dung LAI cho ca 2 route
- * (cycle-paths va cycle-stats-v3), tranh goi Yahoo 2 lan. */
-export async function buildCycleContext(ticker: string): Promise<CycleComputeContext | null> {
+ * (cycle-paths va cycle-stats-v3), tranh goi Yahoo 2 lan.
+ *
+ * FIX (2026-09-26, phat hien qua kiem tra thuc te FPT): truoc day tra
+ * ve "null" chung chung khi thieu du lieu, KHONG the biet buoc nao
+ * that bai (gia hay lich su GDKHQ) - gio tra ve CycleContextFailure
+ * co ly do cu the, de route log/hien thi chinh xac. */
+export async function buildCycleContext(ticker: string): Promise<CycleComputeContext | CycleContextFailure> {
   const [stockRes, benchRes, historyRows] = await Promise.all([
     fetchOhlcvHistory(ticker, "2y"),
     fetchOhlcvHistory(VNINDEX_TICKER, "2y"),
     prisma.dividendCycleWindow.findMany({ where: { ticker }, orderBy: { exDate: "desc" } }),
   ]);
 
-  if (!stockRes.success || !stockRes.data || stockRes.data.length < 60) return null;
-  if (!benchRes.success || !benchRes.data || benchRes.data.length < 60) return null;
-  if (historyRows.length === 0) return null;
+  if (!stockRes.success || !stockRes.data || stockRes.data.length < 60) {
+    return {
+      reason: "STOCK_PRICE_FETCH_FAILED",
+      detail: `success=${stockRes.success}, so_phien=${stockRes.data?.length ?? 0} (can >=60). Loi: ${stockRes.error ?? "khong ro"}`,
+    };
+  }
+  if (!benchRes.success || !benchRes.data || benchRes.data.length < 60) {
+    return {
+      reason: "BENCHMARK_PRICE_FETCH_FAILED",
+      detail: `success=${benchRes.success}, so_phien=${benchRes.data?.length ?? 0} (can >=60). Loi: ${benchRes.error ?? "khong ro"}`,
+    };
+  }
+  if (historyRows.length === 0) {
+    return { reason: "NO_DIVIDEND_HISTORY", detail: `Khong tim thay dong nao trong bang DividendCycleWindow cho ticker="${ticker}"` };
+  }
 
   const stockPrices = (stockRes.data as OhlcvBar[]).map((b: OhlcvBar) => ({ date: b.date, adjClose: b.adjClose }));
   const benchmarkPrices = (benchRes.data as OhlcvBar[]).map((b: OhlcvBar) => ({ date: b.date, adjClose: b.adjClose }));
