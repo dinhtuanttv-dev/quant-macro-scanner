@@ -457,3 +457,37 @@ model DebateSession {
   @@index([ticker])
   @@index([status])
 }
+
+// Giai Trinh Hoi Tu - Giai doan 1a: luu ket qua Top 20 Loc Nganh tu
+// cron dinh ky (route /api/sector-filter/top20 truoc day CHI tinh
+// realtime moi lan goi, mat ~60s vi phai fetch gia toan bo universe -
+// KHONG THE goi truc tiep trong Confluence Engine moi lan mo 1 ma).
+// Ghi de TOAN BO moi lan cron chay (khong giu lich su nhieu ngay).
+model SectorTop20Entry {
+  id              Int      @id @default(autoincrement())
+  ticker          String
+  sectorKey       String
+  sectorQuadrant  String
+  rs3m            Float?
+  confluenceScore Float
+  rank            Int // 1 = tot nhat trong Top 20
+  generatedAt     DateTime @default(now())
+
+  @@index([ticker])
+  @@index([generatedAt])
+}
+
+// FIX AN TOAN DU LIEU (2026-09-25): bang nay DA TON TAI THAT trong
+// Postgres (ghi qua $executeRaw trong lib/ingestion/hose/hose-ingest.ts,
+// KHONG qua Prisma model tu truoc) nhung CHUA TUNG duoc khai bao trong
+// schema.prisma - khi chay "prisma db push" lan dau, Prisma hieu nham
+// la model da bi xoa va DE XUAT XOA LUON BANG THAT (co du lieu khoi
+// ngoai mua rong dang dung). Model duoi day COPY CHINH XAC tu
+// "npx prisma db pull --print" (introspection tu database that) -
+// KHONG duoc tu y doi kieu du lieu bat ky field nao.
+model hose_foreign_net_buy {
+  id           String   @id @default("latest")
+  tickers      Json     @default("[]")
+  trading_date String?
+  fetched_at   DateTime @default(now()) @db.Timestamptz(6)
+}

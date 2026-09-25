@@ -8,6 +8,8 @@
     { "path": "/api/cron/dividend-ai-analysis", "schedule": "30 22 * * *" },
     { "path": "/api/cron/dividend-cycle-scan", "schedule": "0 23 * * 0" },
     { "path": "/api/cron/sieu-quet-scan", "schedule": "45 22 * * *" },
+    { "path": "/api/catalysts/scan", "schedule": "40 22 * * *" },
+    { "path": "/api/cron/sector-top20-scan", "schedule": "35 22 * * *" },
     { "path": "/api/cron/elite10-agm-cycle-scan", "schedule": "0 0 * * 0" },
     { "path": "/api/cron/sieu-quet-event-discover", "schedule": "0 1 * * *" },
     { "path": "/api/cron/sieu-quet-event-discover", "schedule": "0 6 * * *" },
