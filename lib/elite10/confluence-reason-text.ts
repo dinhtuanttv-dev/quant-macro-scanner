@@ -17,7 +17,15 @@ export function generateCoreReasonText(meta: { trendTag?: string | null; foreign
   const parts: string[] = [];
   if (meta.trendTag) parts.push(`thuận xu hướng ${meta.trendTag}`);
   if (meta.foreignNetBuyFlag) parts.push("khối ngoại mua ròng mạnh (Top 5 HOSE hôm nay)");
-  if (meta.confluenceStatus) parts.push(meta.confluenceStatus);
+  // FIX (phat hien qua kiem tra thuc te, HDB): "confluenceStatus" (VD
+  // "Thuan xu huong") thuong LAP Y voi "trendTag" (VD "Up-Trend") da
+  // hien thi truoc do - bo qua neu 2 chuoi chua tu khoa giong nhau, chi
+  // them confluenceStatus khi no THAT SU la thong tin khac biet.
+  if (meta.confluenceStatus && meta.trendTag && !meta.confluenceStatus.toLowerCase().includes("xu hướng") && !meta.trendTag.toLowerCase().includes(meta.confluenceStatus.toLowerCase())) {
+    parts.push(meta.confluenceStatus);
+  } else if (meta.confluenceStatus && !meta.trendTag) {
+    parts.push(meta.confluenceStatus);
+  }
   if (parts.length === 0) return null;
   return parts.join(" · ");
 }
