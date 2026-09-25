@@ -68,7 +68,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ ticker: 
       // va cau giai thich bang ngon ngu tu nhien (reasonText) da tinh
       // san trong confluence-adapter.ts tu du lieu THAT.
       const weight = result.weightsEffective[pillar] ?? 0;
-      const contribution = status === "VALID" && src?.signalValue !== null && src?.signalValue !== undefined
+      // FIX (phat hien qua kiem tra thuc te, quan trong): engine THAT
+      // (confluence-scoring.ts, ham sourcesValid()) tinh CA "SUSPECT"
+      // vao rawScore (khong chi "VALID") - dong duoi truoc day CHI
+      // check status==="VALID" nen waterfall BO SOT cac nguon "bat
+      // thuong" du chung VAN dong gop vao diem that, gay "loi giai
+      // trinh" khong khop voi diem cuoi cung hien thi.
+      const contribution = (status === "VALID" || status === "SUSPECT") && src?.signalValue !== null && src?.signalValue !== undefined
         ? Math.round(weight * src.signalValue * 10) / 10
         : null;
       const reasonText = (src?.raw as Record<string, unknown> | undefined)?.reasonText as string | null | undefined;
