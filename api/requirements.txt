@@ -25,13 +25,18 @@
 #     lay du lieu chung khoan. Da tu viet 1 package STUB local (NO-OP,
 #     khong gui telemetry that) tai api/_vendor/vnai_stub/ - xem chi
 #     tiet + ly do tai api/_vendor/vnai_stub/vnai/__init__.py. Dong
-#     duoi tro thang vao stub nay (local path), KHONG can PyPI/GitHub.
+#     duoi tro thang vao stub nay bang DUONG DAN TUYET DOI
+#     (/vercel/path0/api/_vendor/vnai_stub) - da thu relative path
+#     ("./_vendor/vnai_stub") truoc do nhung uv (khac pip) tu nhan doi
+#     "api/" trong qua trinh resolve, gay loi "Distribution not found
+#     at .../api/api/_vendor/..." - duong dan tuyet doi nay CHINH XAC
+#     tu chinh thong bao loi thuc te cua Vercel build log.
 #
 # KHI PyPI het quarantine (theo doi https://pypi.org/project/vnstock/
 # va https://pypi.org/project/vnai/): co the go 2 dong duoi + xoa thu
 # muc api/_vendor/vnai_stub/, doi lai "vnstock==<ban moi>" (pip resolve
 # vnai tu dong theo dependency that cua vnstock).
-./_vendor/vnai_stub
+vnai @ file:///vercel/path0/api/_vendor/vnai_stub
 vnstock @ git+https://github.com/thinh-vu/vnstock.git@v4.0.4
 fastapi==0.117.1
 pandas==2.2.3
