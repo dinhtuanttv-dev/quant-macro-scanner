@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vnai"
+version = "999.0.0"
+description = "STUB local - xem vnai/__init__.py de biet ly do va pham vi (chi optimize_execution + setup, NO-OP, khong phai package that)"
+requires-python = ">=3.10"
+
+[tool.setuptools]
+packages = ["vnai"]

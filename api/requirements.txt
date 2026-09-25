@@ -2,25 +2,36 @@
 # có thể đổi cách gọi hàm bất cứ lúc nào (v4 Unified UI còn đang phát triển
 # nhanh).
 #
-# SU CO PyPI (2026-09-25, QUAN TRONG): toan bo package "vnstock" tren
-# PyPI (MOI phien ban, khong rieng 4.0.5/4.0.8) da bi PyPI admin dua
-# vao "Quarantine" tu 24/09/2026 ("cannot be installed or modified
-# until a security review is complete" - xac nhan qua https://pypi.org/
-# project/vnstock/#history). KHONG THE cai qua PyPI bang BAT KY cach
-# ghim phien ban nao cho toi khi PyPI hoan tat rieng soat.
+# SU CO PyPI (2026-09-25, QUAN TRONG): toan bo package "vnstock" VA
+# "vnai" (dependency BAT BUOC cua vnstock v4.x) tren PyPI da bi PyPI
+# admin dua vao "Quarantine" tu 24/09/2026 ("cannot be installed or
+# modified until a security review is complete" - xac nhan qua
+# https://pypi.org/project/vnstock/#history VA https://pypi.org/
+# project/vnai/). KHONG THE cai qua PyPI. "vnai" CUNG KHONG CO ma
+# nguon GitHub cong khai (xac nhan qua PyPI support issue #12390:
+# "Source code repositories URLs: none") - khong the ap dung cach cai
+# tu GitHub nhu vnstock.
 #
-# GIAI PHAP: cai THANG tu GitHub (README chinh thuc cua vnstock cung
-# huong dan cach nay cho "experimental release": "pip install
-# git+https://github.com/thinh-vu/vnstock.git"). Da kiem tra truc tiep
-# qua "git ls-remote --tags" - KHONG co tag rieng cho 4.0.5-4.0.8 tren
-# GitHub (tac gia co the chua tag cac ban nay), tag on dinh GAN NHAT
-# DA XAC NHAN TON TAI la v4.0.4 - ghim dung tag nay (KHONG dung @main,
-# tranh nhan code chua on dinh/thay doi bat ngo).
+# GIAI PHAP 2 PHAN:
+#  1. vnstock: cai THANG tu GitHub, ghim tag on dinh GAN NHAT da xac
+#     nhan TON TAI THAT qua "git ls-remote --tags" (khong co tag rieng
+#     cho 4.0.5-4.0.8) la v4.0.4.
+#  2. vnai: DA DOC TRUC TIEP source code vnstock (tag v4.0.4) va xac
+#     nhan CHI dung DUY NHAT 2 thu tu vnai - optimize_execution()
+#     (decorator factory tren cac ham API) va setup() (goi 1 lan luc
+#     khoi tao, DA duoc chinh vnstock boc trong try/except nen AN
+#     TOAN du loi/thieu). vnai THUC CHAT la thu vien TELEMETRY/
+#     ANALYTICS PHU TRO (theo mo ta chinh thuc), KHONG PHAI logic loi
+#     lay du lieu chung khoan. Da tu viet 1 package STUB local (NO-OP,
+#     khong gui telemetry that) tai api/_vendor/vnai_stub/ - xem chi
+#     tiet + ly do tai api/_vendor/vnai_stub/vnai/__init__.py. Dong
+#     duoi tro thang vao stub nay (local path), KHONG can PyPI/GitHub.
 #
-# NEU PyPI da het quarantine VA muon quay lai ghim phien ban binh
-# thuong (nhanh hon, khong can build tu source): doi dong duoi thanh
-# "vnstock==<phien_ban>" (kiem tra https://pypi.org/project/vnstock/#history
-# truoc, dam bao KHONG con bao "Quarantined" o dau trang).
+# KHI PyPI het quarantine (theo doi https://pypi.org/project/vnstock/
+# va https://pypi.org/project/vnai/): co the go 2 dong duoi + xoa thu
+# muc api/_vendor/vnai_stub/, doi lai "vnstock==<ban moi>" (pip resolve
+# vnai tu dong theo dependency that cua vnstock).
+./_vendor/vnai_stub
 vnstock @ git+https://github.com/thinh-vu/vnstock.git@v4.0.4
 fastapi==0.117.1
 pandas==2.2.3
