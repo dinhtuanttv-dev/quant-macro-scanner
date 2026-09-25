@@ -1,8 +1,17 @@
 # Ghim chính xác phiên bản để tránh Vercel build ra bản vnstock khác,
 # có thể đổi cách gọi hàm bất cứ lúc nào (v4 Unified UI còn đang phát triển
-# nhanh). Nếu build lỗi vì bản 4.0.5 không còn khả dụng, kiểm tra phiên bản
+# nhanh). Nếu build lỗi vì bản 4.0.8 không còn khả dụng, kiểm tra phiên bản
 # mới nhất tại https://pypi.org/project/vnstock/#history rồi cập nhật dòng này.
-vnstock==4.0.5
+#
+# CAP NHAT (2026-09-25): 4.0.5 KHONG CON TON TAI tren PyPI (build that
+# bai "no solution found... 4.0.5 unsatisfiable") - da xac nhan qua
+# PyPI release history, phien ban moi nhat con ton tai la 4.0.8 (4.0.5
+# la 1 buoc trung gian giua 4.0.4 va 4.0.8, co the da bi tac gia go
+# (yanked) khoi PyPI). LUU Y: co the co thay doi cach goi ham giua
+# 4.0.5 va 4.0.8 (v4 Unified UI dang phat trien nhanh) - can kiem tra
+# lai neu code Python trong api/*.py goi ham vnstock gap loi runtime
+# sau khi nang cap (khac voi loi build/dependency da gap lan nay).
+vnstock==4.0.8
 fastapi==0.117.1
 pandas==2.2.3
 python-dateutil==2.9.0
