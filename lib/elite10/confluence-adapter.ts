@@ -11,6 +11,11 @@ import { applyQualityGate } from "./quality-gate";
 import { readSnapshotWithStaleness } from "@/lib/catalyst/engine/SnapshotStore";
 import type { CatalystSnapshot } from "@/lib/catalyst/useCatalystData";
 import type { MacroEventSummary } from "@/lib/types/siu-quet-ai";
+import { getAsiaSectorPulseForSector } from "@/lib/global/sector-pulse-lookup";
+import {
+  generateCoreReasonText, generateTaReasonText, generateSectorReasonText,
+  generateCatalystReasonText, generateMacroReasonText, generateDividendReasonText,
+} from "./confluence-reason-text";
 
 const catalystRedis = new Redis({ url: process.env.KV_REST_API_URL!, token: process.env.KV_REST_API_TOKEN! });
 
@@ -36,6 +41,11 @@ export async function buildConfluenceProfile(ticker: string): Promise<Confluence
     // KHONG can them ha tang moi - chi doc lai.
     readSnapshotWithStaleness<CatalystSnapshot>(catalystRedis).catch(() => ({ snapshot: null, isStale: false, ageMinutes: null })),
   ]);
+
+  // Giai doan 2 (Giai Trinh Hoi Tu): hieu suat nganh Chau A THAT cho
+  // pillar "macro" - PHU THUOC vao stockItem.sector nen phai goi SAU
+  // (khong the gop chung Promise.all o tren vi chua co sector).
+  const asiaSectorPulse = await getAsiaSectorPulseForSector(stockItem?.sector).catch(() => null);
 
   const overrideMap = new Map<string, { signalValue: number; rollingMean90d: number; rollingStd90d: number }>(
     cachedOverrides.map((c: { pillar: string; signalValue: number; rollingMean90d: number; rollingStd90d: number }) => [c.pillar, c])
@@ -64,6 +74,10 @@ export async function buildConfluenceProfile(ticker: string): Promise<Confluence
     core: makeSource("core", stockItem?.smartScore ?? null, {
       trendTag: stockItem?.trendTag, confluenceStatus: stockItem?.confluenceStatusLabel,
       foreignNetBuyFlag: stockItem?.foreignNetBuyFlag ?? false,
+      reasonText: generateCoreReasonText({
+        trendTag: stockItem?.trendTag, foreignNetBuyFlag: stockItem?.foreignNetBuyFlag ?? false,
+        confluenceStatus: stockItem?.confluenceStatusLabel,
+      }),
     }),
     // ta - TA VN-Index: dung taScore THAT da tinh (Yahoo OHLCV, RSI/MA/liquidity)
     // - LUU Y: day la Confluence "ta" o muc Sieu Quet AI, KHAC voi
@@ -71,27 +85,39 @@ export async function buildConfluenceProfile(ticker: string): Promise<Confluence
     // MockDataBanner.tsx) - fvg_count/smc_ob_count van null (MISSING that su).
     ta: makeSource("ta", stockItem?.taScore ?? null, {
       rsRating: stockItem?.rsRating, smc_ob_count: null, fvg_count: null,
+      reasonText: generateTaReasonText({ rsRating: stockItem?.rsRating }),
     }),
-    // macro - dung Impulse Score cua VN-Index THAT lam proxy vi mo chung
+    // macro - dung Impulse Score cua VN-Index THAT lam proxy vi mo chung,
+    // + Giai doan 2: hieu suat nganh Chau A THAT (sector-pulse-lookup).
     macro: makeSource("macro", indexState?.impulseScore ?? null, {
       foreign_flow: null, foreign_flow_desc: null, lag_days: null,
       sector: stockItem?.sector ?? null,
+      reasonText: generateMacroReasonText({ sector: stockItem?.sector, asiaSectorPulse }),
     }),
     // dividend - Dividend Quality Score THAT (4 tang, Tab Co Tuc) neu co trong Universe
     dividend: makeSource("dividend", dividendEntry?.overallScoreTier123 ?? null, {
       yield_pct: dividendEntry?.dividendYieldPct ?? null,
+      reasonText: generateDividendReasonText({ yieldPct: dividendEntry?.dividendYieldPct }),
     }),
     // sector - Giai doan 1b (Giai Trinh Hoi Tu): Top 20 Loc Nganh THAT
     // (cron dinh ky), MISSING minh bach neu ma khong nam trong Top 20.
     sector: makeSource("sector", sectorSignal, {
       rank: sectorEntry?.rank ?? null, sectorQuadrant: sectorEntry?.sectorQuadrant ?? null,
       rs3m: sectorEntry?.rs3m ?? null, sectorKey: sectorEntry?.sectorKey ?? null,
+      reasonText: generateSectorReasonText({
+        rank: sectorEntry?.rank, sectorQuadrant: sectorEntry?.sectorQuadrant,
+        rs3m: sectorEntry?.rs3m, sectorKey: sectorEntry?.sectorKey,
+      }),
     }),
     // catalyst - Giai doan 1b: doc tu Redis snapshot CatalystEngine THAT,
     // MISSING minh bach neu chua co impact nao ghi nhan cho ma nay.
     catalyst: makeSource("catalyst", catalystSignal, {
       direction: impact?.direction ?? null,
       relatedEvents: relatedEvents.map((e: MacroEventSummary) => ({ title: e.title, daysRemaining: e.daysRemaining, category: e.category })),
+      reasonText: generateCatalystReasonText({
+        direction: impact?.direction,
+        relatedEvents: relatedEvents.map((e: MacroEventSummary) => ({ title: e.title, daysRemaining: e.daysRemaining, category: e.category })),
+      }),
     }),
   };
 

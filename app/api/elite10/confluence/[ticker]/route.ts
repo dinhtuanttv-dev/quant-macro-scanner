@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { buildConfluenceProfile } from "@/lib/elite10/confluence-adapter";
 import { computeConfluenceScore, type MarketRegime } from "@/lib/elite10/confluence-scoring";
 import { riskFlagsFor } from "@/lib/elite10/trap-detector";
+import { getPenaltyLabelVi } from "@/lib/elite10/confluence-reason-text";
 
 // Elite 10 - Vung 1-6 "Giai Trinh Hoi Tu v2": tinh Confluence Score THAT
 // (Data Quality Gate + Scoring Engine + Trap Detector + Cross Tab + AI
@@ -60,10 +61,21 @@ export async function GET(req: Request, { params }: { params: Promise<{ ticker: 
       else if (status === "STALE") detail = "Dữ liệu cũ";
       else if (status === "SUSPECT") detail = `${src?.signalValue?.toFixed(1) ?? "—"} (bất thường)`;
       else detail = src?.signalValue !== null && src?.signalValue !== undefined ? src.signalValue.toFixed(1) : "—";
+      // Giai doan 2 (Giai Trinh Hoi Tu): dong gop THAT vao diem cuoi
+      // (= trong so hieu qua x gia tri tin hieu, DUNG CONG THUC y het
+      // computeConfluenceScore da dung - xem lib/elite10/confluence-
+      // scoring.ts dong "rawScore += activeWeights[pillar] * signalValue"),
+      // va cau giai thich bang ngon ngu tu nhien (reasonText) da tinh
+      // san trong confluence-adapter.ts tu du lieu THAT.
+      const weight = result.weightsEffective[pillar] ?? 0;
+      const contribution = status === "VALID" && src?.signalValue !== null && src?.signalValue !== undefined
+        ? Math.round(weight * src.signalValue * 10) / 10
+        : null;
+      const reasonText = (src?.raw as Record<string, unknown> | undefined)?.reasonText as string | null | undefined;
       return {
         key: pillar, name: PILLAR_LABEL[pillar] ?? pillar,
         status: status === "VALID" ? "ok" : status === "SUSPECT" ? "warn" : status === "STALE" ? "warn" : "no_data",
-        detail, weightPct, isCurrentTab: pillar === "ta",
+        detail, weightPct, contribution, reasonText: reasonText ?? null, isCurrentTab: pillar === "ta",
       };
     });
 
@@ -99,15 +111,25 @@ export async function GET(req: Request, { params }: { params: Promise<{ ticker: 
     return NextResponse.json({
       ticker, score: result.score, confidenceInterval: result.ci,
       sourcesUsed: `${result.nAvailable}/6`, nAvailable: result.nAvailable,
-      penalty: result.penalty, starRating: result.star, regime, profileId,
+      penalty: {
+        total: result.penalty.total,
+        // Giai doan 2: nhan tieng Viet cho tung khoan phat, de Frontend
+        // hien thi TRUC TIEP (khong can tu tra cuu key ky thuat).
+        breakdown: Object.fromEntries(
+          Object.entries(result.penalty.breakdown).map(([key, value]) => [key, { value, labelVi: getPenaltyLabelVi(key) }])
+        ),
+      },
+      starRating: result.star, regime, profileId,
       weightsEffective: Object.fromEntries(Object.entries(result.weightsEffective).map(([k, v]) => [k, Math.round(v * 1000) / 1000])),
       sources: sourcesDetail,
       crossTabConvergence: matchedTabs.length, crossTabMatched: matchedTabs,
       riskFlags: flags, syncStatus: profile.syncStatus, maxLagSec: profile.maxLagSec,
-      // MINH BACH (ra soat 2026-09-17): sector/catalyst chua co adapter,
-      // Cross-Tab chi 5/6 pillar co Top-N that, Bull Trap can 4 dieu kien
-      // phu (foreign_flow/volume/vpin/news) ma 3/4 chua co nguon that.
-      limitationsNote: "Sector và Chất xúc tác chưa có adapter riêng (MISSING). Hội tụ chéo chỉ khả dụng đầy đủ cho nguồn core (Siêu quét AI). Cảnh báo bull trap cần thêm dữ liệu khối ngoại/volume/tick — hiện chỉ dựa 1 phần điều kiện.",
+      // MINH BACH (cap nhat Giai doan 1-2, 2026-09-25): Sector va Chat
+      // xuc tac DA tich hop (Top 20 Loc Nganh + Catalyst Engine that) -
+      // van co the MISSING cho 1 ma cu the neu khong nam trong Top 20 /
+      // chua co su kien nao ghi nhan (hien thi rieng qua status "MISSING"
+      // trong "sources", khong phai do thieu adapter nua).
+      limitationsNote: "Hội tụ chéo (Cross-Tab) chỉ khả dụng đầy đủ cho nguồn core (Siêu quét AI). Cảnh báo bull trap cần thêm dữ liệu khối ngoại/volume/tick — hiện chỉ dựa 1 phần điều kiện.",
     });
   } catch (err) {
     console.error("[api/elite10/confluence] Lỗi:", err);
