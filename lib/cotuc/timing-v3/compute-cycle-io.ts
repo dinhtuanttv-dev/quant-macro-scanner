@@ -42,11 +42,16 @@ export interface CycleContextFailure {
  * that bai (gia hay lich su GDKHQ) - gio tra ve CycleContextFailure
  * co ly do cu the, de route log/hien thi chinh xac. */
 export async function buildCycleContext(ticker: string): Promise<CycleComputeContext | CycleContextFailure> {
-  const [stockRes, benchRes, historyRows] = await Promise.all([
-    fetchOhlcvHistory(ticker, "2y"),
-    fetchOhlcvHistory(VNINDEX_TICKER, "2y"),
-    prisma.dividendCycleWindow.findMany({ where: { ticker }, orderBy: { exDate: "desc" } }),
-  ]);
+  // FIX (2026-09-26, phat hien qua kiem tra thuc te): 2 nguyen nhan gay
+  // "chi 1 phien gia" cho VN-Index:
+  //  1. Goi SONG SONG (Promise.all) 2 request toi Yahoo cung luc co the
+  //     bi rate-limit ngam (tra ve du lieu rut gon thay vi loi ro rang) -
+  //     doi sang goi TUAN TU.
+  //  2. Range "2y" khong du phu het lich su GDKHQ (som nhat tu 2022,
+  //     ~4 nam truoc) - doi sang "5y".
+  const historyRows = await prisma.dividendCycleWindow.findMany({ where: { ticker }, orderBy: { exDate: "desc" } });
+  const stockRes = await fetchOhlcvHistory(ticker, "5y");
+  const benchRes = await fetchOhlcvHistory(VNINDEX_TICKER, "5y");
 
   if (!stockRes.success || !stockRes.data || stockRes.data.length < 60) {
     return {
