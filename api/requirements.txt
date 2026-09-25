@@ -1,17 +1,27 @@
 # Ghim chính xác phiên bản để tránh Vercel build ra bản vnstock khác,
 # có thể đổi cách gọi hàm bất cứ lúc nào (v4 Unified UI còn đang phát triển
-# nhanh). Nếu build lỗi vì bản 4.0.8 không còn khả dụng, kiểm tra phiên bản
-# mới nhất tại https://pypi.org/project/vnstock/#history rồi cập nhật dòng này.
+# nhanh).
 #
-# CAP NHAT (2026-09-25): 4.0.5 KHONG CON TON TAI tren PyPI (build that
-# bai "no solution found... 4.0.5 unsatisfiable") - da xac nhan qua
-# PyPI release history, phien ban moi nhat con ton tai la 4.0.8 (4.0.5
-# la 1 buoc trung gian giua 4.0.4 va 4.0.8, co the da bi tac gia go
-# (yanked) khoi PyPI). LUU Y: co the co thay doi cach goi ham giua
-# 4.0.5 va 4.0.8 (v4 Unified UI dang phat trien nhanh) - can kiem tra
-# lai neu code Python trong api/*.py goi ham vnstock gap loi runtime
-# sau khi nang cap (khac voi loi build/dependency da gap lan nay).
-vnstock==4.0.8
+# SU CO PyPI (2026-09-25, QUAN TRONG): toan bo package "vnstock" tren
+# PyPI (MOI phien ban, khong rieng 4.0.5/4.0.8) da bi PyPI admin dua
+# vao "Quarantine" tu 24/09/2026 ("cannot be installed or modified
+# until a security review is complete" - xac nhan qua https://pypi.org/
+# project/vnstock/#history). KHONG THE cai qua PyPI bang BAT KY cach
+# ghim phien ban nao cho toi khi PyPI hoan tat rieng soat.
+#
+# GIAI PHAP: cai THANG tu GitHub (README chinh thuc cua vnstock cung
+# huong dan cach nay cho "experimental release": "pip install
+# git+https://github.com/thinh-vu/vnstock.git"). Da kiem tra truc tiep
+# qua "git ls-remote --tags" - KHONG co tag rieng cho 4.0.5-4.0.8 tren
+# GitHub (tac gia co the chua tag cac ban nay), tag on dinh GAN NHAT
+# DA XAC NHAN TON TAI la v4.0.4 - ghim dung tag nay (KHONG dung @main,
+# tranh nhan code chua on dinh/thay doi bat ngo).
+#
+# NEU PyPI da het quarantine VA muon quay lai ghim phien ban binh
+# thuong (nhanh hon, khong can build tu source): doi dong duoi thanh
+# "vnstock==<phien_ban>" (kiem tra https://pypi.org/project/vnstock/#history
+# truoc, dam bao KHONG con bao "Quarantined" o dau trang).
+vnstock @ git+https://github.com/thinh-vu/vnstock.git@v4.0.4
 fastapi==0.117.1
 pandas==2.2.3
 python-dateutil==2.9.0
