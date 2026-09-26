@@ -27,14 +27,29 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
-export async function GET() {
+// FIX TIMEOUT LAN 3 (2026-09-26, xac nhan qua kiem tra thuc te): du da
+// giam xuong 17-18 ma VA tang maxDuration len 300, CRON VAN
+// FUNCTION_INVOCATION_TIMEOUT - xac nhan gioi han THAT cua tai khoan
+// nay THAP HON NHIEU so voi tai lieu Vercel (co the do region "hkg1"
+// hoac cau hinh rieng). GIAI PHAP CHAC CHAN: cho phep goi CRON NHIEU
+// LAN, moi lan CHI xu ly 1 phan nho (query param offset/limit) - goi
+// lai (VD) 6 lan x 3 ma thay vi 1 lan x 18 ma. Khong truyen gi ->
+// mac dinh xu ly ca danh sach (giu tuong thich nguoc voi Vercel Cron
+// tu dong, se can cau hinh lai schedule goi nhieu lan neu dung cach
+// nay lau dai).
+export async function GET(req: Request) {
   try {
+    const { searchParams } = new URL(req.url);
+    const offset = Number(searchParams.get("offset") ?? "0");
+    const limit = Number(searchParams.get("limit") ?? "999");
+
     const benchmarkPrices = await fetchBenchmarkPricesOnce();
     if ("reason" in benchmarkPrices) {
       return NextResponse.json({ error: "Không tải được giá VN-Index.", detail: benchmarkPrices.detail }, { status: 500 });
     }
 
-    const tickers = DIVIDEND_STOCKS.map((s) => s.ticker);
+    const allTickers = DIVIDEND_STOCKS.map((s) => s.ticker);
+    const tickers = allTickers.slice(offset, offset + limit);
     const today = new Date().toISOString().slice(0, 10);
     let savedCount = 0;
     let skippedCount = 0;
@@ -91,7 +106,7 @@ export async function GET() {
       }
     }
 
-    return NextResponse.json({ savedCount, skippedCount, totalTickers: tickers.length });
+    return NextResponse.json({ savedCount, skippedCount, processedInThisCall: tickers.length, offset, limit, totalTickers: allTickers.length });
   } catch (err) {
     console.error("[api/cron/timing-signals-scan] Lỗi:", err);
     return NextResponse.json({ error: "Không quét được Timing Signals." }, { status: 500 });
