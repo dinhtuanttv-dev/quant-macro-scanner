@@ -11,12 +11,15 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function GET(req: Request) {
+  const t0 = Date.now();
   try {
     const { searchParams } = new URL(req.url);
     const ticker = searchParams.get("ticker")?.toUpperCase();
     if (!ticker) return NextResponse.json({ error: "Thiếu tham số ticker." }, { status: 400 });
 
+    console.error(`[cycle-paths] ${ticker} BAT DAU`);
     const ctx = await buildCycleContext(ticker);
+    console.error(`[cycle-paths] ${ticker} buildCycleContext XONG (${Date.now() - t0}ms)`);
     if ("reason" in ctx) {
       // FIX (2026-09-26): tra ve ly do cu the thay vi "khong du du
       // lieu" chung chung, de debug duoc chinh xac buoc nao that bai.
@@ -27,9 +30,11 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Không đủ dữ liệu giá/lịch sử cổ tức cho mã này.", reason: ctx.reason, detail: ctx.detail }, { status: 404 });
     }
 
-    return NextResponse.json(buildCyclePathsV3(ctx));
+    const result = buildCyclePathsV3(ctx);
+    console.error(`[cycle-paths] ${ticker} buildCyclePathsV3 XONG (${Date.now() - t0}ms) - HOAN TAT`);
+    return NextResponse.json(result);
   } catch (err) {
-    console.error("[api/cotuc/cycle-paths] Lỗi:", err);
+    console.error(`[api/cotuc/cycle-paths] Lỗi sau ${Date.now() - t0}ms:`, err);
     return NextResponse.json({ error: "Không thể tính đường CAR lúc này." }, { status: 500 });
   }
 }
