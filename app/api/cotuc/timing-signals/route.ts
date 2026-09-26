@@ -32,7 +32,15 @@ import { tradingDaysBetween, WEEKEND_ONLY_CALENDAR } from "@/lib/cotuc/timing-v3
 //     luu DB (giong sector-top20-scan da lam cho Elite 10), thay vi
 //     tinh real-time trong 1 request.
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+// FIX TIMEOUT LAN 2 (2026-09-26): sau khi giam tu ~57 xuong 17-18 ma
+// van FUNCTION_INVOCATION_TIMEOUT - xac nhan qua tai lieu Vercel CHINH
+// THUC moi nhat (vercel.com/docs/functions/limitations): Hobby plan
+// HIEN TAI (2026) cho phep toi da 300s (5 phut), KHONG PHAI 60s nhu
+// nhieu blog cu (co the phan anh chinh sach TRUOC KHI Vercel chuyen
+// sang "Fluid Compute" mac dinh). maxDuration=60 cu la TU GIOI HAN
+// CUA CHINH CODE (thap hon plan cho phep that), khong phai gioi han
+// cua Vercel - tang len 300 de khop dung.
+export const maxDuration = 300;
 
 const BATCH_SIZE = 8;
 
