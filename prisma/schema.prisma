@@ -491,3 +491,28 @@ model hose_foreign_net_buy {
   trading_date String?
   fetched_at   DateTime @default(now()) @db.Timestamptz(6)
 }
+
+// Tich hop Sprint 4-5 (cotuc-timing-engine.zip) - GIAI PHAP BEN VUNG
+// (sau khi giai phap "tinh real-time trong 1 request" bi
+// FUNCTION_INVOCATION_TIMEOUT that su tren Vercel Hobby plan, du da
+// giam tu 57 xuong 17-18 ma va tang maxDuration len 300): tinh 1 LAN
+// dinh ky qua cron (/api/cron/timing-signals-scan), LUU vao bang nay -
+// route /api/cotuc/timing-signals CHI DOC LAI (nhanh, khong bao gio
+// timeout vi khong tinh gi luc do), giong dung pattern SectorTop20Entry
+// da lam cho Elite 10. Ghi de TOAN BO moi lan cron chay (khong giu
+// lich su nhieu ngay, giong SectorTop20Entry).
+model TimingSignalCache {
+  ticker            String   @id
+  action            String
+  tdToEx            Int?
+  windowEntryFrom   Int?
+  windowEntryTo     Int?
+  windowExitOffset  Int?
+  expectedNetReturn Float?
+  nEvents           Int?
+  fdrQValue         Float?
+  confidence        String?
+  generatedAt       DateTime @default(now())
+
+  @@index([generatedAt])
+}
