@@ -8,7 +8,10 @@ import { buildCycleContext, buildCycleStatsV3 } from "@/lib/cotuc/timing-v3/comp
 // hieu chinh FDR (Benjamini-Hochberg) - nghiem ngat hon nhieu ve mat
 // thong ke, cho OptimalTimingTab (v3) moi.
 export const dynamic = "force-dynamic";
-export const maxDuration = 30;
+// FIX (2026-09-26, xac nhan qua do thuc te): maxDuration=30 qua thap -
+// MWG da do mat 30.7s (VUOT qua 30s, server TU CAT dung luc gan xong,
+// gay 504). Tang len 60s, du du.
+export const maxDuration = 60;
 
 export async function GET(req: Request) {
   try {
