@@ -35,10 +35,23 @@ export async function fetchIndexOhlcvHistory(
 
     const url = `${VND_BASE_URL}?resource=stock&symbol=${encodeURIComponent(symbol)}&resolution=D&from=${from}&to=${to}`;
 
+    // FIX (2026-09-26, cung nguyen nhan da xac nhan voi Yahoo adapter
+    // truoc do): fetch() KHONG CO timeout/AbortController - neu
+    // VNDirect CHAN/TREO rieng tu IP datacenter Vercel, request se CHO
+    // MAI cho den khi Vercel tu cat o gioi han maxDuration. 2 route
+    // cycle-paths/cycle-stats-v3 KHONG dung benchmark da cache (moi
+    // lan tu goi ham nay rieng), nen day rat co the la nguyen nhan
+    // that cua 504/60s+ da do thuc te cho MWG (khong phai chi do
+    // buildCycleContext/tinh toan). Them AbortController 10s giong
+    // Yahoo adapter.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10_000);
+
     const res = await fetch(url, {
       headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
       cache: "no-store",
-    });
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timeoutId));
 
     if (!res.ok) {
       return { success: false, data: null, error: `VNDirect dchart tra ve HTTP ${res.status} cho ma ${symbol}` };
@@ -61,10 +74,11 @@ export async function fetchIndexOhlcvHistory(
 
     return { success: true, data: bars };
   } catch (err) {
+    const isTimeout = err instanceof Error && err.name === "AbortError";
     return {
       success: false,
       data: null,
-      error: err instanceof Error ? err.message : String(err),
+      error: isTimeout ? "VNDirect dchart khong phan hoi trong 10s (timeout)" : err instanceof Error ? err.message : String(err),
     };
   }
 }
