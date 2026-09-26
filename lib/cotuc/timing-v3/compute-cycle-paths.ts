@@ -75,9 +75,31 @@ export function addTradingDays(dateIso: ISODate, n: number, cal: HolidayCalendar
   const step = n > 0 ? 1 : -1;
   let d = start;
   let count = 0;
+  // FIX GOC RE THAT SU CUOI CUNG (2026-09-26, xac nhan qua kiem tra co
+  // he thong - da loai tru hoan toan Prisma/Yahoo/VNDirect, tat ca deu
+  // NHANH khi test doc lap ~2s): "cal" o day thuong la
+  // makeTradingCalendarFromPrices(commonDates) - CHI biet "true" cho
+  // NHUNG NGAY DA CO SAN trong du lieu gia da tai (VD 5 nam). Neu ngay
+  // dich (sau khi dich chuyen n ngay giao dich) VUOT RA NGOAI pham vi
+  // du lieu da tai (VD dot GDKHQ qua gan hien tai, offset duong lon
+  // can 1 ngay TUONG LAI chua co du lieu), isTradingDay() se TRA VE
+  // FALSE MAI MAI - vong lap "while" chay VO HAN THAT SU (100% CPU,
+  // chan hoan toan Node.js event loop, KHONG mot loai timeout nao
+  // (Promise.race, AbortController...) co the ngan duoc vi JavaScript
+  // don luong). Them GIOI HAN AN TOAN (toi da 3 lan bien do |n| ve so
+  // ngay LICH, du du cho ca ngay nghi le/cuoi tuan) - neu vuot qua,
+  // NEM LOI RO RANG thay vi chay vo han.
+  const maxIterations = Math.abs(n) * 3 + 30;
+  let safetyCounter = 0;
   while (count !== Math.abs(n)) {
     d += step;
     if (cal.isTradingDay(d)) count++;
+    safetyCounter++;
+    if (safetyCounter > maxIterations) {
+      throw new Error(
+        `addTradingDays: vuot qua ${maxIterations} lan lap khi dich ${n} ngay GD tu ${dateIso} - ngay dich co the nam ngoai pham vi du lieu gia da tai (qua gan bien du lieu lich su/tuong lai).`,
+      );
+    }
   }
   return dayNumberToIso(d);
 }
@@ -166,7 +188,18 @@ export function computeCyclePaths(input: ComputeCyclePathsInput): CyclePathsOutp
     }
     seen.add(ev.exDate);
 
-    const car = buildOneCarPath(ev.exDate, offsets, stockByDate, benchByDate, cal);
+    // FIX (2026-09-26): boc try/catch - neu 1 dot cu the gay loi (VD
+    // addTradingDays vuot qua gioi han an toan vi ngay dich nam ngoai
+    // pham vi du lieu da tai - xem comment trong addTradingDays), CHI
+    // bo qua dot DO (giong cach xu ly cac truong hop thieu du lieu
+    // khac o day), KHONG lam hong toan bo tinh toan cua CAC DOT KHAC.
+    let car: (number | null)[];
+    try {
+      car = buildOneCarPath(ev.exDate, offsets, stockByDate, benchByDate, cal);
+    } catch (err) {
+      skippedEvents.push({ exDate: ev.exDate, reason: `loi khi tinh CAR path: ${err instanceof Error ? err.message : String(err)}` });
+      continue;
+    }
     if (car[0] !== 0) {
       skippedEvents.push({ exDate: ev.exDate, reason: `thiếu giá tại offset ${offsets[0]} (điểm rebase)` });
       continue;
