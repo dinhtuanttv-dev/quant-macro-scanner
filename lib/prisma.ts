@@ -42,9 +42,25 @@ export const prisma =
 
 
 
-if (process.env.NODE_ENV !== "production") {
+// FIX GOC RE THAT SU (2026-09-26, xac nhan qua kiem tra thuc te co
+// he thong): dieu kien "!== production" cu chi tai su dung ket noi
+// TRONG MOI TRUONG PHAT TRIEN (tranh tao nhieu instance khi Next.js
+// hot-reload) - o PRODUCTION (Vercel THAT), globalForPrisma.prisma
+// KHONG BAO GIO duoc gan, nghia la MOI LAN "cold start" tao 1
+// PrismaClient + 1 CONNECTION POOL MOI HOAN TOAN, khong bao gio tai
+// su dung. Sau rat nhieu lan goi lien tuc (test debug nhieu lan trong
+// ngay, cron chay nhieu lan), co the da tich luy dung het gioi han
+// ket noi dong thoi cua Neon (Free tier thuong rat thap), khien query
+// moi phai CHO VO THOI HAN (day chinh la nguyen nhan that cua chuoi
+// FUNCTION_INVOCATION_TIMEOUT da gap, KHONG PHAI gioi han thoi gian
+// cua Vercel plan nhu nghi truoc do - da xac nhan qua debug-sleep
+// chay duoc toi 30s binh thuong).
+//
+// FIX: LUON gan globalForPrisma.prisma (bo dieu kien NODE_ENV) - dam
+// bao tai su dung dung 1 PrismaClient/connection pool duy nhat MOI
+// KHI CO THE (ca o production, khi serverless function duoc "warm"
+// tai su dung container giua cac lan goi lien tiep - rat pho bien
+// tren Vercel), thay vi luon tao moi.
+globalForPrisma.prisma = prisma;
 
-  globalForPrisma.prisma = prisma;
-
-} 
 
