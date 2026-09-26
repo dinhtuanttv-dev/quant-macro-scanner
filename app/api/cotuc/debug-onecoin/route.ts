@@ -14,17 +14,22 @@ export async function GET(req: Request) {
   const ticker = searchParams.get("ticker")?.toUpperCase() ?? "FPT";
   const timings: Record<string, number> = {};
   let t = Date.now();
+  console.log(`[debug-onecoin] BAT DAU ${ticker}`);
 
   const benchmarkPrices = await fetchBenchmarkPricesOnce();
   timings.fetchBenchmark = Date.now() - t; t = Date.now();
+  console.log(`[debug-onecoin] ${ticker} - fetchBenchmark XONG (${timings.fetchBenchmark}ms)`);
   if ("reason" in benchmarkPrices) return NextResponse.json({ timings, error: benchmarkPrices.detail });
 
   const ctx = await buildCycleContext(ticker, benchmarkPrices);
   timings.buildCycleContext = Date.now() - t; t = Date.now();
+  console.log(`[debug-onecoin] ${ticker} - buildCycleContext XONG (${timings.buildCycleContext}ms)`);
   if ("reason" in ctx) return NextResponse.json({ timings, error: ctx.detail, reason: ctx.reason });
+  console.log(`[debug-onecoin] ${ticker} - so su kien lich su: ${ctx.eventExDates.length}, so mau CAR path: ${ctx.cyclePaths.eventPaths.length}`);
 
   const stats = buildCycleStatsV3(ctx);
   timings.buildCycleStatsV3 = Date.now() - t; t = Date.now();
+  console.log(`[debug-onecoin] ${ticker} - buildCycleStatsV3 XONG (${timings.buildCycleStatsV3}ms)`);
 
   await prisma.timingSignalCache.upsert({
     where: { ticker },
@@ -32,6 +37,7 @@ export async function GET(req: Request) {
     update: { action: "DEBUG_TEST" },
   });
   timings.prismaUpsert = Date.now() - t;
+  console.log(`[debug-onecoin] ${ticker} - HOAN TAT (prismaUpsert ${timings.prismaUpsert}ms)`);
 
   return NextResponse.json({ ticker, timings, totalMs: Object.values(timings).reduce((a, b) => a + b, 0) });
 }
