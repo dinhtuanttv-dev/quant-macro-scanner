@@ -30,6 +30,17 @@ import { PrismaPg } from "@prisma/adapter-pg";
 // Day la fix CHINH XAC theo dung khuyen nghi CHINH THUC cua Prisma
 // (vi du "Matching Prisma ORM v6 defaults" trong docs) - dat lai
 // timeout gan giong hanh vi cu, tranh treo vo thoi han.
+//
+// FIX BO SUNG (2026-09-26, sau khi xac nhan connectionTimeoutMillis
+// van khong du - 5 lan test lien tiep van dung dung o ~60-61s, tuc la
+// bi VERCEL maxDuration cat, KHONG PHAI Prisma tu bao loi som hon):
+// connectionTimeoutMillis CHI gioi han thoi gian LAY 1 connection tu
+// pool (neu pool CO SAN connection, lay ngay lap tuc, khong bi gioi
+// han nay anh huong). Neu chinh CAU QUERY dang thuc thi tren Postgres
+// bi cham/treo (khac voi "khong lay duoc connection"), can THEM
+// statement_timeout (Postgres server TU HUY cau query dang chay qua
+// lau) va query_timeout (client-side backstop, phong khi server
+// ngung phan hoi hoan toan).
 const adapter = new PrismaPg({
 
   connectionString: process.env.DATABASE_URL,
@@ -37,6 +48,10 @@ const adapter = new PrismaPg({
   connectionTimeoutMillis: 10_000,
 
   idleTimeoutMillis: 30_000,
+
+  statement_timeout: 15_000,
+
+  query_timeout: 20_000,
 
 });
 
