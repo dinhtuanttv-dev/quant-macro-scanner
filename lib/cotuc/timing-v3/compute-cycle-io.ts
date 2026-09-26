@@ -28,6 +28,24 @@ export interface CycleComputeContext {
   eventExDates: string[];
 }
 
+export interface BenchmarkPricesFailure {
+  reason: "BENCHMARK_PRICE_FETCH_FAILED";
+  detail: string;
+}
+
+/** Fetch gia VN-Index MOT LAN DUY NHAT - dung cho route timing-signals
+ * (tinh theo lo cho CA vu tru), tranh goi VNDirect N lan cho N ma. */
+export async function fetchBenchmarkPricesOnce(): Promise<{ date: string; adjClose: number }[] | BenchmarkPricesFailure> {
+  const benchRaw = await fetchIndexOhlcvHistory("VNINDEX", 1825);
+  if (!benchRaw.success || !benchRaw.data || benchRaw.data.length < 60) {
+    return {
+      reason: "BENCHMARK_PRICE_FETCH_FAILED",
+      detail: `success=${benchRaw.success}, so_phien=${benchRaw.data?.length ?? 0} (can >=60). Loi: ${benchRaw.error ?? "khong ro"}`,
+    };
+  }
+  return benchRaw.data.map((b) => ({ date: b.date, adjClose: b.close }));
+}
+
 export interface CycleContextFailure {
   reason: "STOCK_PRICE_FETCH_FAILED" | "BENCHMARK_PRICE_FETCH_FAILED" | "NO_DIVIDEND_HISTORY";
   detail: string;
@@ -54,11 +72,37 @@ export interface CycleContextFailure {
  * adapter (da co san trong repo, comment goc da xac nhan "hoat dong
  * tot cho VNINDEX") - CHI danh cho benchmark (VN-Index), giu nguyen
  * Yahoo cho gia MA CO PHIEU (da xac nhan hoat dong dung cho co phieu
- * thuong, chi rieng chi so moi co van de). */
-export async function buildCycleContext(ticker: string): Promise<CycleComputeContext | CycleContextFailure> {
+ * thuong, chi rieng chi so moi co van de).
+ *
+ * MO RONG (Giai doan Sprint 4-5, timing-signals theo lo cho CA vu tru):
+ * tham so `preloadedBenchmark` optional - neu co (route timing-signals
+ * fetch VN-Index MOT LAN DUY NHAT roi truyen vao cho tung ma), BO QUA
+ * viec tu goi fetchIndexOhlcvHistory lai - tranh goi VNDirect N lan
+ * cho N ma trong 1 request (N=so ma trong universe). 2 route don le
+ * (cycle-paths, cycle-stats-v3) KHONG truyen tham so nay, giu nguyen
+ * hanh vi cu (tu fetch, backward compatible). */
+export async function buildCycleContext(
+  ticker: string,
+  preloadedBenchmark?: { date: string; adjClose: number }[],
+): Promise<CycleComputeContext | CycleContextFailure> {
   const historyRows = await prisma.dividendCycleWindow.findMany({ where: { ticker }, orderBy: { exDate: "desc" } });
   const stockRes = await fetchOhlcvHistory(ticker, "5y");
-  const benchRaw = await fetchIndexOhlcvHistory("VNINDEX", 1825); // ~5 nam
+
+  let benchmarkPrices: { date: string; adjClose: number }[];
+  if (preloadedBenchmark) {
+    benchmarkPrices = preloadedBenchmark;
+  } else {
+    const benchRaw = await fetchIndexOhlcvHistory("VNINDEX", 1825); // ~5 nam
+    if (!benchRaw.success || !benchRaw.data || benchRaw.data.length < 60) {
+      return {
+        reason: "BENCHMARK_PRICE_FETCH_FAILED",
+        detail: `success=${benchRaw.success}, so_phien=${benchRaw.data?.length ?? 0} (can >=60). Loi: ${benchRaw.error ?? "khong ro"}`,
+      };
+    }
+    // Chi so (VNINDEX) khong co "adjClose" rieng (khong chia tach/co
+    // tuc nhu co phieu) - dung thang "close" lam gia tri chuan.
+    benchmarkPrices = benchRaw.data.map((b) => ({ date: b.date, adjClose: b.close }));
+  }
 
   if (!stockRes.success || !stockRes.data || stockRes.data.length < 60) {
     return {
@@ -66,20 +110,11 @@ export async function buildCycleContext(ticker: string): Promise<CycleComputeCon
       detail: `success=${stockRes.success}, so_phien=${stockRes.data?.length ?? 0} (can >=60). Loi: ${stockRes.error ?? "khong ro"}`,
     };
   }
-  if (!benchRaw.success || !benchRaw.data || benchRaw.data.length < 60) {
-    return {
-      reason: "BENCHMARK_PRICE_FETCH_FAILED",
-      detail: `success=${benchRaw.success}, so_phien=${benchRaw.data?.length ?? 0} (can >=60). Loi: ${benchRaw.error ?? "khong ro"}`,
-    };
-  }
   if (historyRows.length === 0) {
     return { reason: "NO_DIVIDEND_HISTORY", detail: `Khong tim thay dong nao trong bang DividendCycleWindow cho ticker="${ticker}"` };
   }
 
   const stockPrices = (stockRes.data as OhlcvBar[]).map((b: OhlcvBar) => ({ date: b.date, adjClose: b.adjClose }));
-  // Chi so (VNINDEX) khong co "adjClose" rieng (khong chia tach/co tuc
-  // nhu co phieu) - dung thang "close" lam gia tri chuan.
-  const benchmarkPrices = benchRaw.data.map((b) => ({ date: b.date, adjClose: b.close }));
 
   // Lich giao dich SUY TU CHINH gia THAT da tai (khong can danh sach
   // nghi le thu cong - xem giai thich chi tiet trong date-utils.ts).
