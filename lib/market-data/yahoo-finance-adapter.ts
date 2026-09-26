@@ -47,13 +47,29 @@ export async function fetchOhlcvHistory(
     const symbol = toYahooSymbol(ticker);
     const url = `${YAHOO_BASE_URL}/${encodeURIComponent(symbol)}?range=${range}&interval=1d`;
 
+    // FIX GOC RE (2026-09-26, xac nhan qua kiem tra thuc te): truoc day
+    // fetch() KHONG CO timeout/AbortController - neu Yahoo CHAN/TREO
+    // rieng cho 1 ma cu the tu IP datacenter cua Vercel (da xac nhan
+    // thuc te: VNM tu may ca nhan nhan phan hoi nhanh (~85KB, binh
+    // thuong), nhung tu Vercel server (region hkg1) lai TREO VO THOI
+    // HAN, khong phai loi ro rang), request se CHO MAI cho den khi
+    // Vercel tu cat o gioi han maxDuration - day la nguyen nhan GOC RE
+    // that cua chuoi FUNCTION_INVOCATION_TIMEOUT da gap (KHONG PHAI
+    // gioi han Vercel Hobby plan nhu nghi truoc do). Them AbortController
+    // 10s: neu Yahoo khong phan hoi kip, THAT BAI NGAY VOI LOI RO RANG
+    // thay vi treo vo thoi han - cho phep code goi (VD cron xu ly theo
+    // lo) TU BO QUA ma do (skippedCount++) thay vi lam treo CA request.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10_000);
+
     const res = await fetch(url, {
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         Accept: "application/json",
       },
       cache: "no-store",
-    });
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timeoutId));
 
     if (!res.ok) {
       return { success: false, data: null, error: `Yahoo Finance tra ve HTTP ${res.status} cho ma ${symbol}` };
@@ -89,10 +105,11 @@ export async function fetchOhlcvHistory(
 
     return { success: true, data: bars };
   } catch (err) {
+    const isTimeout = err instanceof Error && err.name === "AbortError";
     return {
       success: false,
       data: null,
-      error: err instanceof Error ? err.message : String(err),
+      error: isTimeout ? "Yahoo Finance khong phan hoi trong 10s (timeout)" : err instanceof Error ? err.message : String(err),
     };
   }
 }
