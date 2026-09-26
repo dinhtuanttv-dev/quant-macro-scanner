@@ -14,9 +14,29 @@ import { PrismaPg } from "@prisma/adapter-pg";
 
 
 
+// FIX GOC RE THAT SU CUOI CUNG (2026-09-26, xac nhan qua TAI LIEU
+// CHINH THUC cua Prisma - prisma.io/docs/orm/prisma-client/setup-and-
+// configuration/databases-connections/connection-pool): Prisma v7 (v7
+// tro len) DUNG driver adapter "pg" cho MOI viec pooling/timeout
+// (KHONG con la Prisma tu quan ly nhu v6) - va "pg" driver MAC DINH
+// connectionTimeoutMillis: 0 (KHONG GIOI HAN) - khac han v6 cu co san
+// connect_timeout=5s/pool_timeout=10s. Neu KHONG set thu cong (nhu
+// code truoc day, chi truyen connectionString), 1 ket noi/query co
+// the CHO VO THOI HAN THAT SU neu Postgres khong phan hoi - dung
+// khop 100% trieu chung da quan sat (treo dung sau buoc "cold start"
+// ket noi, khong bao gio hoan thanh tu nhien, du fix singleton
+// pattern truoc do dung nhung khong du).
+//
+// Day la fix CHINH XAC theo dung khuyen nghi CHINH THUC cua Prisma
+// (vi du "Matching Prisma ORM v6 defaults" trong docs) - dat lai
+// timeout gan giong hanh vi cu, tranh treo vo thoi han.
 const adapter = new PrismaPg({
 
   connectionString: process.env.DATABASE_URL,
+
+  connectionTimeoutMillis: 10_000,
+
+  idleTimeoutMillis: 30_000,
 
 });
 
