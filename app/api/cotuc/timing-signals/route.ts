@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { stockUniverse } from "@/lib/quant-data";
+import { DIVIDEND_STOCKS } from "@/lib/quant-cotuc";
 import { buildCycleContext, buildCycleStatsV3, fetchBenchmarkPricesOnce } from "@/lib/cotuc/timing-v3/compute-cycle-io";
 import { tradingDaysBetween, WEEKEND_ONLY_CALENDAR } from "@/lib/cotuc/timing-v3/date-utils";
 
@@ -22,6 +22,15 @@ import { tradingDaysBetween, WEEKEND_ONLY_CALENDAR } from "@/lib/cotuc/timing-v3
 //  3. Xu ly THEO LO (batch 8 ma/luot) chay SONG SONG trong lo, TUAN TU
 //     giua cac lo - can bang giua toc do va tranh rate-limit Yahoo/
 //     VNDirect (da co tien le rate-limit tu HOSE truoc do).
+//  4. FIX TIMEOUT (2026-09-26, xac nhan qua kiem tra thuc te): ban dau
+//     tinh cho TOAN BO stockUniverse (~57 ma) bi FUNCTION_INVOCATION_
+//     TIMEOUT that su (Vercel bao loi ro rang) - da doi sang CHI tinh
+//     cho DIVIDEND_STOCKS (17-18 ma chinh, khong phai toan bo universe
+//     mo rong). Day la GIAI PHAP NHANH duoc chon co chu dich (khong
+//     phai gioi han vinh vien) - neu can day du ca universe sau nay,
+//     giai phap ben vung hon la chuyen sang mo hinh cron tinh truoc +
+//     luu DB (giong sector-top20-scan da lam cho Elite 10), thay vi
+//     tinh real-time trong 1 request.
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
@@ -41,7 +50,7 @@ export async function GET() {
       return NextResponse.json({ error: "Không tải được giá VN-Index.", detail: benchmarkPrices.detail }, { status: 500 });
     }
 
-    const tickers = stockUniverse.map((s) => s.ticker);
+    const tickers = DIVIDEND_STOCKS.map((s) => s.ticker);
     const today = new Date().toISOString().slice(0, 10);
     const signals: Array<{
       ticker: string; action: string; tdToEx: number | null;
