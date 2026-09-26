@@ -13,13 +13,13 @@
  */
 import { prisma } from "@/lib/prisma";
 import { fetchOhlcvHistory, type OhlcvBar } from "@/lib/market-data/yahoo-finance-adapter";
+import { fetchIndexOhlcvHistory } from "@/lib/market-data/vndirect-adapter";
 import { computeCyclePaths, toCyclePathsV3 } from "./compute-cycle-paths";
 import { computeCycleStats, type WindowCandidate, type EventSample } from "./compute-cycle-stats";
 import { makeTradingCalendarFromPrices } from "./date-utils";
 import { CANDIDATE_WINDOWS, buildRequiredOffsets } from "./candidate-windows";
 import type { CyclePathsV3, CycleStatsV3 } from "./timing-types";
 
-const VNINDEX_TICKER = "^VNINDEX.VN";
 
 export interface CycleComputeContext {
   ticker: string;
@@ -35,23 +35,30 @@ export interface CycleContextFailure {
 
 /** Buoc chung: lay gia that (ma + VN-Index) + lich su GDKHQ that, roi
  * tinh CAR path (computeCyclePaths) - dung LAI cho ca 2 route
- * (cycle-paths va cycle-stats-v3), tranh goi Yahoo 2 lan.
+ * (cycle-paths va cycle-stats-v3), tranh goi 2 lan.
  *
  * FIX (2026-09-26, phat hien qua kiem tra thuc te FPT): truoc day tra
  * ve "null" chung chung khi thieu du lieu, KHONG the biet buoc nao
  * that bai (gia hay lich su GDKHQ) - gio tra ve CycleContextFailure
- * co ly do cu the, de route log/hien thi chinh xac. */
+ * co ly do cu the, de route log/hien thi chinh xac.
+ *
+ * FIX QUAN TRONG (2026-09-26, xac nhan qua kiem tra TRUC TIEP voi
+ * chinh Yahoo API - khong doan mo): ky hieu "^VNINDEX.VN" tren Yahoo
+ * Finance CHI ho tro validRanges=["1d","5d"] (xac nhan tu chinh JSON
+ * response cua Yahoo) - KHONG THE lay lich su dai han qua Yahoo, du
+ * goi range="5y" van chi tra ve 1 diem du lieu (gia hien tai), khong
+ * bao loi ro rang. Day la GIOI HAN THAT CUA NGUON DU LIEU, khong phai
+ * loi rate-limit hay code sai nhu 2 gia thuyet truoc.
+ *
+ * GIAI PHAP: doi sang fetchIndexOhlcvHistory() tu VNDirect dchart
+ * adapter (da co san trong repo, comment goc da xac nhan "hoat dong
+ * tot cho VNINDEX") - CHI danh cho benchmark (VN-Index), giu nguyen
+ * Yahoo cho gia MA CO PHIEU (da xac nhan hoat dong dung cho co phieu
+ * thuong, chi rieng chi so moi co van de). */
 export async function buildCycleContext(ticker: string): Promise<CycleComputeContext | CycleContextFailure> {
-  // FIX (2026-09-26, phat hien qua kiem tra thuc te): 2 nguyen nhan gay
-  // "chi 1 phien gia" cho VN-Index:
-  //  1. Goi SONG SONG (Promise.all) 2 request toi Yahoo cung luc co the
-  //     bi rate-limit ngam (tra ve du lieu rut gon thay vi loi ro rang) -
-  //     doi sang goi TUAN TU.
-  //  2. Range "2y" khong du phu het lich su GDKHQ (som nhat tu 2022,
-  //     ~4 nam truoc) - doi sang "5y".
   const historyRows = await prisma.dividendCycleWindow.findMany({ where: { ticker }, orderBy: { exDate: "desc" } });
   const stockRes = await fetchOhlcvHistory(ticker, "5y");
-  const benchRes = await fetchOhlcvHistory(VNINDEX_TICKER, "5y");
+  const benchRaw = await fetchIndexOhlcvHistory("VNINDEX", 1825); // ~5 nam
 
   if (!stockRes.success || !stockRes.data || stockRes.data.length < 60) {
     return {
@@ -59,10 +66,10 @@ export async function buildCycleContext(ticker: string): Promise<CycleComputeCon
       detail: `success=${stockRes.success}, so_phien=${stockRes.data?.length ?? 0} (can >=60). Loi: ${stockRes.error ?? "khong ro"}`,
     };
   }
-  if (!benchRes.success || !benchRes.data || benchRes.data.length < 60) {
+  if (!benchRaw.success || !benchRaw.data || benchRaw.data.length < 60) {
     return {
       reason: "BENCHMARK_PRICE_FETCH_FAILED",
-      detail: `success=${benchRes.success}, so_phien=${benchRes.data?.length ?? 0} (can >=60). Loi: ${benchRes.error ?? "khong ro"}`,
+      detail: `success=${benchRaw.success}, so_phien=${benchRaw.data?.length ?? 0} (can >=60). Loi: ${benchRaw.error ?? "khong ro"}`,
     };
   }
   if (historyRows.length === 0) {
@@ -70,7 +77,9 @@ export async function buildCycleContext(ticker: string): Promise<CycleComputeCon
   }
 
   const stockPrices = (stockRes.data as OhlcvBar[]).map((b: OhlcvBar) => ({ date: b.date, adjClose: b.adjClose }));
-  const benchmarkPrices = (benchRes.data as OhlcvBar[]).map((b: OhlcvBar) => ({ date: b.date, adjClose: b.adjClose }));
+  // Chi so (VNINDEX) khong co "adjClose" rieng (khong chia tach/co tuc
+  // nhu co phieu) - dung thang "close" lam gia tri chuan.
+  const benchmarkPrices = benchRaw.data.map((b) => ({ date: b.date, adjClose: b.close }));
 
   // Lich giao dich SUY TU CHINH gia THAT da tai (khong can danh sach
   // nghi le thu cong - xem giai thich chi tiet trong date-utils.ts).
