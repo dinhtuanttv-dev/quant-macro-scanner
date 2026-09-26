@@ -21,7 +21,10 @@ export async function GET(req: Request) {
 
     if ("reason" in result) {
       console.error(`[api/cotuc/earnings-signal] ${ticker}: ${result.reason} - ${result.detail}`);
-      return NextResponse.json({ error: "Không đủ dữ liệu KQKD cho mã này.", reason: result.reason, detail: result.detail }, { status: 422 });
+      // FIX (Giai doan 4): doi 422 -> 404 - frontend (fetchCyclePaths/
+      // fetchCycleStats trong goi cotuc-timing-engine.zip) coi 404/204
+      // la "chua co du lieu" (binh thuong, tra ve null), KHONG PHAI loi.
+      return NextResponse.json({ error: "Không đủ dữ liệu KQKD cho mã này.", reason: result.reason, detail: result.detail }, { status: 404 });
     }
 
     return NextResponse.json(result);

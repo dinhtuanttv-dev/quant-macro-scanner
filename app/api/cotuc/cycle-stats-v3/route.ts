@@ -19,7 +19,10 @@ export async function GET(req: Request) {
     const ctx = await buildCycleContext(ticker);
     if ("reason" in ctx) {
       console.error(`[api/cotuc/cycle-stats-v3] ${ticker}: ${ctx.reason} - ${ctx.detail}`);
-      return NextResponse.json({ error: "Không đủ dữ liệu giá/lịch sử cổ tức cho mã này.", reason: ctx.reason, detail: ctx.detail }, { status: 422 });
+      // FIX (Giai doan 4): doi 422 -> 404 - frontend (fetchCyclePaths/
+      // fetchCycleStats trong goi cotuc-timing-engine.zip) coi 404/204
+      // la "chua co du lieu" (binh thuong, tra ve null), KHONG PHAI loi.
+      return NextResponse.json({ error: "Không đủ dữ liệu giá/lịch sử cổ tức cho mã này.", reason: ctx.reason, detail: ctx.detail }, { status: 404 });
     }
 
     return NextResponse.json(buildCycleStatsV3(ctx));

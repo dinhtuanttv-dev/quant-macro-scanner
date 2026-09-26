@@ -18,7 +18,10 @@ export async function GET(req: Request) {
       // FIX (2026-09-26): tra ve ly do cu the thay vi "khong du du
       // lieu" chung chung, de debug duoc chinh xac buoc nao that bai.
       console.error(`[api/cotuc/cycle-paths] ${ticker}: ${ctx.reason} - ${ctx.detail}`);
-      return NextResponse.json({ error: "Không đủ dữ liệu giá/lịch sử cổ tức cho mã này.", reason: ctx.reason, detail: ctx.detail }, { status: 422 });
+      // FIX (Giai doan 4): doi 422 -> 404 - frontend (fetchCyclePaths/
+      // fetchCycleStats trong goi cotuc-timing-engine.zip) coi 404/204
+      // la "chua co du lieu" (binh thuong, tra ve null), KHONG PHAI loi.
+      return NextResponse.json({ error: "Không đủ dữ liệu giá/lịch sử cổ tức cho mã này.", reason: ctx.reason, detail: ctx.detail }, { status: 404 });
     }
 
     return NextResponse.json(buildCyclePathsV3(ctx));
