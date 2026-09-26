@@ -98,4 +98,45 @@ export const prisma =
 // tren Vercel), thay vi luon tao moi.
 globalForPrisma.prisma = prisma;
 
+// FIX BO SUNG QUAN TRONG (2026-09-26, xac nhan qua kiem tra co he
+// thong): da thu CA 3 loai timeout cua Prisma/pg (connectionTimeoutMillis,
+// statement_timeout, query_timeout) - VAN treo den maxDuration cua
+// Vercel. Test DOC LAP bang pg.Client THUAN (khong qua Prisma) hoan
+// thanh NHANH va THANH CONG (2.5s) - loai tru hoan toan nguyen nhan
+// mang/Neon. Vay van de nam CHINH XAC o tang Prisma/adapter-pg (co
+// the config timeout khong duoc ap dung dung trong version dang
+// dung, hoac 1 nguyen nhan khac o tang do).
+//
+// GIA THUYET CAO NHAT: fix singleton truoc do ("LUON gan globalForPrisma.
+// prisma") co RUI RO NGUOC - neu 1 LAN "cold start" DAU TIEN nao do
+// tao ra ket noi BI LOI/TREO (VD mang chap chon nhat thoi luc do),
+// INSTANCE HONG DO se bi "KET MAI MAI" trong globalForPrisma (vi
+// khong bao gio tao lai, luon dung "globalForPrisma.prisma ?? new
+// PrismaClient(...)") - MOI request SAU DO deu dung phai instance
+// hong nay, treo vinh vien cho den khi Vercel TU HUY container hoan
+// toan (co the rat lau, hoac khong bao gio neu container duoc giu am
+// lien tuc).
+//
+// GIAI PHAP TOAN DIEN: tu KIEM SOAT timeout O TANG APPLICATION (khong
+// phu thuoc cau hinh Prisma/pg co hoat dong dung hay khong) bang
+// Promise.race - neu 1 query vuot qua thoi gian cho phep, XOA
+// globalForPrisma.prisma (buoc lan goi TIEP THEO phai tao PrismaClient
+// MOI HOAN TOAN, tu dong "tu phuc hoi" thay vi ket mai voi instance
+// hong) va nem loi ro rang thay vi de treo vo thoi han.
+export async function withPrismaTimeout<T>(queryPromise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout>;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      console.error(`[prisma] Query "${label}" vuot qua ${ms}ms - RESET globalForPrisma.prisma de tu phuc hoi lan sau.`);
+      globalForPrisma.prisma = undefined;
+      reject(new Error(`Prisma query "${label}" qua ${ms}ms - da tu dong reset ket noi, thu lai lan sau.`));
+    }, ms);
+  });
+  try {
+    return await Promise.race([queryPromise, timeoutPromise]);
+  } finally {
+    clearTimeout(timeoutId!);
+  }
+}
+
 

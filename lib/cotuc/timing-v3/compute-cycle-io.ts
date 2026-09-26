@@ -11,7 +11,7 @@
  * tinh lai tu dau qua computeCyclePaths(). Van tai su dung DANH SACH
  * exDate lich su da co trong DB (khong goi lai VCI).
  */
-import { prisma } from "@/lib/prisma";
+import { prisma, withPrismaTimeout } from "@/lib/prisma";
 import { fetchOhlcvHistory, type OhlcvBar } from "@/lib/market-data/yahoo-finance-adapter";
 import { fetchIndexOhlcvHistory } from "@/lib/market-data/vndirect-adapter";
 import { computeCyclePaths, toCyclePathsV3 } from "./compute-cycle-paths";
@@ -85,7 +85,11 @@ export async function buildCycleContext(
   ticker: string,
   preloadedBenchmark?: { date: string; adjClose: number }[],
 ): Promise<CycleComputeContext | CycleContextFailure> {
-  const historyRows = await prisma.dividendCycleWindow.findMany({ where: { ticker }, orderBy: { exDate: "desc" } });
+  const historyRows = await withPrismaTimeout<{ exDate: Date }[]>(
+    prisma.dividendCycleWindow.findMany({ where: { ticker }, orderBy: { exDate: "desc" } }),
+    10_000,
+    `dividendCycleWindow.findMany(${ticker})`,
+  );
   const stockRes = await fetchOhlcvHistory(ticker, "5y");
 
   let benchmarkPrices: { date: string; adjClose: number }[];
