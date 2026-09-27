@@ -178,6 +178,44 @@ model DividendAiAnalysis {
   generatedAt   DateTime @default(now()) @updatedAt
 }
 
+// Buoc 2.1 (nang cap do ben cho Tab Co Tuc, 2026-09-27) - bang cache
+// DUNG CHUNG cho TAT CA ma (khong phan biet 17 ma theo doi goc hay
+// Universe - cung 1 pattern da co tien le voi DividendAiAnalysis o
+// tren). Muc dich: luu KET QUA THANH CONG GAN NHAT tu VCI Events, DOC
+// LAP voi viec VCI dang song hay dang loi luc nguoi dung tai trang -
+// khac voi cach lam hien tai (goi VCI TRUC TIEP moi request, khong luu
+// gi - 1 lan VCI 403 la lap tuc toan bo nguoi dung thay du lieu mau).
+//
+// QUAN TRONG: cron ghi bang nay (Buoc 2.2, lam sau) PHAI chi ghi de khi
+// fetch THANH CONG (available=true) - neu fetch loi, GIU NGUYEN du lieu
+// cu trong bang (KHONG xoa, KHONG ghi null) - day la diem khac biet cot
+// loi so voi cach lam hien tai, giup UI luon uu tien "du lieu THAT gan
+// nhat da biet" thay vi roi thang ve mau tinh khi VCI chap chon.
+model DividendEventCache {
+  ticker           String    @id
+
+  // Su kien GAN NHAT (da sap xep dung uu tien qua sortEventsByRelevance
+  // o vci-events-adapter.ts: sap toi truoc, qua khu gan day sau) - dung
+  // TEN FIELD giong DividendUniverseEntry de nhat quan, de merge o FE.
+  latestEventType  String?   // CASH | STOCK_DIVIDEND | BONUS_ISSUE | ESOP
+  latestEventTitle String?
+  publicDate       DateTime?
+  agmDate          DateTime?
+  exrightDate      DateTime? // Ngay GDKHQ
+  recordDate       DateTime?
+  settlementDate   DateTime? // Ngay Thanh Toan (tien/CP ve tai khoan)
+  valuePerShare    Float?
+  exerciseRatio    Float?
+
+  // Metadata de biet "do cu" cua du lieu + debug khi can (KHONG hien
+  // truc tiep len UI nguoi dung thuong, chi dung noi bo/canh bao).
+  lastSuccessAt    DateTime? // Lan GAN NHAT fetch VCI THANH CONG (available=true)
+  lastAttemptAt    DateTime? // Lan GAN NHAT THU fetch (thanh cong hay khong)
+  lastError        String?   // Loi cua lan attempt GAN NHAT - null neu lan gan nhat thanh cong
+
+  @@index([lastSuccessAt])
+}
+
 // Timing Engine (P3) - moi dong = 1 SU KIEN CO TUC LICH SU cua 1 ma, voi
 // % loi nhuan da tinh san cho 5 cua so chuan (xem lib/cotuc/dividend-
 // cycle-engine.ts). Cron Job quet TOAN BO lich su (5 nam) cho 88 ma,
