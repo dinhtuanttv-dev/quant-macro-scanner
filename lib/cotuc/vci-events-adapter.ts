@@ -17,6 +17,14 @@ export interface VciEvent {
   exerciseDate: string | null; // Ngay GDKHQ (voi DIV/ISS) hoac ngay hop (voi AGME) - FIX: doc dung tu exrightDate/issueDate
   eventTitle: string | null;
   ratio: string | null;        // Ty le co tuc/thuong (so, VD 0.1 = 10%)
+  // FIX BUG (2026-09-27): truoc day KHONG co field nay tren VciEvent -
+  // FE (useDividendEvents.ts) doc "exDividendEvents[0].settlementDate"
+  // nhung field nay CHUA TUNG duoc tra ve o day (chi ton tai rieng trong
+  // DividendLifecycleEvent qua buildLifecycleEvents(), cau truc/thu tu
+  // KHAC voi exDividendEvents) - nen luon la undefined du VCI co du lieu
+  // hay khong. Them dung field, cung nguon payoutDate/listingDate nhu
+  // dividend-lifecycle.ts dang dung, de dong bo 1 noi duy nhat.
+  settlementDate: string | null;
 }
 
 export interface DividendEventResult {
@@ -93,6 +101,9 @@ export async function fetchDividendEvents(ticker: string, monthsBack = 60, month
       exerciseDate: toDateOnly(e.exrightDate ?? e.issueDate ?? null),
       eventTitle: e.eventTitleVi ?? e.eventTitleEn ?? null,
       ratio: e.exerciseRatio !== undefined && e.exerciseRatio !== null ? String(e.exerciseRatio) : null,
+      // payoutDate = tien mat ve tai khoan, listingDate = CP moi ve tai khoan
+      // (co tuc/thuong CP) - dung nguon giong dividend-lifecycle.ts.
+      settlementDate: toDateOnly(e.payoutDate ?? e.listingDate ?? null),
     }));
 
     return {
