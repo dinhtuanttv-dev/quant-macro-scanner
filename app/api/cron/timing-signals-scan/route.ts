@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { DIVIDEND_STOCKS } from "@/lib/quant-cotuc";
 import { buildCycleContext, buildCycleStatsV3, fetchBenchmarkPricesOnce } from "@/lib/cotuc/timing-v3/compute-cycle-io";
-import { tradingDaysBetween, WEEKEND_ONLY_CALENDAR } from "@/lib/cotuc/timing-v3/date-utils";
+import { tradingDaysBetween } from "@/lib/cotuc/timing-v3/date-utils";
+import { vnHolidayCalendar } from "@/lib/cotuc/timing-v3/vn-holidays";
 
 // Tich hop Sprint 4-5 - GIAI PHAP BEN VUNG (thay the tinh real-time
 // trong route /api/cotuc/timing-signals, da bi FUNCTION_INVOCATION_
@@ -66,7 +67,7 @@ export async function GET(req: Request) {
             : undefined;
 
           const latestExDate = ctx.eventExDates[0] ?? null;
-          const tdToEx = latestExDate ? tradingDaysBetween(today, latestExDate, WEEKEND_ONLY_CALENDAR) : null;
+          const tdToEx = latestExDate ? tradingDaysBetween(today, latestExDate, vnHolidayCalendar) /* lich nghi le VN that, khong chi T7/CN */ : null;
           const k = tdToEx === null ? null : -tdToEx;
 
           let action = "NO_DATE";

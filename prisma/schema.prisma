@@ -554,3 +554,22 @@ model TimingSignalCache {
 
   @@index([generatedAt])
 }
+// Mua vu KQKD theo quy (Timing Engine v3 giai doan 3) - 1 dong / ma. Cron earnings-seasonality-scan:
+// pha COLLECT ghi announceDates/samples/paths/earningsSignal; pha FINALIZE ghi stats/calendar (prior nganh x quy x cua so).
+// Route /api/cotuc/earnings-cycle-stats|paths, annual-earnings-calendar, earnings-signals CHI DOC bang nay.
+model EarningsSeasonalityCache {
+  ticker         String    @id
+  sector         String?
+  announceDates  Json      // {"1": ["2023-04-20", ...], ...}
+  samples        Json      // {"1": {"e1": EventSample[], ...}, ...}
+  paths          Json      // {"1": CyclePathsV3, ...}
+  stats          Json?     // {"1": EarningsCycleStatsV3, ...}
+  calendar       Json?     // AnnualEarningsCalendarV3
+  earningsSignal Json?     // EarningsSignal (cho "Sap KQKD")
+  priceSource    String?   // SSI_TOTAL_RETURN | YAHOO_FALLBACK
+  notes          Json?     // ghi chu minh bach (nguon, doi chieu, pham vi prior)
+  collectedAt    DateTime
+  finalizedAt    DateTime?
+
+  @@index([collectedAt])
+}

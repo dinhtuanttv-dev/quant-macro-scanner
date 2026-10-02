@@ -12,8 +12,7 @@
  * exDate lich su da co trong DB (khong goi lai VCI).
  */
 import { prisma, withPrismaTimeout } from "@/lib/prisma";
-import { fetchOhlcvHistory, type OhlcvBar } from "@/lib/market-data/yahoo-finance-adapter";
-import { fetchIndexOhlcvHistory } from "@/lib/market-data/vndirect-adapter";
+import { loadBenchmarkPrices, loadStockPrices, type PriceSourceTag } from "./price-source";
 import { computeCyclePaths, toCyclePathsV3 } from "./compute-cycle-paths";
 import { computeCycleStats, type WindowCandidate, type EventSample } from "./compute-cycle-stats";
 import { makeTradingCalendarFromPrices } from "./date-utils";
@@ -26,6 +25,8 @@ export interface CycleComputeContext {
   currentExDate?: string | null;
   cyclePaths: ReturnType<typeof computeCyclePaths>;
   eventExDates: string[];
+  /** Nguồn giá thực dùng (SSI là chính; dự phòng ghi rõ) + ghi chú minh bạch. */
+  priceSource?: { stock: PriceSourceTag | null; benchmark: PriceSourceTag | null; notes: string[] };
 }
 
 export interface BenchmarkPricesFailure {
@@ -35,15 +36,11 @@ export interface BenchmarkPricesFailure {
 
 /** Fetch gia VN-Index MOT LAN DUY NHAT - dung cho route timing-signals
  * (tinh theo lo cho CA vu tru), tranh goi VNDirect N lan cho N ma. */
+/** VN-Index ~5 năm: SSI (qua Gateway) là nguồn chính, VNDirect dự phòng (price-source.ts). */
 export async function fetchBenchmarkPricesOnce(): Promise<{ date: string; adjClose: number }[] | BenchmarkPricesFailure> {
-  const benchRaw = await fetchIndexOhlcvHistory("VNINDEX", 1825);
-  if (!benchRaw.success || !benchRaw.data || benchRaw.data.length < 60) {
-    return {
-      reason: "BENCHMARK_PRICE_FETCH_FAILED",
-      detail: `success=${benchRaw.success}, so_phien=${benchRaw.data?.length ?? 0} (can >=60). Loi: ${benchRaw.error ?? "khong ro"}`,
-    };
-  }
-  return benchRaw.data.map((b) => ({ date: b.date, adjClose: b.close }));
+  const bench = await loadBenchmarkPrices(5);
+  if (!bench.ok) return { reason: "BENCHMARK_PRICE_FETCH_FAILED", detail: bench.error ?? "khong ro" };
+  return Object.assign(bench.prices, { source: bench.source });
 }
 
 export interface CycleContextFailure {
@@ -90,35 +87,29 @@ export async function buildCycleContext(
     10_000,
     `dividendCycleWindow.findMany(${ticker})`,
   );
-  const stockRes = await fetchOhlcvHistory(ticker, "5y");
+  // Giá mã: SSI + cổ tức tiền mặt sau thuế (chuỗi tổng lợi suất); dự phòng Yahoo (price-source.ts).
+  const stockRes = await loadStockPrices(ticker, 5);
 
   let benchmarkPrices: { date: string; adjClose: number }[];
+  let benchmarkSource: PriceSourceTag | null = null;
   if (preloadedBenchmark) {
     benchmarkPrices = preloadedBenchmark;
+    benchmarkSource = (preloadedBenchmark as { source?: PriceSourceTag }).source ?? null;
   } else {
-    const benchRaw = await fetchIndexOhlcvHistory("VNINDEX", 1825); // ~5 nam
-    if (!benchRaw.success || !benchRaw.data || benchRaw.data.length < 60) {
-      return {
-        reason: "BENCHMARK_PRICE_FETCH_FAILED",
-        detail: `success=${benchRaw.success}, so_phien=${benchRaw.data?.length ?? 0} (can >=60). Loi: ${benchRaw.error ?? "khong ro"}`,
-      };
-    }
-    // Chi so (VNINDEX) khong co "adjClose" rieng (khong chia tach/co
-    // tuc nhu co phieu) - dung thang "close" lam gia tri chuan.
-    benchmarkPrices = benchRaw.data.map((b) => ({ date: b.date, adjClose: b.close }));
+    const bench = await loadBenchmarkPrices(5);
+    if (!bench.ok) return { reason: "BENCHMARK_PRICE_FETCH_FAILED", detail: bench.error ?? "khong ro" };
+    benchmarkPrices = bench.prices;
+    benchmarkSource = bench.source;
   }
 
-  if (!stockRes.success || !stockRes.data || stockRes.data.length < 60) {
-    return {
-      reason: "STOCK_PRICE_FETCH_FAILED",
-      detail: `success=${stockRes.success}, so_phien=${stockRes.data?.length ?? 0} (can >=60). Loi: ${stockRes.error ?? "khong ro"}`,
-    };
+  if (!stockRes.ok || stockRes.prices.length < 60) {
+    return { reason: "STOCK_PRICE_FETCH_FAILED", detail: stockRes.error ?? `so_phien=${stockRes.prices.length} (can >=60)` };
   }
   if (historyRows.length === 0) {
     return { reason: "NO_DIVIDEND_HISTORY", detail: `Khong tim thay dong nao trong bang DividendCycleWindow cho ticker="${ticker}"` };
   }
 
-  const stockPrices = (stockRes.data as OhlcvBar[]).map((b: OhlcvBar) => ({ date: b.date, adjClose: b.adjClose }));
+  const stockPrices = stockRes.prices;
 
   // Lich giao dich SUY TU CHINH gia THAT da tai (khong can danh sach
   // nghi le thu cong - xem giai thich chi tiet trong date-utils.ts).
@@ -138,7 +129,7 @@ export async function buildCycleContext(
     version: "v3-p2", asOf: new Date().toISOString().slice(0, 10),
   });
 
-  return { ticker, cyclePaths, eventExDates };
+  return { ticker, cyclePaths, eventExDates, priceSource: { stock: stockRes.source, benchmark: benchmarkSource, notes: stockRes.notes } };
 }
 
 export function buildCyclePathsV3(ctx: CycleComputeContext): CyclePathsV3 {
