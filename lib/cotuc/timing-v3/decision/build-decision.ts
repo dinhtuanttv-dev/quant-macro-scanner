@@ -237,7 +237,7 @@ export function buildDecisionSnapshot(input: BuildDecisionInput): DecisionSnapsh
   const reg = decision.checks.find((c) => c.key === "marketRegime");
   if (reg && regime.reasons.length) reg.detail = `${reg.detail} — ${regime.reasons.join("; ")}`;
   const dt = decision.checks.find((c) => c.key === "dateConfirmed");
-  if (dt && exDate) dt.detail = `${dt.detail}: ${exDate.value} · ${exDate.label}`;
+  if (dt && exDate) dt.detail = `${dt.detail}: ${exDate.value.slice(8, 10)}/${exDate.value.slice(5, 7)}/${exDate.value.slice(0, 4)} · ${exDate.label}`;
 
   return {
     version: DECISION_VERSION, ticker, asOf: today, priceDate, exDate, recommendation: rec, decision, combined, signals,
