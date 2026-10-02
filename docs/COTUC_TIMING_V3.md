@@ -28,7 +28,7 @@ giá tham chiếu của Sở (ghi chú khớp/lệch trong `priceSource.notes`).
 | `GET /api/cotuc/earnings-cycle-stats?ticker=&quarter=1..4` | `EarningsCycleStatsV3` | đọc `EarningsSeasonalityCache` |
 | `GET /api/cotuc/earnings-cycle-paths?ticker=&quarter=1..4` | `CyclePathsV3` quanh ngày công bố | đọc `EarningsSeasonalityCache` |
 | `GET /api/cotuc/annual-earnings-calendar?ticker=` | `AnnualEarningsCalendarV3` | đọc `EarningsSeasonalityCache` |
-| `GET /api/cotuc/earnings-signals` | EarningsSignal cả danh mục ("Sắp KQKD") | đọc `EarningsSeasonalityCache` |
+| `GET /api/cotuc/earnings-signals` | EarningsSignal cả danh mục ("Sắp KQKD") — nhắm QUÝ SẮP CÔNG BỐ, SUE/tăng trưởng của kỳ vừa công bố | đọc `EarningsSeasonalityCache` |
 
 404 = chưa có dữ liệu (frontend coi là `null`).
 
