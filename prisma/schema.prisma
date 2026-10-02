@@ -573,3 +573,39 @@ model EarningsSeasonalityCache {
 
   @@index([collectedAt])
 }
+
+// Bo may quyet dinh 3 trang thai (Timing Engine v3 giai doan 4) - 1 dong / ma, cron timing-signals-scan ghi.
+// Route /api/cotuc/decision-states CHI DOC bang nay. snapshot = DecisionSnapshot (lib/cotuc/timing-v3/decision/build-decision.ts).
+model CotucDecisionState {
+  ticker              String   @id
+  level               String   // FAVORABLE | WATCH | AVOID
+  action              String
+  combinedProbability Float
+  snapshot            Json
+  computedAt          DateTime
+
+  @@index([computedAt])
+}
+
+// Theo doi tin hieu thuc te (giai doan 4): 1 dong / lan ma vao vung mua voi FAVORABLE|WATCH; cron ghi ket qua khi toi ngay thoat.
+// learnSignalWeights / calibration CHUA BAT - bang nay chi de do hieu qua (ty le dung, Brier, CUSUM).
+model CotucSignalTrack {
+  id                   String    @id // TICKER:windowId:entryDate
+  ticker               String
+  windowId             String
+  level                String
+  predictedProbability Float
+  components           Json      // [{ name, logOdds }]
+  exDate               String
+  exDateStatus         String
+  entryDate            String
+  plannedExitDate      String
+  issuedAt             DateTime
+  outcome              Int?      // 1 = CAR > 0 tu ngay ghi toi ngay thoat, 0 = nguoc lai
+  realizedCar          Float?
+  exitDate             String?
+  outcomeRecordedAt    DateTime?
+
+  @@index([ticker])
+  @@index([issuedAt])
+}

@@ -27,6 +27,13 @@ export interface CycleComputeContext {
   eventExDates: string[];
   /** Nguồn giá thực dùng (SSI là chính; dự phòng ghi rõ) + ghi chú minh bạch. */
   priceSource?: { stock: PriceSourceTag | null; benchmark: PriceSourceTag | null; notes: string[] };
+  /** Chuỗi giá đã dùng (mã: tổng lợi suất; VN-Index) — cho bộ máy quyết định (CAR đợt hiện tại, theo dõi kết quả). */
+  stockPrices?: { date: string; adjClose: number }[];
+  benchmarkPrices?: { date: string; adjClose: number }[];
+  /** GTGD bình quân 20 phiên (VND) từ SSI. */
+  avgValue20?: number | null;
+  /** Ngày GDKHQ cổ tức tiền mặt từ VNDirect/VCI (gồm đợt sắp tới đã thông báo). */
+  cashExDates?: string[];
 }
 
 export interface BenchmarkPricesFailure {
@@ -129,7 +136,11 @@ export async function buildCycleContext(
     version: "v3-p2", asOf: new Date().toISOString().slice(0, 10),
   });
 
-  return { ticker, cyclePaths, eventExDates, priceSource: { stock: stockRes.source, benchmark: benchmarkSource, notes: stockRes.notes } };
+  return {
+    ticker, cyclePaths, eventExDates,
+    priceSource: { stock: stockRes.source, benchmark: benchmarkSource, notes: stockRes.notes },
+    stockPrices, benchmarkPrices, avgValue20: stockRes.avgValue20 ?? null, cashExDates: stockRes.cashExDates ?? [],
+  };
 }
 
 export function buildCyclePathsV3(ctx: CycleComputeContext): CyclePathsV3 {
