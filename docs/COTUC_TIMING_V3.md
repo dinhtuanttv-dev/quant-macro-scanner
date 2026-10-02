@@ -61,3 +61,37 @@ giá tham chiếu của Sở (ghi chú khớp/lệch trong `priceSource.notes`).
 - Phân tích chu kỳ cổ tức vẫn dùng 5 năm giá; mùa vụ dùng 10 năm.
 - Quyền mua (rights) chưa điều chỉnh (thiếu giá phát hành trong nguồn sự kiện).
 - Bộ máy quyết định 3 trạng thái, theo dõi tín hiệu, học trọng số (giai đoạn 4 của gói): PR riêng; học trọng số giữ **CHƯA BẬT**.
+
+## Giai đoạn 4 — Bộ máy quyết định 3 trạng thái + theo dõi tín hiệu (2026-10)
+
+**Nơi tính:** cron `timing-signals-scan` (22:50 UTC hằng ngày) — dùng lại giá SSI đã tải cho TimingSignalCache, tính thêm
+`DecisionSnapshot` cho từng mã → bảng `CotucDecisionState`; theo dõi thực tế → bảng `CotucSignalTrack`.
+Tạo bảng 1 lần: `npx tsx create-cotuc-decision-tables.ts` (raw `CREATE TABLE IF NOT EXISTS`).
+
+**Route chỉ đọc:**
+- `GET /api/cotuc/decision-states[?ticker=]` → `{ asOf, count, states: DecisionSnapshot[] }` (404 khi mã chưa có).
+- `GET /api/cotuc/signal-tracking` → `{ summary: TrackingSummary, recent: TrackRow[] (30 mới nhất) }`.
+
+**Ngày GDKHQ dùng cho quyết định** (`resolveUpcomingExDate`): đợt cổ tức tiền mặt đã thông báo trên VNDirect (≥ hôm nay)
+= CONFIRMED; chưa có thì ước tính = đợt cuối + trung vị khoảng cách chi (≥ 3 đợt), cuộn tới phiên giao dịch ≥ hôm nay
+= ESTIMATED (điều kiện "ngày đã xác nhận" ✖ ⇒ tối đa WATCH). Sửa lỗi cũ: TimingSignalCache trước đây tính action từ
+GDKHQ QUÁ KHỨ (mọi mã POST_EX) và không cập nhật `generatedAt`.
+
+**Module** (`lib/cotuc/timing-v3/decision/`): `market-regime`, `log-odds-combiner`, `entry-refinement`,
+`compute-decision-state`, `signal-tracking-log` copy nguyên từ gói (kèm test của gói); `optimize-dividend-timing`
+port từ global-quanta `src/lib/quant-cotuc.ts` (đổi một nơi phải đổi cả hai); `build-decision` ghép; `tracking` ghi/chấm.
+
+**Tín hiệu thành phần (combineLogOdds, trọng số × hệ số chế độ thị trường 1 / 0,85 / 0,55):**
+- Cổ tức: trung bình hậu nghiệm Beta của tỷ lệ thắng cửa sổ đã chọn, prior liên mã cùng cửa sổ (leave-one-out,
+  `estimatePriorFromRates`, ≥ 5 mã) — KHÔNG dùng `0,5 + r×5` của README. Trọng số = số đợt.
+- Mùa vụ KQKD: P(phản ứng dương) của quý sắp công bố, CHỈ khi ngày công bố dự kiến rơi trước điểm thoát và quý đó có
+  cửa sổ đạt kiểm định. Trọng số = số kỳ.
+- Thị trường: `classifyMarketRegime` trên VN-Index SSI (MA200 + phân vị biến động 252 phiên).
+- Giá chạy trước: CAR đợt hiện tại (gốc = offset −75) so phân vị lịch sử tại offset gần nhất (≥ 5 đợt).
+- Thanh khoản: GTGD bình quân 20 phiên (giá khớp SSI × KL) ≥ 5 tỷ đồng.
+- Chưa có: mức vô hiệu hoá ATR (chuỗi SSI chỉ có giá đóng cửa) — check chỉ xét "hết thời gian".
+
+**Theo dõi:** ghi 1 bản ghi khi mã vào vùng mua (IN_WINDOW) với FAVORABLE/WATCH (không trùng khi còn bản ghi mở
+hoặc trong 120 ngày). Kết quả khi đã có giá tới ngày thoát: CAR thực từ ngày ghi tới ngày thoát > 0 ⇒ 1.
+Tóm tắt dùng `signal-tracking-log` của gói: tỷ lệ đúng 20 gần nhất, Brier, CUSUM hai phía (k 0,05, h 5) nhắm xác suất
+trung bình đã báo. **learnSignalWeights và calibration KHÔNG bật** — cần vài quý kết quả thật (≥ 30 bản ghi).

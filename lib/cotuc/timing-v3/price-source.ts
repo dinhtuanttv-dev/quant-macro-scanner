@@ -12,6 +12,7 @@ import { fetchIndexOhlcvHistory } from "@/lib/market-data/vndirect-adapter";
 import { fetchDividendEvents } from "@/lib/cotuc/vci-events-adapter";
 import { fetchVndCorporateActions } from "@/lib/cotuc/vndirect-finfo-adapter";
 import { buildLifecycleEvents } from "@/lib/cotuc/dividend-lifecycle";
+import { averageTradedValue } from "./decision/build-decision";
 import { buildTotalReturnSeries, crossCheckWithReference, type CashDividend, type PriceBar, type ShareEvent } from "./total-return";
 
 export type PriceSourceTag = "SSI_TOTAL_RETURN" | "YAHOO_FALLBACK" | "SSI" | "VNDIRECT_FALLBACK";
@@ -23,6 +24,10 @@ export interface PriceSeriesResult {
   /** Ghi chú minh bạch (nguồn lỗi, số đợt cổ tức đã cộng…). */
   notes: string[];
   error?: string;
+  /** GTGD bình quân 20 phiên (giá khớp danh nghĩa SSI × khối lượng, VND). null nếu không có dữ liệu SSI. */
+  avgValue20?: number | null;
+  /** Mọi ngày GDKHQ cổ tức tiền mặt từ nguồn sự kiện quyền (gồm cả đợt SẮP TỚI đã thông báo). */
+  cashExDates?: string[];
 }
 
 /**
@@ -55,14 +60,15 @@ export async function loadStockPrices(ticker: string, years = 5): Promise<PriceS
     if (cc.matched + cc.mismatched.length) {
       notes.push(`Đối chiếu giá tham chiếu của Sở (tới 2024): khớp ${cc.matched}${cc.mismatched.length ? `, lệch ${cc.mismatched.map((m) => `${m.exDate} (VCI ${m.vci} / Sở ${m.ref ?? "không thấy"})`).join("; ")}` : ""}.`);
     }
-    return { ok: true, prices: tr.bars, source: "SSI_TOTAL_RETURN", notes };
+    return { ok: true, prices: tr.bars, source: "SSI_TOTAL_RETURN", notes, avgValue20: averageTradedValue(ssi.data), cashExDates: ca.cash.map((c) => c.exDate) };
   }
   notes.push(!ssi.success
     ? `SSI lỗi (${ssi.error ?? "thiếu dữ liệu"}) — dùng dự phòng Yahoo (cổ tức trừ TRƯỚC thuế).`
     : `Thiếu sự kiện quyền (${ca.error}) — không dùng giá SSI chưa điều chỉnh; dùng dự phòng Yahoo (cổ tức trừ TRƯỚC thuế).`);
   const y = await fetchOhlcvHistory(ticker, `${years}y`);
   if (y.success && y.data && y.data.length >= 60) {
-    return { ok: true, prices: y.data.map((b) => ({ date: b.date, adjClose: b.adjClose })), source: "YAHOO_FALLBACK", notes };
+    const avgValue20 = ssi.success && ssi.data ? averageTradedValue(ssi.data) : null;
+    return { ok: true, prices: y.data.map((b) => ({ date: b.date, adjClose: b.adjClose })), source: "YAHOO_FALLBACK", notes, avgValue20, cashExDates: ca.ok ? ca.cash.map((c) => c.exDate) : [] };
   }
   return { ok: false, prices: [], source: null, notes, error: `SSI: ${ssi.error ?? "-"}; VCI: ${ca.error ?? "-"}; Yahoo: ${y.error ?? "thiếu dữ liệu"}` };
 }
