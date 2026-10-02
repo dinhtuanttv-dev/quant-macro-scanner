@@ -107,10 +107,40 @@ export async function buildEarningsSignalForTicker(
   const profitGrowthYoY = yoyBase?.netProfit && target.netProfit !== null && yoyBase.netProfit !== 0
     ? target.netProfit / yoyBase.netProfit - 1 : null;
 
-  return buildEarningsSignal({
+  const asOf = new Date().toISOString().slice(0, 10);
+  const reported = buildEarningsSignal({
     ticker, isBank, history, target: targetRecord,
     revenueGrowthYoY, profitGrowthYoY,
     profitTtmGrowthYoY: null, // can 4 quy lien tiep cong don, ngoai pham vi don gian hoa Giai doan 3
-    version: "v3-p3", asOf: new Date().toISOString().slice(0, 10),
+    version: "v3-p3", asOf,
   });
+  return toUpcomingSignal(reported, { history, targetRecord, target, ticker, isBank, asOf });
+}
+
+/**
+ * Quy GAN NHAT da cong bo -> tin hieu phai nham QUY KE TIEP (muc "Sap KQKD", tdToEarn trong OptimalTimingTab):
+ * quarterLabel/legalDeadline/expectedAnnounce cua quy ke tiep (ngay du kien uoc tu do tre lich su cua CHINH ma, gom ca
+ * ky vua cong bo); SUE / tang truong / quality GIU cua ky vua cong bo (tin hieu troi gia sau cong bo, engine dung de
+ * danh gia ky sap toi). Quy gan nhat chua cong bo -> giu nguyen.
+ */
+export function toUpcomingSignal(
+  reported: EarningsSignal,
+  ctx: { history: QuarterlyRecord[]; targetRecord: QuarterlyRecord; target: { year: number; quarter: number }; ticker: string; isBank: boolean; asOf: string },
+): EarningsSignal {
+  if (!ctx.targetRecord.announceDate) return reported;
+  const nextQ = ctx.target.quarter === 4 ? 1 : ctx.target.quarter + 1;
+  const nextY = ctx.target.quarter === 4 ? ctx.target.year + 1 : ctx.target.year;
+  const upcoming = buildEarningsSignal({
+    ticker: ctx.ticker, isBank: ctx.isBank,
+    history: [...ctx.history, ctx.targetRecord],
+    target: { quarterLabel: `Q${nextQ}/${nextY}`, legalDeadline: legalDeadlineFor(nextY, nextQ), announceDate: null, earningsMetric: null, extraordinaryShare: null },
+    revenueGrowthYoY: null, profitGrowthYoY: null, profitTtmGrowthYoY: null,
+    version: "v3-p3", asOf: ctx.asOf,
+  });
+  return {
+    ...reported,
+    quarterLabel: upcoming.quarterLabel,
+    legalDeadline: upcoming.legalDeadline,
+    expectedAnnounce: upcoming.expectedAnnounce,
+  };
 }
