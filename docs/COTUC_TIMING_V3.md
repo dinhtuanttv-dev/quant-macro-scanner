@@ -30,6 +30,8 @@ giá tham chiếu của Sở (ghi chú khớp/lệch trong `priceSource.notes`).
 | `GET /api/cotuc/annual-earnings-calendar?ticker=` | `AnnualEarningsCalendarV3` | đọc `EarningsSeasonalityCache` |
 | `GET /api/cotuc/earnings-signals` | EarningsSignal cả danh mục ("Sắp KQKD") — nhắm QUÝ SẮP CÔNG BỐ, SUE/tăng trưởng của kỳ vừa công bố | đọc `EarningsSeasonalityCache` |
 
+| `GET /api/cotuc/seasonal-opportunities` | Cơ hội mùa vụ đã đạt kiểm định (xếp theo cận dưới CI) + ứng viên gần đạt kèm điều kiện còn thiếu | đọc `EarningsSeasonalityCache` |
+
 404 = chưa có dữ liệu (frontend coi là `null`).
 
 ## 3. Cron
