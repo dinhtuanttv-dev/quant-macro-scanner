@@ -11,6 +11,7 @@
  * hop nhat = quarterEnd + 45 ngay - KHONG tu bia quy tac moi.
  */
 import { fetchQuarterlyIncome } from "@/lib/cotuc/vci-financials-adapter";
+import { fetchVndQuarterlyFinancials } from "@/lib/cotuc/vndirect-finfo-adapter";
 import { fetchEarningsDisclosureHistory, type EarningsDisclosureRecord } from "@/lib/cotuc/cafef-earnings-disclosure-scraper";
 import { buildEarningsSignal, type QuarterlyRecord } from "./earnings-signal";
 import type { EarningsSignal } from "./timing-types";
@@ -51,10 +52,15 @@ export async function buildEarningsSignalForTicker(
   ticker: string,
   isBank: boolean,
 ): Promise<EarningsSignal | EarningsSignalFailure> {
-  const [finRes, discRes] = await Promise.all([
-    fetchQuarterlyIncome(ticker),
-    fetchEarningsDisclosureHistory(ticker),
-  ]);
+  // Nguồn chính: VNDirect finfo (LNST cổ đông mẹ + ngày công bố = ngày nhập BCTC) — VCI trả 403 và trang CafeF đổi cấu
+  // trúc từ 10/2026. Dự phòng: VCI + CafeF như trước.
+  const vnd = await fetchVndQuarterlyFinancials(ticker);
+  const [finRes, discRes] = vnd.available
+    ? [
+      { available: true, quarters: vnd.quarters.map((q) => ({ year: q.year, quarter: q.quarter, revenue: q.revenue, netProfit: q.netProfit })), error: undefined },
+      { ticker, success: true, records: vnd.quarters.filter((q) => q.announceDate).map((q) => ({ year: q.year, quarter: q.quarter, isParentOnly: false, announceDate: q.announceDate! })) },
+    ] as const
+    : await Promise.all([fetchQuarterlyIncome(ticker), fetchEarningsDisclosureHistory(ticker)]);
 
   if (!finRes.available || finRes.quarters.length === 0) {
     return { reason: "FINANCIALS_FETCH_FAILED", detail: finRes.error ?? "Khong co du lieu tai chinh tu VCI" };
