@@ -5,7 +5,7 @@ import { getCotucUniverse } from "@/lib/cotuc/cotuc-universe";
 import { appendIntradayBar, fetchLiveIndex, fetchLiveQuotes } from "@/lib/cotuc/timing-v3/intraday";
 import { buildCycleContext, buildCycleStatsV3, fetchBenchmarkPricesOnce, type CycleComputeContext } from "@/lib/cotuc/timing-v3/compute-cycle-io";
 import { buildRequiredOffsets } from "@/lib/cotuc/timing-v3/candidate-windows";
-import { vnHolidayCalendar } from "@/lib/cotuc/timing-v3/vn-holidays";
+import { refreshVnHolidayCalendar, vnHolidayCalendar } from "@/lib/cotuc/timing-v3/vn-holidays";
 import { estimatePriorFromRates } from "@/lib/cotuc/timing-v3/seasonality/beta-binomial";
 import { classifyMarketRegime } from "@/lib/cotuc/timing-v3/decision/market-regime";
 import { buildDecisionSnapshot, resolveUpcomingExDate } from "@/lib/cotuc/timing-v3/decision/build-decision";
@@ -64,6 +64,8 @@ export async function GET(req: Request) {
     const offset = Number(searchParams.get("offset") ?? "0");
     const limit = Math.max(1, Math.min(60, Number(searchParams.get("limit") ?? "25")));
 
+    // Lịch nghỉ: quy tắc tự tính + lớp Gateway (phiên thật / ngày nghỉ nối) — lỗi thì vẫn chạy bằng quy tắc.
+    await refreshVnHolidayCalendar();
     const benchmarkPrices = await fetchBenchmarkPricesOnce();
     if ("reason" in benchmarkPrices) {
       return NextResponse.json({ error: "Không tải được giá VN-Index.", detail: benchmarkPrices.detail }, { status: 500 });
