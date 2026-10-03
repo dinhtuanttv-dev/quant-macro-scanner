@@ -152,7 +152,15 @@ export async function GET(req: Request) {
           stockPrices: appendIntradayBar(ctx.stockPrices ?? [], liveQuotes.get(ticker)), benchmarkPrices: benchLive,
           exDate, earnings, earningsStats, avgValue20: ctx.avgValue20 ?? null, dividendPriors: priorFor(ticker), regime,
         });
-        const snapToStore = { ...snap, backtest: stats.windows.map((w) => ({ id: w.id, nEvents: w.nEvents, winRate: w.winRate })) };
+        // backtest: đủ trường để (1) tính prior liên mã, (2) Timeline điểm mua dựng bậc "gần đạt" (buy-timeline.ts).
+        const snapToStore = {
+          ...snap,
+          backtest: stats.windows.map((w) => ({
+            id: w.id, label: w.label, entryFrom: w.entryFrom, entryTo: w.entryTo, exitOffset: w.exitOffset, nEvents: w.nEvents,
+            winRate: w.winRate, netExpectancy: w.netExpectancy, netExpectancyLcb: w.netExpectancyLcb, fdrQValue: w.fdrQValue,
+            oosMeanNet: w.oosMeanNet, selected: w.selected && w.id === stats.selectedWindowId,
+          })),
+        };
         const rec = snap.recommendation;
         const sel = selectedWindow(stats);
         const baseConfidence = sel ? (sel.nEvents >= 12 && (sel.oosMeanNet ?? -1) > 0 ? "HIGH" : sel.nEvents >= 8 ? "MEDIUM" : "LOW") : null;
