@@ -132,5 +132,7 @@ trung bình đã báo. **learnSignalWeights và calibration KHÔNG bật** — c
   định, `snapshot.backtest` nay lưu đủ chi tiết cửa sổ) và mùa vụ KQKD (E1–E4 quanh ngày công bố dự kiến). Hai bậc tách bạch:
   VALIDATED (qua cổng thống kê) và NEAR (gần đạt, ghi rõ còn thiếu gì). Ngày vùng mua = mốc sự kiện ± số phiên theo lịch tự
   tính. Không có "vùng giá mua" (chưa có mô hình giá đã kiểm định).
-- Lưu ý thống kê (chưa sửa, chờ quyết định): `netExpectancy` là trung bình ĐÃ CO về 0, còn `netExpectancyLcb` bootstrap trên số
-  CHƯA CO -> cận dưới có thể > kỳ vọng (VD REE w3: 3,5% / 5,5%); cổng "cận dưới > 0" vì vậy kém thận trọng hơn thiết kế.
+- **Cận dưới cùng thang với kỳ vọng đã co** (`bootstrapLowerBoundOf`, 10/2026): mỗi mẫu bootstrap tính lại TOÀN BỘ ước lượng
+  đã co (trung bình, phương sai trong mã, trọng số co; prior + phương sai liên mã cố định) rồi lấy phân vị 10%. Trước đây cận
+  dưới bootstrap trên trung bình CHƯA CO nên có thể > kỳ vọng (34/385 cửa sổ thật). Đo trên 77 mã: 0/385 còn mâu thuẫn; số
+  cửa sổ qua cổng không đổi (BMP W1: cận dưới 11,18% -> 5,62%, kỳ vọng 9,41%). Áp cho cả chu kỳ cổ tức và mùa vụ KQKD.
