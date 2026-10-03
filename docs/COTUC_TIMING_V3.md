@@ -115,4 +115,8 @@ trung bình đã báo. **learnSignalWeights và calibration KHÔNG bật** — c
   tiền vẫn có dòng `NO_DATE` trong TimingSignalCache.
 - **Cửa sổ sau GDKHQ (W4/W5)**: đợt vừa qua còn hiệu lực tới điểm thoát (trước đây luôn bị coi là POST_EX).
 - **Cột KQKD của Screener**: `/api/cotuc/timing-signals` trả `earnings` (tăng trưởng LNST/doanh thu, giới hạn ±150%) + `dateStatus`.
-- **Lịch nghỉ 2027 tạm thời**: chỉ lễ dương lịch cố định (01/01, 30/04, bù 03/05, 02/09); Tết/Giỗ Tổ chờ Sở công bố.
+- **Lịch nghỉ TỰ TÍNH, không nạp tay** (`timing-v3/vn-trading-calendar.ts`, bản sao giống hệt ở global-quanta; gốc JS ở Market
+  Gateway `tradingCalendar/`): âm lịch Việt Nam (+7) → Tết, Giỗ Tổ; quy tắc Bộ luật Lao động (Tết = 5 ngày thường gần mùng 2;
+  lễ rơi cuối tuần nghỉ bù; 02/09 + 1 ngày liền kề từ 2021). Kiểm chứng 10 năm phiên VN-Index thật: khớp 106/106 ngày, không
+  đánh nhầm ngày nào. Ngày nghỉ nối do Chính phủ đổi ngày làm việc lấy từ Gateway `/api/market/trading-calendar` (quan sát
+  phiên thật + `MARKET_HOLIDAYS`) — `refreshVnHolidayCalendar()` mỗi lượt cron, lỗi thì dùng quy tắc.
