@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { CACHE_HEADERS } from "@/lib/cotuc/timing-v3/seasonality/seasonality-read";
+// Quét liên tục (Gateway gọi lô mỗi 3 phút trong phiên) -> cache CDN ngắn để giao diện thấy dữ liệu mới.
+const CACHE_HEADERS = { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300" };
 
 // GET /api/cotuc/decision-states[?ticker=FPT] -> DecisionSnapshot 3 trạng thái (FAVORABLE/WATCH/AVOID) của từng mã.
 // CHỈ ĐỌC bảng CotucDecisionState (cron timing-signals-scan tính từ giá SSI + sự kiện VNDirect + mùa vụ KQKD).

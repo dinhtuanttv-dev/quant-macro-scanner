@@ -23,7 +23,18 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const rows = await prisma.timingSignalCache.findMany();
+    const [rows, seasonRows, decisionRows] = await Promise.all([
+      prisma.timingSignalCache.findMany(),
+      prisma.earningsSeasonalityCache.findMany({ select: { ticker: true, earningsSignal: true } }),
+      prisma.cotucDecisionState.findMany({ select: { ticker: true, snapshot: true } }),
+    ]);
+    // Cột "KQKD" của Screener: tăng trưởng LNST/doanh thu kỳ vừa công bố (EarningsSeasonalityCache, VNDirect) +
+    // xung đột KQKD với cửa sổ nắm giữ và trạng thái ngày GDKHQ (ảnh chụp quyết định, cron timing-signals-scan).
+    type Earn = { revenueGrowthYoY: number | null; profitGrowthYoY: number | null };
+    type Snap = { exDate?: { status?: string } | null; recommendation?: { earningsImpact?: { conflict?: string } } };
+    const earnBy = new Map(seasonRows.map((r) => [r.ticker, r.earningsSignal as unknown as Earn | null]));
+    const snapBy = new Map(decisionRows.map((r) => [r.ticker, r.snapshot as unknown as Snap | null]));
+    const clampRatio = (v: number | null | undefined) => (typeof v === "number" && Number.isFinite(v) ? Math.max(-1.5, Math.min(1.5, v)) /* giới hạn hợp đồng TimingSignal phía giao diện (±150%) */ : null);
 
     const signals = rows.map((r) => ({
       ticker: r.ticker,
@@ -36,15 +47,21 @@ export async function GET() {
       nEvents: r.nEvents,
       fdrQValue: r.fdrQValue,
       confidence: r.confidence,
-      dateStatus: null,
-      earnings: null,
+      dateStatus: (snapBy.get(r.ticker)?.exDate?.status ?? null) as "CONFIRMED" | "ANNOUNCED" | "ESTIMATED" | null,
+      earnings: earnBy.get(r.ticker)
+        ? {
+            revenueGrowthYoY: clampRatio(earnBy.get(r.ticker)!.revenueGrowthYoY),
+            profitGrowthYoY: clampRatio(earnBy.get(r.ticker)!.profitGrowthYoY),
+            conflict: (snapBy.get(r.ticker)?.recommendation?.earningsImpact?.conflict ?? "NONE") as "NONE" | "NEAR_EX" | "INSIDE_HOLD",
+          }
+        : null,
     }));
 
     const asOf = rows.length > 0
       ? rows.reduce((max, r) => (r.generatedAt > max ? r.generatedAt : max), rows[0].generatedAt).toISOString()
       : new Date().toISOString();
 
-    return NextResponse.json({ version: "v3-p5", asOf, signals });
+    return NextResponse.json({ version: "v3-p5", asOf, signals }, { headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300" } });
   } catch (err) {
     console.error("[api/cotuc/timing-signals] Lỗi:", err);
     return NextResponse.json({ error: "Không đọc được Timing Signals." }, { status: 500 });

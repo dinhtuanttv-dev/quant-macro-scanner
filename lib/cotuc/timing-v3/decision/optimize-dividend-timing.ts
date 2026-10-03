@@ -114,7 +114,9 @@ export function optimizeDividendTiming(
   const empty = { window: null, expectedNetReturn: null, nEvents: null, confidence: null };
 
   if (tdToEx === null) return { action: "NO_DATE", ...empty, ...base };
-  if (tdToEx < 0) return { action: "POST_EX", ...empty, ...base };
+  // Cửa sổ SAU GDKHQ (W4 +3..+6, W5 +20..+35): đợt vừa qua vẫn còn hiệu lực tới điểm thoát — không coi là POST_EX.
+  const postExWindowLive = win !== null && win.entryFrom > 0 && k! <= win.exitOffset;
+  if (tdToEx < 0 && !postExWindowLive) return { action: "POST_EX", ...empty, ...base };
   if (!win) return { action: "NO_SIGNAL", ...empty, ...base };
 
   let action: TimingAction;

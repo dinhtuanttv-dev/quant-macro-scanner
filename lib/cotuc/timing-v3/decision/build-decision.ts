@@ -53,7 +53,16 @@ export function addTradingDays(iso: ISODate, n: number, cal: HolidayCalendar): I
  */
 export function resolveUpcomingExDate(
   today: ISODate, announcedCashExDates: ISODate[], pastExDates: ISODate[], asOf: string, cal?: HolidayCalendar,
+  /** Cửa sổ đã chọn nằm SAU GDKHQ (entryFrom > 0): nếu đợt vừa qua chưa tới điểm thoát thì dùng chính đợt đó. */
+  postExWindow?: { exitOffset: number } | null,
 ): ResolvedExDate | null {
+  if (postExWindow && cal) {
+    const lastPast = [...announcedCashExDates, ...pastExDates].filter((d) => d < today).sort().at(-1);
+    const k = lastPast ? tradingDaysBetween(lastPast, today, cal) : null;
+    if (lastPast && k !== null && k <= postExWindow.exitOffset) {
+      return { value: lastPast, status: "CONFIRMED", source: "DERIVED", asOf, label: "VNDirect (đợt GDKHQ vừa qua — cửa sổ sau GDKHQ)" };
+    }
+  }
   const upcoming = announcedCashExDates.filter((d) => d >= today).sort()[0];
   if (upcoming) return { value: upcoming, status: "CONFIRMED", source: "DERIVED", asOf, label: "VNDirect (thông báo GDKHQ)" };
   const past = [...new Set([...pastExDates, ...announcedCashExDates].filter((d) => d < today))].sort();

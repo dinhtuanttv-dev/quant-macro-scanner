@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { CACHE_HEADERS } from "@/lib/cotuc/timing-v3/seasonality/seasonality-read";
+// Quét liên tục (Gateway gọi lô mỗi 3 phút trong phiên) -> cache CDN ngắn để giao diện thấy dữ liệu mới.
+const CACHE_HEADERS = { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300" };
 import { summarizeTracking, type TrackRow } from "@/lib/cotuc/timing-v3/decision/tracking";
 import type { DecisionLevel } from "@/lib/cotuc/timing-v3/decision/decision-types";
 

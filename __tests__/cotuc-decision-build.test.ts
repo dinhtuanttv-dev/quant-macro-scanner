@@ -189,3 +189,23 @@ describe("theo dõi tín hiệu", () => {
     expect(summarizeTracking([]).rollingAccuracy).toBeNull();
   });
 });
+
+describe("cửa sổ sau GDKHQ (W4/W5)", () => {
+  it("đợt vừa qua chưa tới điểm thoát -> dùng đợt đó, k dương nằm trong vùng mua = IN_WINDOW", () => {
+    const today = "2026-10-08";
+    const past = addTradingDays(today, -4, cal);
+    const ex = resolveUpcomingExDate(today, [past, "2026-04-01", "2025-10-01", "2025-04-01"], [], "x", cal, { exitOffset: 10 });
+    expect(ex).toMatchObject({ value: past, status: "CONFIRMED" });
+    const w4 = win({ id: "w4", label: "W4", entryFrom: 3, entryTo: 6, exitOffset: 10, holdsThroughEx: false });
+    const r = optimizeDividendTiming({ exDate: ex, cycle: stats(w4), earnings: null }, { today, cal });
+    expect(r.tdToEx).toBe(-4);
+    expect(r.action).toBe("IN_WINDOW");
+  });
+  it("đã qua điểm thoát -> POST_EX như cũ", () => {
+    const today = "2026-10-30";
+    const past = addTradingDays(today, -15, cal);
+    const w4 = win({ id: "w4", label: "W4", entryFrom: 3, entryTo: 6, exitOffset: 10, holdsThroughEx: false });
+    const r = optimizeDividendTiming({ exDate: { value: past, status: "CONFIRMED", source: "DERIVED", asOf: "x" }, cycle: stats(w4), earnings: null }, { today, cal });
+    expect(r.action).toBe("POST_EX");
+  });
+});

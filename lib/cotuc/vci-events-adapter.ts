@@ -1,3 +1,4 @@
+import { fetchVndEventsVciShape, fetchVndEventsVciShapeBulk } from "./vndirect-finfo-adapter";
 // VCI Events Adapter - lay THAT su kien GDKHQ (DIV), Phat hanh CP (ISS)
 // va DHCD (AGME/AGMR/EGME) tu Vietcap. Endpoint KHONG CHINH THUC
 // (reverse-engineer tu vnstock), cung rui ro nhu vci-listing-adapter.ts
@@ -32,6 +33,8 @@ export interface DividendEventResult {
   available: boolean;
   exDividendEvents: VciEvent[];
   agmEvents: VciEvent[];
+  /** Nguồn thực tế của lần lấy này. */
+  source?: "VNDIRECT" | "VCI";
   rawEvents: any[]; // FULL raw events (chua qua rut gon) - dung cho buildLifecycleEvents (P1)
   error?: string;
 }
@@ -66,7 +69,39 @@ function sortEventsByRelevance(events: VciEvent[]): VciEvent[] {
   return [...upcoming, ...past, ...noDate];
 }
 
+/** Dựng DividendEventResult từ danh sách sự kiện thô dạng VCI (dùng chung cho VNDirect và VCI). */
+function toResult(ticker: string, rawEvents: any[], source: "VNDIRECT" | "VCI"): DividendEventResult {
+  const events: VciEvent[] = rawEvents.map((e) => ({
+    eventCode: e.eventCode ?? "",
+    publicDate: toDateOnly(e.publicDate),
+    exerciseDate: toDateOnly(e.exrightDate ?? e.issueDate ?? null),
+    eventTitle: e.eventTitleVi ?? e.eventTitleEn ?? null,
+    ratio: e.exerciseRatio !== undefined && e.exerciseRatio !== null ? String(e.exerciseRatio) : null,
+    settlementDate: toDateOnly(e.payoutDate ?? e.listingDate ?? null),
+  }));
+  return {
+    ticker, available: true, source,
+    exDividendEvents: sortEventsByRelevance(events.filter((e) => e.eventCode === "DIV")),
+    agmEvents: sortEventsByRelevance(events.filter((e) => ["AGME", "AGMR", "EGME"].includes(e.eventCode))),
+    rawEvents,
+  };
+}
+
+/**
+ * Sự kiện quyền của một mã. NGUỒN CHÍNH = VNDirect finfo (VCI trả 403 từ 10/2026, xem vndirect-finfo-adapter.ts),
+ * chuyển về đúng định dạng VCI nên mọi nơi dùng không phải đổi. VCI chỉ còn là dự phòng khi VNDirect lỗi.
+ */
 export async function fetchDividendEvents(ticker: string, monthsBack = 60, monthsForward = 6): Promise<DividendEventResult> {
+  const now = new Date();
+  const fromD = new Date(now); fromD.setMonth(fromD.getMonth() - monthsBack);
+  const toD = new Date(now); toD.setMonth(toD.getMonth() + monthsForward);
+  const vnd = await fetchVndEventsVciShape(ticker, fromD.toISOString().slice(0, 10), toD.toISOString().slice(0, 10));
+  if (vnd.ok) return toResult(ticker, vnd.events, "VNDIRECT");
+  const vci = await fetchDividendEventsVci(ticker, monthsBack, monthsForward);
+  return vci.available ? vci : { ...vci, error: `VNDirect: ${vnd.error}; ${vci.error ?? ""}` };
+}
+
+async function fetchDividendEventsVci(ticker: string, monthsBack: number, monthsForward: number): Promise<DividendEventResult> {
   try {
     const now = new Date();
     const from = new Date(now); from.setMonth(from.getMonth() - monthsBack);
@@ -93,33 +128,30 @@ export async function fetchDividendEvents(ticker: string, monthsBack = 60, month
     }
 
     const rawEvents: any[] = json?.data?.content ?? (Array.isArray(json?.data) ? json.data : []);
-
-    // FIX: dung dung ten field that (exrightDate cho DIV/ISS, issueDate cho AGM)
-    const events: VciEvent[] = rawEvents.map((e) => ({
-      eventCode: e.eventCode ?? "",
-      publicDate: toDateOnly(e.publicDate),
-      exerciseDate: toDateOnly(e.exrightDate ?? e.issueDate ?? null),
-      eventTitle: e.eventTitleVi ?? e.eventTitleEn ?? null,
-      ratio: e.exerciseRatio !== undefined && e.exerciseRatio !== null ? String(e.exerciseRatio) : null,
-      // payoutDate = tien mat ve tai khoan, listingDate = CP moi ve tai khoan
-      // (co tuc/thuong CP) - dung nguon giong dividend-lifecycle.ts.
-      settlementDate: toDateOnly(e.payoutDate ?? e.listingDate ?? null),
-    }));
-
-    return {
-      ticker, available: true,
-      exDividendEvents: sortEventsByRelevance(events.filter((e) => e.eventCode === "DIV")),
-      agmEvents: sortEventsByRelevance(events.filter((e) => ["AGME", "AGMR", "EGME"].includes(e.eventCode))),
-      rawEvents,
-    };
+    return toResult(ticker, rawEvents, "VCI");
   } catch (err) {
     return { ticker, available: false, exDividendEvents: [], agmEvents: [], rawEvents: [], error: err instanceof Error ? err.message : String(err) };
   }
 }
 
-/** Lay su kien cho nhieu ma song song, KHONG de 1 ma loi lam hong ca danh sach. */
-export async function fetchDividendEventsBatch(tickers: string[]): Promise<DividendEventResult[]> {
-  const results = await Promise.allSettled(tickers.map((t) => fetchDividendEvents(t)));
+
+/** Lay su kien cho nhieu ma (toi da 8 request dong thoi — danh muc nay ~300 ma), KHONG de 1 ma loi lam hong ca danh sach. */
+export async function fetchDividendEventsBatch(tickers: string[], concurrency = 8): Promise<DividendEventResult[]> {
+  // Nhanh nhất: MỘT lượt VNDirect cho cả danh sách. Lỗi -> từng mã (VNDirect rồi VCI).
+  const now = new Date();
+  const fromD = new Date(now); fromD.setMonth(fromD.getMonth() - 60);
+  const toD = new Date(now); toD.setMonth(toD.getMonth() + 6);
+  const bulk = await fetchVndEventsVciShapeBulk(tickers, fromD.toISOString().slice(0, 10), toD.toISOString().slice(0, 10));
+  if (bulk.ok) return tickers.map((t) => toResult(t, bulk.byTicker.get(t) ?? [], "VNDIRECT"));
+  const results: PromiseSettledResult<DividendEventResult>[] = new Array(tickers.length);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(concurrency, tickers.length) }, async () => {
+    while (next < tickers.length) {
+      const i = next++;
+      try { results[i] = { status: "fulfilled", value: await fetchDividendEvents(tickers[i]) }; }
+      catch (reason) { results[i] = { status: "rejected", reason }; }
+    }
+  }));
   return results.map((r, i) =>
     r.status === "fulfilled" ? r.value : { ticker: tickers[i], available: false, exDividendEvents: [], agmEvents: [], rawEvents: [], error: "Promise rejected" }
   );

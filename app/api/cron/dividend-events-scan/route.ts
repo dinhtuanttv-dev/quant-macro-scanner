@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { fetchDividendEventsBatch } from "@/lib/cotuc/vci-events-adapter";
 import { buildLifecycleEvents, type DividendLifecycleEvent } from "@/lib/cotuc/dividend-lifecycle";
 import { DIVIDEND_STOCKS } from "@/lib/quant-cotuc";
+import { getCotucUniverse } from "@/lib/cotuc/cotuc-universe";
 import { prisma } from "@/lib/prisma";
 
 // Buoc 2.2 (nang cap do ben cho Tab Co Tuc, 2026-09-27) - cron ghi
@@ -46,7 +47,8 @@ export async function GET() {
     const universeTickers = universeRows.map((r) => r.ticker);
     // Hop nhat, khong trung lap - "TAT CA MA" theo dung yeu cau, khong
     // con phan biet "17 ma co dinh" nua o tang cache nay.
-    const allTickers = Array.from(new Set([...coreTickers, ...universeTickers]));
+    const scanUniverse = (await getCotucUniverse()).tickers.map((t) => t.ticker); // danh mục Siêu Quét AI (~300 mã)
+    const allTickers = Array.from(new Set([...coreTickers, ...scanUniverse, ...universeTickers]));
 
     const results = await fetchDividendEventsBatch(allTickers);
     const now = new Date();

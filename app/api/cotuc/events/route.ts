@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { fetchDividendEventsBatch, type VciEvent } from "@/lib/cotuc/vci-events-adapter";
 import { buildLifecycleEvents } from "@/lib/cotuc/dividend-lifecycle";
-import { DIVIDEND_STOCKS } from "@/lib/quant-cotuc";
+import { getCotucUniverse } from "@/lib/cotuc/cotuc-universe";
 import { prisma, withPrismaTimeout } from "@/lib/prisma";
 
 // FIX P0 (2026-09-12): 10s qua thap cho 17 request song song toi VCI.
-export const maxDuration = 30;
+export const maxDuration = 60;
 // Dam bao route nay LUON chay lai (khong bi Next.js coi la static va
 // cache) - giu lai nhu 1 best-practice an toan cho du khong phai nguyen
 // nhan cua loi da debug truoc do (loi do la do doc nham JSON qua
@@ -46,7 +46,9 @@ function cacheRowToSyntheticEvent(row: CachedEventRow): VciEvent | null {
 }
 
 export async function GET() {
-  const tickers = DIVIDEND_STOCKS.map((s) => s.ticker);
+  // Danh mục = danh mục Siêu Quét AI (~300 mã). Nguồn sự kiện: VNDirect (một lượt cho cả danh mục), VCI dự phòng.
+  const universe = await getCotucUniverse();
+  const tickers = universe.tickers.map((t) => t.ticker);
 
   try {
     const results = await fetchDividendEventsBatch(tickers);
@@ -121,11 +123,13 @@ export async function GET() {
 
     return NextResponse.json({
       generatedAt: new Date().toISOString(),
+      universeSource: universe.source,
+      eventSource: results.some((r) => r.source === "VNDIRECT") ? "VNDIRECT" : "VCI",
       totalRequested: tickers.length,
       successCount,
       cacheFallbackCount: resultsWithLifecycle.filter((r) => "servedFromCache" in r && r.servedFromCache).length,
       results: resultsWithLifecycle,
-    });
+    }, { headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=900" } });
   } catch (err) {
     console.error("[api/cotuc/events] Lỗi:", err);
     return NextResponse.json({ error: "Không thể tải sự kiện GDKHQ/ĐHCĐ lúc này." }, { status: 500 });
