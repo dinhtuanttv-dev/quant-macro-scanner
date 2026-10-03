@@ -20,6 +20,10 @@ import { CANDIDATE_WINDOWS, buildRequiredOffsets } from "./candidate-windows";
 import type { CyclePathsV3, CycleStatsV3 } from "./timing-types";
 
 
+/** Số năm lịch sử cho backtest chu kỳ cổ tức: 10 năm (SSI có từ 10/2016) — 5 năm chỉ cho 2–5 đợt/mã, dưới ngưỡng 8 đợt
+ * của cổng thống kê; cùng độ dài với mùa vụ KQKD (SEASONALITY_YEARS). */
+export const CYCLE_YEARS = 10;
+
 export interface CycleComputeContext {
   ticker: string;
   currentExDate?: string | null;
@@ -45,7 +49,7 @@ export interface BenchmarkPricesFailure {
  * (tinh theo lo cho CA vu tru), tranh goi VNDirect N lan cho N ma. */
 /** VN-Index ~5 năm: SSI (qua Gateway) là nguồn chính, VNDirect dự phòng (price-source.ts). */
 export async function fetchBenchmarkPricesOnce(): Promise<{ date: string; adjClose: number }[] | BenchmarkPricesFailure> {
-  const bench = await loadBenchmarkPrices(5);
+  const bench = await loadBenchmarkPrices(CYCLE_YEARS);
   if (!bench.ok) return { reason: "BENCHMARK_PRICE_FETCH_FAILED", detail: bench.error ?? "khong ro" };
   return Object.assign(bench.prices, { source: bench.source });
 }
@@ -95,7 +99,7 @@ export async function buildCycleContext(
     `dividendCycleWindow.findMany(${ticker})`,
   );
   // Giá mã: SSI + cổ tức tiền mặt sau thuế (chuỗi tổng lợi suất); dự phòng Yahoo (price-source.ts).
-  const stockRes = await loadStockPrices(ticker, 5);
+  const stockRes = await loadStockPrices(ticker, CYCLE_YEARS);
 
   let benchmarkPrices: { date: string; adjClose: number }[];
   let benchmarkSource: PriceSourceTag | null = null;
@@ -103,7 +107,7 @@ export async function buildCycleContext(
     benchmarkPrices = preloadedBenchmark;
     benchmarkSource = (preloadedBenchmark as { source?: PriceSourceTag }).source ?? null;
   } else {
-    const bench = await loadBenchmarkPrices(5);
+    const bench = await loadBenchmarkPrices(CYCLE_YEARS);
     if (!bench.ok) return { reason: "BENCHMARK_PRICE_FETCH_FAILED", detail: bench.error ?? "khong ro" };
     benchmarkPrices = bench.prices;
     benchmarkSource = bench.source;
@@ -112,8 +116,12 @@ export async function buildCycleContext(
   if (!stockRes.ok || stockRes.prices.length < 60) {
     return { reason: "STOCK_PRICE_FETCH_FAILED", detail: stockRes.error ?? `so_phien=${stockRes.prices.length} (can >=60)` };
   }
-  if (historyRows.length === 0) {
-    return { reason: "NO_DIVIDEND_HISTORY", detail: `Khong tim thay dong nao trong bang DividendCycleWindow cho ticker="${ticker}"` };
+  // Lich su GDKHQ: VNDirect (co tuc tien mat, da qua) la nguon chinh cho MOI ma trong danh muc ~300 ma; bang
+  // DividendCycleWindow (chi co 17 ma goc, tu VCI) chi la du phong khi VNDirect khong tra su kien nao.
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const vndPast = [...new Set((stockRes.cashExDates ?? []).filter((d) => d < todayIso))].sort().reverse();
+  if (vndPast.length === 0 && historyRows.length === 0) {
+    return { reason: "NO_DIVIDEND_HISTORY", detail: `Khong co dot co tuc tien mat nao (VNDirect + DividendCycleWindow) cho ticker="${ticker}"` };
   }
 
   const stockPrices = stockRes.prices;
@@ -125,7 +133,7 @@ export async function buildCycleContext(
   const commonDates = benchmarkPrices.map((p: { date: string }) => p.date).filter((d: string) => stockDateSet.has(d));
   const cal = makeTradingCalendarFromPrices(commonDates);
 
-  const eventExDates = historyRows.map((r: { exDate: Date }) => r.exDate.toISOString().slice(0, 10));
+  const eventExDates = vndPast.length > 0 ? vndPast : historyRows.map((r: { exDate: Date }) => r.exDate.toISOString().slice(0, 10));
   const offsets = buildRequiredOffsets();
 
   const cyclePaths = computeCyclePaths({

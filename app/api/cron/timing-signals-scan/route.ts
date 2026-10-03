@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@/lib/generated/prisma";
 import { prisma } from "@/lib/prisma";
-import { DIVIDEND_STOCKS } from "@/lib/quant-cotuc";
+import { getCotucUniverse } from "@/lib/cotuc/cotuc-universe";
+import { appendIntradayBar, fetchLiveIndex, fetchLiveQuotes } from "@/lib/cotuc/timing-v3/intraday";
 import { buildCycleContext, buildCycleStatsV3, fetchBenchmarkPricesOnce, type CycleComputeContext } from "@/lib/cotuc/timing-v3/compute-cycle-io";
 import { buildRequiredOffsets } from "@/lib/cotuc/timing-v3/candidate-windows";
 import { vnHolidayCalendar } from "@/lib/cotuc/timing-v3/vn-holidays";
@@ -61,27 +62,36 @@ export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const offset = Number(searchParams.get("offset") ?? "0");
-    const limit = Number(searchParams.get("limit") ?? "999");
+    const limit = Math.max(1, Math.min(60, Number(searchParams.get("limit") ?? "25")));
 
     const benchmarkPrices = await fetchBenchmarkPricesOnce();
     if ("reason" in benchmarkPrices) {
       return NextResponse.json({ error: "Không tải được giá VN-Index.", detail: benchmarkPrices.detail }, { status: 500 });
     }
 
-    const allTickers = DIVIDEND_STOCKS.map((s) => s.ticker);
+    // Danh mục = danh mục Siêu Quét AI (~300 mã, Market Gateway); quét theo lô offset/limit (Gateway gọi liên tục).
+    const universe = await getCotucUniverse();
+    const allTickers = universe.tickers.map((t) => t.ticker);
     const tickers = allTickers.slice(offset, offset + limit);
     const today = vnToday();
     const now = new Date();
-    const regime = classifyMarketRegime({ closes: benchmarkPrices.filter((p) => p.date <= today).map((p) => p.adjClose) });
+    // Giá trong phiên (SSI qua Gateway) cho ảnh chụp quyết định; chấm kết quả theo dõi vẫn dùng giá đóng cửa.
+    const [liveQuotes, liveIndex] = await Promise.all([fetchLiveQuotes(tickers), fetchLiveIndex("VNINDEX")]);
+    const benchLive = appendIntradayBar(benchmarkPrices, liveIndex);
+    const regime = classifyMarketRegime({ closes: benchLive.filter((p) => p.date <= today).map((p) => p.adjClose) });
 
     // 1) Giá + backtest cho từng mã.
     const ctxs: { ctx: CycleComputeContext; stats: CycleStatsV3 }[] = [];
+    const noHistory: string[] = [];
     let skippedCount = 0;
     for (const batch of chunk(tickers, BATCH_SIZE)) {
       const results = await Promise.all(batch.map(async (ticker) => {
         try {
           const ctx = await buildCycleContext(ticker, benchmarkPrices);
-          if ("reason" in ctx) return null;
+          if ("reason" in ctx) {
+            if (ctx.reason === "NO_DIVIDEND_HISTORY") noHistory.push(ticker);
+            return null;
+          }
           return { ctx, stats: buildCycleStatsV3(ctx) };
         } catch (e) {
           console.error(`[timing-signals-scan] ${ticker}:`, e);
@@ -91,15 +101,22 @@ export async function GET(req: Request) {
       for (const r of results) { if (r) ctxs.push(r); else skippedCount++; }
     }
 
-    // 2) Prior Beta liên mã cho tỷ lệ thắng từng cửa sổ (leave-one-out, cần ≥ 5 mã khác có ≥ 3 đợt).
-    const windowIds = new Set(ctxs.flatMap((c) => c.stats.windows.map((w) => w.id)));
+    // 2) Prior Beta liên mã cho tỷ lệ thắng từng cửa sổ (leave-one-out, cần ≥ 5 mã khác có ≥ 3 đợt): lô hiện tại +
+    //    tỷ lệ thắng đã lưu của các mã khác trong danh mục (snapshot.backtest) -> prior không phụ thuộc cách chia lô.
+    type Rate = { ticker: string; id: string; nEvents: number; winRate: number };
+    const batchRates: Rate[] = ctxs.flatMap((c) => c.stats.windows.map((w) => ({ ticker: c.ctx.ticker, id: w.id, nEvents: w.nEvents, winRate: w.winRate })));
+    const inBatch = new Set(ctxs.map((c) => c.ctx.ticker));
+    const storedRows = await prisma.cotucDecisionState.findMany({ where: { ticker: { notIn: [...inBatch] } }, select: { ticker: true, snapshot: true } });
+    const storedRates: Rate[] = storedRows.flatMap((r) => {
+      const bt = (r.snapshot as { backtest?: { id: string; nEvents: number; winRate: number }[] } | null)?.backtest ?? [];
+      return bt.map((w) => ({ ticker: r.ticker, ...w }));
+    });
+    const allRates = [...batchRates, ...storedRates];
+    const windowIds = new Set(allRates.map((r) => r.id));
     const priorFor = (ticker: string): Record<string, { alpha0: number; beta0: number }> => {
       const out: Record<string, { alpha0: number; beta0: number }> = {};
       for (const id of windowIds) {
-        const rates = ctxs.filter((c) => c.ctx.ticker !== ticker)
-          .map((c) => c.stats.windows.find((w) => w.id === id))
-          .filter((w): w is NonNullable<typeof w> => !!w && w.nEvents >= 3)
-          .map((w) => w.winRate);
+        const rates = allRates.filter((r) => r.ticker !== ticker && r.id === id && r.nEvents >= 3).map((r) => r.winRate);
         if (rates.length >= 5) out[id] = estimatePriorFromRates(rates, 10);
       }
       return out;
@@ -125,12 +142,15 @@ export async function GET(req: Request) {
         const q = earnings ? Number(earnings.quarterLabel.match(/^Q([1-4])/)?.[1] ?? 0) : 0;
         const earningsStats = q ? (((season?.stats ?? {}) as unknown as Record<string, EarningsCycleStatsV3>)[String(q)] ?? null) : null;
 
-        const exDate = resolveUpcomingExDate(today, ctx.cashExDates ?? [], ctx.eventExDates, now.toISOString(), vnHolidayCalendar);
+        const selWin = selectedWindow(stats);
+        const exDate = resolveUpcomingExDate(today, ctx.cashExDates ?? [], ctx.eventExDates, now.toISOString(), vnHolidayCalendar,
+          selWin && selWin.entryFrom > 0 ? selWin : null);
         const snap = buildDecisionSnapshot({
           ticker, today, cal: vnHolidayCalendar, stats, offsets, eventPaths: ctx.cyclePaths.eventPaths,
-          stockPrices: ctx.stockPrices ?? [], benchmarkPrices: ctx.benchmarkPrices ?? benchmarkPrices,
+          stockPrices: appendIntradayBar(ctx.stockPrices ?? [], liveQuotes.get(ticker)), benchmarkPrices: benchLive,
           exDate, earnings, earningsStats, avgValue20: ctx.avgValue20 ?? null, dividendPriors: priorFor(ticker), regime,
         });
+        const snapToStore = { ...snap, backtest: stats.windows.map((w) => ({ id: w.id, nEvents: w.nEvents, winRate: w.winRate })) };
         const rec = snap.recommendation;
         const sel = selectedWindow(stats);
         const baseConfidence = sel ? (sel.nEvents >= 12 && (sel.oosMeanNet ?? -1) > 0 ? "HIGH" : sel.nEvents >= 8 ? "MEDIUM" : "LOW") : null;
@@ -146,7 +166,7 @@ export async function GET(req: Request) {
 
         const decisionRow = {
           ticker, level: snap.decision.level, action: rec.action, combinedProbability: snap.decision.combinedProbability,
-          snapshot: toJson(snap), computedAt: now,
+          snapshot: toJson(snapToStore), computedAt: now,
         };
         await prisma.cotucDecisionState.upsert({ where: { ticker }, create: decisionRow, update: decisionRow });
         decisionCount++;
@@ -178,9 +198,20 @@ export async function GET(req: Request) {
       }
     }
 
+    // Mã chưa từng chi cổ tức tiền mặt: vẫn ghi một dòng NO_DATE để Screener hiện đúng trạng thái thay vì trống.
+    for (const ticker of noHistory) {
+      const row = {
+        ticker, action: "NO_DATE", tdToEx: null, windowEntryFrom: null, windowEntryTo: null, windowExitOffset: null,
+        expectedNetReturn: null, nEvents: null, fdrQValue: null, confidence: null, generatedAt: now,
+      };
+      await prisma.timingSignalCache.upsert({ where: { ticker }, create: row, update: row });
+    }
+
+    const nextOffset = offset + limit >= allTickers.length ? 0 : offset + limit;
     return NextResponse.json({
-      savedCount, skippedCount, decisionCount, levels, regime: regime.regime, issuedCount, resolvedCount, errors,
-      processedInThisCall: tickers.length, offset, limit, totalTickers: allTickers.length, today,
+      savedCount, skippedCount, noDividendHistory: noHistory.length, decisionCount, levels, regime: regime.regime, issuedCount, resolvedCount, errors,
+      processedInThisCall: tickers.length, offset, limit, nextOffset, totalTickers: allTickers.length, universeSource: universe.source,
+      intraday: { quotes: liveQuotes.size, index: liveIndex }, today,
     });
   } catch (err) {
     console.error("[api/cron/timing-signals-scan] Lỗi:", err);

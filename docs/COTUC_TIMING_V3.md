@@ -95,3 +95,24 @@ port từ global-quanta `src/lib/quant-cotuc.ts` (đổi một nơi phải đổ
 hoặc trong 120 ngày). Kết quả khi đã có giá tới ngày thoát: CAR thực từ ngày ghi tới ngày thoát > 0 ⇒ 1.
 Tóm tắt dùng `signal-tracking-log` của gói: tỷ lệ đúng 20 gần nhất, Brier, CUSUM hai phía (k 0,05, h 5) nhắm xác suất
 trung bình đã báo. **learnSignalWeights và calibration KHÔNG bật** — cần vài quý kết quả thật (≥ 30 bản ghi).
+
+## Mở rộng danh mục ~300 mã + quét liên tục (2026-10)
+
+- **Danh mục** (`lib/cotuc/cotuc-universe.ts`): đúng danh mục Siêu Quét AI — Market Gateway `/api/market/scanner/universe`
+  (281 mã ngày 03/10/2026), 17 mã cổ tức gốc luôn đứng đầu, phần còn lại theo GTGD giảm dần (thứ tự ổn định cho offset/limit).
+  Gateway lỗi → 17 mã gốc. Dùng ở: `timing-signals-scan`, `earnings-seasonality-scan`, `/api/cotuc/events`, `dividend-events-scan`.
+- **Sự kiện quyền = VNDirect** cho toàn bộ luồng cũ: `fetchDividendEvents` / `fetchDividendEventsBatch` (vci-events-adapter.ts)
+  lấy VNDirect trước (một lượt cho cả danh mục, `fetchVndEventsVciShapeBulk`, ~2 giây / 281 mã) rồi mới tới VCI; dữ liệu đổi
+  về đúng định dạng VCI (`vndEventsToVciShape`) nên `/api/cotuc/events`, `DividendEventCache`, `buildLifecycleEvents` và giao diện
+  không đổi hợp đồng. `/api/cotuc/events` có `Cache-Control: s-maxage=300`.
+- **Lịch sử GDKHQ cho backtest**: VNDirect (cổ tức tiền đã qua) cho MỌI mã; `DividendCycleWindow` chỉ còn dự phòng. Backtest
+  10 năm (`CYCLE_YEARS`, SSI từ 10/2016) thay vì 5 năm.
+- **Giá trong phiên** (`timing-v3/intraday.ts`): mỗi lượt quét thêm phiên hôm nay từ Gateway `/quotes` + `/indices/VNINDEX` vào
+  chuỗi dùng cho ảnh chụp quyết định (CAR hiện tại, chế độ thị trường). Chấm kết quả theo dõi vẫn dùng giá đóng cửa.
+- **Cron theo lô**: `timing-signals-scan?offset&limit` (mặc định 25, tối đa 60) và `earnings-seasonality-scan?phase=collect&offset&limit`
+  (mặc định 3, tối đa 10) trả `nextOffset` — Market Gateway gọi xoay vòng liên tục (xem global-quanta `docs/MARKET_DATA_GATEWAY.md`).
+  Prior Beta liên mã đọc thêm `snapshot.backtest` đã lưu của các mã khác nên không phụ thuộc cách chia lô. Mã chưa từng chi cổ tức
+  tiền vẫn có dòng `NO_DATE` trong TimingSignalCache.
+- **Cửa sổ sau GDKHQ (W4/W5)**: đợt vừa qua còn hiệu lực tới điểm thoát (trước đây luôn bị coi là POST_EX).
+- **Cột KQKD của Screener**: `/api/cotuc/timing-signals` trả `earnings` (tăng trưởng LNST/doanh thu, giới hạn ±150%) + `dateStatus`.
+- **Lịch nghỉ 2027 tạm thời**: chỉ lễ dương lịch cố định (01/01, 30/04, bù 03/05, 02/09); Tết/Giỗ Tổ chờ Sở công bố.

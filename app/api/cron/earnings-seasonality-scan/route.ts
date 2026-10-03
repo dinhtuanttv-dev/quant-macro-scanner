@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/lib/generated/prisma/client";
 import { DIVIDEND_STOCKS } from "@/lib/quant-cotuc";
+import { getCotucUniverse, type CotucUniverseTicker } from "@/lib/cotuc/cotuc-universe";
 import { stockUniverse } from "@/lib/quant-data";
 import { loadBenchmarkPrices, loadStockPrices } from "@/lib/cotuc/timing-v3/price-source";
 import { buildEarningsSignalForTicker } from "@/lib/cotuc/timing-v3/earnings-signal-io";
@@ -31,7 +32,7 @@ function authorized(req: Request): boolean {
   return !secret || req.headers.get("authorization") === `Bearer ${secret}`;
 }
 
-async function collect(tickers: string[]) {
+async function collect(tickers: string[], meta: Map<string, CotucUniverseTicker>) {
   const bench = await loadBenchmarkPrices(SEASONALITY_YEARS);
   if (!bench.ok) throw new Error(`Không tải được VN-Index: ${bench.error}`);
   const asOf = new Date().toISOString();
@@ -39,8 +40,9 @@ async function collect(tickers: string[]) {
   for (let i = 0; i < tickers.length; i += BATCH) {
     await Promise.all(tickers.slice(i, i + BATCH).map(async (ticker) => {
       try {
-        const sector = DIVIDEND_STOCKS.find((s) => s.ticker === ticker)?.sector ?? stockUniverse.find((s) => s.ticker === ticker)?.sector ?? null;
-        const isBank = stockUniverse.find((s) => s.ticker === ticker)?.sector === "Ngan hang";
+        // Ngành: 17 mã gốc giữ ngành cũ; mã khác lấy ngành của danh mục Siêu Quét (prior mùa vụ tính theo ngành × quý).
+        const sector = DIVIDEND_STOCKS.find((s) => s.ticker === ticker)?.sector ?? meta.get(ticker)?.sector ?? stockUniverse.find((s) => s.ticker === ticker)?.sector ?? null;
+        const isBank = /ng[aâ]n h[aà]ng/i.test(sector ?? "") || stockUniverse.find((s) => s.ticker === ticker)?.sector === "Ngan hang";
         const [prices, ann, signal] = await Promise.all([loadStockPrices(ticker, SEASONALITY_YEARS), fetchAnnounceDates(ticker), buildEarningsSignalForTicker(ticker, isBank)]);
         if (!prices.ok) { results.push({ ticker, ok: false, detail: `giá: ${prices.error}` }); return; }
         if (!ann.ok) { results.push({ ticker, ok: false, detail: `ngày công bố: ${ann.error}` }); return; }
@@ -90,11 +92,15 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const phase = searchParams.get("phase");
     const offset = Number(searchParams.get("offset") ?? "0");
-    const limit = Number(searchParams.get("limit") ?? "999");
-    const tickers = DIVIDEND_STOCKS.map((s) => s.ticker).slice(offset, offset + limit);
+    const limit = Math.max(1, Math.min(10, Number(searchParams.get("limit") ?? "3")));
     if (phase === "finalize") return NextResponse.json(await finalize());
-    const collected = await collect(tickers);
-    if (phase === "collect") return NextResponse.json({ collected });
+    // Danh mục = danh mục Siêu Quét AI (~300 mã); Gateway gọi xoay vòng theo lô offset/limit rồi finalize.
+    const universe = await getCotucUniverse();
+    const all = universe.tickers.map((t) => t.ticker);
+    const tickers = all.slice(offset, offset + limit);
+    const collected = await collect(tickers, new Map(universe.tickers.map((t) => [t.ticker, t])));
+    const nextOffset = offset + limit >= all.length ? 0 : offset + limit;
+    if (phase === "collect") return NextResponse.json({ collected, offset, limit, nextOffset, totalTickers: all.length, universeSource: universe.source });
     return NextResponse.json({ collected, ...(await finalize()) });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });

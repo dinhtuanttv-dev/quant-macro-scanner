@@ -61,7 +61,7 @@ export function parseVndEvents(rows: RawEvent[]): Omit<VndCorporateActions, "ok"
 
 export async function fetchVndCorporateActions(ticker: string, { fetchImpl = fetch }: { fetchImpl?: typeof fetch } = {}): Promise<VndCorporateActions> {
   try {
-    const url = `${BASE}/events?q=code:${encodeURIComponent(ticker)}~locale:VN~group:investorRight&sort=effectiveDate:desc&size=200`;
+    const url = `${BASE}/events?q=code:${encodeURIComponent(ticker)}~locale:VN~group:investorRight~type:DIVIDEND,STOCKDIV,KINDDIV,MEETING&sort=effectiveDate:desc&size=500`;
     const json = await getJson(url, fetchImpl);
     return { ok: true, ...parseVndEvents((json.data ?? []) as RawEvent[]) };
   } catch (e) {
@@ -102,5 +102,98 @@ export async function fetchVndQuarterlyFinancials(ticker: string, { fetchImpl = 
     return { available: quarters.length > 0, quarters, error: quarters.length ? undefined : "VNDirect không có BCTC quý" };
   } catch (e) {
     return { available: false, quarters: [], error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Sự kiện quyền ở ĐỊNH DẠNG VCI (eventCode DIV/ISS/AGME, exrightDate, payoutDate…) — để toàn bộ luồng cũ của tab Cổ tức
+// (fetchDividendEvents -> /api/cotuc/events, dividend-events-scan -> DividendEventCache, buildLifecycleEvents,
+// useDividendEvents phía giao diện) nhận dữ liệu THẬT từ VNDirect mà không đổi hợp đồng nào. VCI chỉ còn là dự phòng.
+//   DIVIDEND -> DIV  (exrightDate = effectiveDate = GDKHQ, payoutDate = actualDate = ngày trả, valuePerShare = dividend)
+//   STOCKDIV -> ISS  "Cổ tức bằng cổ phiếu" ; KINDDIV -> ISS "Cổ phiếu thưởng" (classifyIssEvent đọc đúng 2 cụm này)
+//   MEETING  -> AGME (issueDate = effectiveDate = ngày họp ĐHCĐ)
+// ---------------------------------------------------------------------------
+
+interface RawVndEvent extends RawEvent { disclosureDate?: string | null; actualDate?: string | null; typeDesc?: string | null; id?: string }
+
+export interface VciShapedRawEvent {
+  eventCode: "DIV" | "ISS" | "AGME";
+  publicDate: string | null;
+  exrightDate: string | null;
+  issueDate: string | null;
+  recordDate: null;
+  payoutDate: string | null;
+  listingDate: null;
+  eventTitleVi: string;
+  valuePerShare: number | null;
+  exerciseRatio: number | null;
+  source: "VNDIRECT";
+}
+
+/** Hàm thuần: sự kiện VNDirect thô -> sự kiện dạng VCI (bỏ bản EN_GB trùng, bỏ loại không liên quan). */
+export function vndEventsToVciShape(rows: RawVndEvent[]): VciShapedRawEvent[] {
+  const day = (s?: string | null) => (s && /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : null);
+  const out: VciShapedRawEvent[] = [];
+  const seen = new Set<string>();
+  for (const e of rows) {
+    if (e.locale && e.locale !== "VN") continue;
+    const eff = day(e.effectiveDate);
+    if (!eff) continue;
+    const key = `${e.type}:${eff}:${e.dividend ?? ""}:${e.ratio ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const base = { publicDate: day(e.disclosureDate), recordDate: null, listingDate: null, source: "VNDIRECT" as const };
+    if (e.type === "DIVIDEND" && typeof e.dividend === "number" && e.dividend > 0) {
+      out.push({ ...base, eventCode: "DIV", exrightDate: eff, issueDate: null, payoutDate: day(e.actualDate),
+        eventTitleVi: e.note || `Cổ tức bằng tiền ${e.dividend.toLocaleString("vi-VN")} đ/cp`, valuePerShare: e.dividend, exerciseRatio: null });
+    } else if ((e.type === "STOCKDIV" || e.type === "KINDDIV") && typeof e.ratio === "number" && e.ratio > 0) {
+      const title = e.type === "STOCKDIV" ? "Cổ tức bằng cổ phiếu" : "Cổ phiếu thưởng";
+      out.push({ ...base, eventCode: "ISS", exrightDate: eff, issueDate: null, payoutDate: null,
+        eventTitleVi: `${title}${e.note ? ` — ${e.note}` : ""}`, valuePerShare: null, exerciseRatio: e.ratio / 100 });
+    } else if (e.type === "MEETING") {
+      out.push({ ...base, eventCode: "AGME", exrightDate: null, issueDate: eff, payoutDate: null,
+        eventTitleVi: e.note || e.typeDesc || "Họp ĐHĐCĐ", valuePerShare: null, exerciseRatio: null });
+    }
+  }
+  return out;
+}
+
+/** Sự kiện quyền dạng VCI của một mã trong [from, to] (ISO). */
+export async function fetchVndEventsVciShape(
+  ticker: string, from: string, to: string, { fetchImpl = fetch }: { fetchImpl?: typeof fetch } = {},
+): Promise<{ ok: true; events: VciShapedRawEvent[] } | { ok: false; error: string }> {
+  try {
+    const q = `code:${encodeURIComponent(ticker)}~locale:VN~group:investorRight~type:DIVIDEND,STOCKDIV,KINDDIV,MEETING~effectiveDate:gte:${from}~effectiveDate:lte:${to}`;
+    const json = await getJson(`${BASE}/events?q=${q}&sort=effectiveDate:desc&size=300`, fetchImpl);
+    return { ok: true, events: vndEventsToVciShape((json.data ?? []) as RawVndEvent[]) };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * Sự kiện quyền dạng VCI cho NHIỀU mã trong MỘT lượt (lọc `code:A,B,C…`, tối đa 100 mã/request) — danh mục ~300 mã
+ * chỉ tốn 3 request (~2 giây) thay vì 300. Mã không có sự kiện nào vẫn có mặt với danh sách rỗng.
+ */
+export async function fetchVndEventsVciShapeBulk(
+  tickers: string[], from: string, to: string, { fetchImpl = fetch }: { fetchImpl?: typeof fetch } = {},
+): Promise<{ ok: true; byTicker: Map<string, VciShapedRawEvent[]> } | { ok: false; error: string }> {
+  const byTicker = new Map<string, VciShapedRawEvent[]>(tickers.map((t) => [t, []]));
+  try {
+    for (let i = 0; i < tickers.length; i += 100) {
+      const codes = tickers.slice(i, i + 100).map(encodeURIComponent).join(",");
+      const q = `code:${codes}~locale:VN~group:investorRight~type:DIVIDEND,STOCKDIV,KINDDIV,MEETING~effectiveDate:gte:${from}~effectiveDate:lte:${to}`;
+      const json = await getJson(`${BASE}/events?q=${q}&sort=effectiveDate:desc&size=10000`, fetchImpl, 30_000);
+      const rows = (json.data ?? []) as (RawVndEvent & { code?: string })[];
+      const grouped = new Map<string, RawVndEvent[]>();
+      for (const r of rows) {
+        const c = r.code?.toUpperCase();
+        if (c && byTicker.has(c)) grouped.set(c, [...(grouped.get(c) ?? []), r]);
+      }
+      for (const [c, list] of grouped) byTicker.set(c, vndEventsToVciShape(list));
+    }
+    return { ok: true, byTicker };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 }
