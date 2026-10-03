@@ -169,6 +169,35 @@ export function bootstrapLowerBound(values: number[], confidenceLevel: number, c
   return means[idx];
 }
 
+/**
+ * Cận dưới bootstrap của MỘT ƯỚC LƯỢNG BẤT KỲ (không chỉ trung bình thô): mỗi lần lấy mẫu lại, tính lại toàn bộ
+ * `estimator` trên mẫu đó, rồi lấy phân vị (1 − confidenceLevel). Cùng PRNG/seed với bootstrapLowerBound -> tái lập được.
+ *
+ * Dùng cho kỳ vọng ròng ĐÃ CO (shrinkage): cận dưới phải là khoảng tin cậy của CHÍNH con số được báo cáo. Trước đây
+ * cận dưới bootstrap trên trung bình CHƯA CO trong khi kỳ vọng hiển thị là số ĐÃ CO -> hai thang khác nhau, cận dưới
+ * có thể lớn hơn kỳ vọng (VD BMP E2: kỳ vọng +2,1%, cận dưới +2,6%) và cổng "cận dưới > 0" kém thận trọng hơn thiết kế.
+ */
+export function bootstrapLowerBoundOf(
+  values: number[],
+  estimator: (sample: number[]) => number,
+  confidenceLevel: number,
+  cfg: BootstrapConfig,
+): number {
+  if (values.length === 0) return Number.NaN;
+  if (values.length === 1) return estimator(values);
+  const rand = mulberry32(cfg.seed);
+  const n = values.length;
+  const stats: number[] = new Array(cfg.iterations);
+  const sample: number[] = new Array(n);
+  for (let b = 0; b < cfg.iterations; b++) {
+    for (let i = 0; i < n; i++) sample[i] = values[Math.floor(rand() * n)];
+    stats[b] = estimator(sample);
+  }
+  stats.sort((a, b) => a - b);
+  const alpha = 1 - confidenceLevel;
+  return stats[Math.max(0, Math.min(stats.length - 1, Math.floor(alpha * stats.length)))];
+}
+
 // ---------------------------------------------------------------------------
 // Walk-forward (mục 5.5.1, đơn giản hoá: cắt theo năm)
 // ---------------------------------------------------------------------------
@@ -294,7 +323,11 @@ export function computeWindowStat(candidate: WindowCandidate, opts: ComputeWindo
     betweenVar,
   );
 
-  const netExpectancyLcb = n > 0 ? bootstrapLowerBound(nets, gating.confidenceLevel, bootstrap) : Number.NaN;
+  // Cận dưới của CHÍNH ước lượng đã co: mỗi mẫu bootstrap tính lại trung bình, phương sai trong mã và trọng số co
+  // (prior và phương sai liên mã giữ cố định) -> cùng thang với netExpectancy, luôn phản ánh độ bất định của trọng số co.
+  const shrunkOf = (xs: number[]) =>
+    shrinkMean(xs.reduce((a, b) => a + b, 0) / xs.length, xs.length, priorMean, sampleVariance(xs), betweenVar).shrunkMean;
+  const netExpectancyLcb = n > 0 ? bootstrapLowerBoundOf(nets, shrunkOf, gating.confidenceLevel, bootstrap) : Number.NaN;
   const winRate = n > 0 ? nets.filter((x) => x > 0).length / n : 0;
   const sd = Math.sqrt(withinVar);
   const pValue = oneSidedPValue(n ? nets.reduce((a, b) => a + b, 0) / n : 0, sd, n);
