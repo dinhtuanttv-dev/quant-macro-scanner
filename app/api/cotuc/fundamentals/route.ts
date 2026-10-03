@@ -1,15 +1,12 @@
 import { NextResponse } from "next/server";
-import { fetchQuarterlyIncomeBatch } from "@/lib/cotuc/vci-financials-adapter";
-import { fetchQuarterlyBalanceBatch } from "@/lib/cotuc/vci-balance-sheet-adapter";
-import { fetchOhlcvHistory, fetchQuoteBatch } from "@/lib/market-data/yahoo-finance-adapter";
-import { calculateRSI, extractCloses } from "@/lib/market-data/technical-indicators";
-import { DIVIDEND_STOCKS } from "@/lib/quant-cotuc";
+import { getCotucUniverse } from "@/lib/cotuc/cotuc-universe";
+import { fetchVndFundamentalsBulk } from "@/lib/cotuc/vndirect-fundamentals";
 
-// P0 (2026-09-12): thay du lieu mau tinh cua Bo Loc chinh bang du lieu
-// THAT - P/E, ROE, No/Von chu so huu (tu VCI, da xac nhan dung field qua
-// debug API that), RSI (tu Yahoo Finance, cong thuc Wilder da test dung
-// bo du lieu kinh dien). 17 ma x 3 nguon du lieu song song - can thoi
-// gian du (60s) hon route KQKD don gian.
+// Chỉ số cơ bản THẬT cho cả danh mục Siêu Quét (~300 mã) từ VNDirect finfo, theo lô (~5 giây).
+// Thay nguồn VCI + Yahoo (VCI 403 từ 10/2026 -> 0/17 mã có dữ liệu thật). GIỮ hợp đồng cũ (price, peRatio, roe, debtEquity,
+// rsi14, dataQuality) + thêm pbRatio, epsTtm, bvps, dividendYield, beta, latestQuarter.
+//   price  = null: giao diện dùng giá khớp trực tiếp SSI (Gateway) — không trả giá trễ ở đây.
+//   rsi14  = null: không còn nguồn chuỗi giá theo lô ở route này; giao diện hiện "—" thay vì số mẫu.
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
@@ -17,75 +14,42 @@ export interface StockFundamentals {
   ticker: string;
   price: number | null;
   peRatio: number | null;
-  roe: number | null;      // %
+  roe: number | null; // %
   debtEquity: number | null;
   rsi14: number | null;
   dataQuality: "HARD_DATA" | "PARTIAL" | "UNAVAILABLE";
+  pbRatio: number | null;
+  epsTtm: number | null;
+  bvps: number | null;
+  dividendYield: number | null; // tỷ lệ
+  beta: number | null;
+  latestQuarter: string | null;
 }
 
 export async function GET() {
-  const tickers = DIVIDEND_STOCKS.map((s) => s.ticker);
-
   try {
-    const [incomeResults, balanceResults, quotes] = await Promise.all([
-      fetchQuarterlyIncomeBatch(tickers),
-      fetchQuarterlyBalanceBatch(tickers),
-      fetchQuoteBatch(tickers),
-    ]);
-
-    // RSI can chuoi gia lich su rieng (fetchOhlcvHistory tung ma) - goi
-    // song song, KHONG tuan tu, tranh cham nhu cac route khac da gap.
-    const ohlcvResults = await Promise.allSettled(
-      tickers.map((t) => fetchOhlcvHistory(t, "2mo"))
+    const universe = await getCotucUniverse();
+    const { fundamentals: raw, errors } = await fetchVndFundamentalsBulk(universe.tickers.map((t) => t.ticker));
+    const fundamentals: StockFundamentals[] = raw.map((f) => {
+      const core = [f.peRatio, f.roe, f.debtEquity].filter((v) => v !== null).length;
+      return {
+        ticker: f.ticker, price: null, peRatio: f.peRatio, roe: f.roe, debtEquity: f.debtEquity, rsi14: null,
+        dataQuality: core === 3 ? "HARD_DATA" : core > 0 ? "PARTIAL" : "UNAVAILABLE",
+        pbRatio: f.pbRatio, epsTtm: f.epsTtm, bvps: f.bvps, dividendYield: f.dividendYield, beta: f.beta, latestQuarter: f.latestQuarter,
+      };
+    });
+    return NextResponse.json(
+      {
+        generatedAt: new Date().toISOString(),
+        source: "VNDIRECT",
+        universeSource: universe.source,
+        totalRequested: fundamentals.length,
+        hardDataCount: fundamentals.filter((f) => f.dataQuality === "HARD_DATA").length,
+        errors,
+        fundamentals,
+      },
+      { headers: { "Cache-Control": "public, s-maxage=1800, stale-while-revalidate=7200" } },
     );
-
-    const incomeMap = new Map(incomeResults.map((r) => [r.ticker, r]));
-    const balanceMap = new Map(balanceResults.map((r) => [r.ticker, r]));
-
-    const fundamentals: StockFundamentals[] = tickers.map((ticker, i) => {
-      const income = incomeMap.get(ticker);
-      const balance = balanceMap.get(ticker);
-      const quote = quotes[ticker];
-      const ohlcvRes = ohlcvResults[i];
-
-      const price = quote?.price ?? null;
-
-      // LNST TTM + EPS TTM = tong 4 quy gan nhat (neu du du lieu)
-      const last4 = income?.available ? income.quarters.slice(0, 4) : [];
-      const hasFull4Quarters = last4.length === 4;
-      const netProfitTTM = hasFull4Quarters ? last4.reduce((s, q) => s + (q.netProfit ?? 0), 0) : null;
-      const epsTTM = hasFull4Quarters ? last4.reduce((s, q) => s + (q.eps ?? 0), 0) : null;
-
-      const latestBalance = balance?.available ? balance.quarters[0] : null;
-      const totalEquity = latestBalance?.totalEquity ?? null;
-      const totalLiabilities = latestBalance?.totalLiabilities ?? null;
-
-      const roe = netProfitTTM !== null && totalEquity ? (netProfitTTM / totalEquity) * 100 : null;
-      const debtEquity = totalLiabilities !== null && totalEquity ? totalLiabilities / totalEquity : null;
-      // P/E khong tinh duoc neu EPS <= 0 (loi hoac am) - tranh P/E am gay hieu lam
-      const peRatio = price !== null && epsTTM !== null && epsTTM > 0 ? price / epsTTM : null;
-
-      let rsi14: number | null = null;
-      if (ohlcvRes.status === "fulfilled" && ohlcvRes.value.success && ohlcvRes.value.data) {
-        const closes = extractCloses(ohlcvRes.value.data);
-        rsi14 = calculateRSI(closes, 14);
-      }
-
-      const fieldsAvailable = [price, peRatio, roe, debtEquity, rsi14].filter((v) => v !== null).length;
-      const dataQuality: StockFundamentals["dataQuality"] =
-        fieldsAvailable === 5 ? "HARD_DATA" : fieldsAvailable > 0 ? "PARTIAL" : "UNAVAILABLE";
-
-      return { ticker, price, peRatio, roe, debtEquity, rsi14, dataQuality };
-    });
-
-    const hardDataCount = fundamentals.filter((f) => f.dataQuality === "HARD_DATA").length;
-
-    return NextResponse.json({
-      generatedAt: new Date().toISOString(),
-      totalRequested: tickers.length,
-      hardDataCount,
-      fundamentals,
-    });
   } catch (err) {
     console.error("[api/cotuc/fundamentals] Lỗi:", err);
     return NextResponse.json({ error: "Không thể tải dữ liệu cơ bản lúc này." }, { status: 500 });
