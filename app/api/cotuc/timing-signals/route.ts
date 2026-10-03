@@ -61,7 +61,7 @@ export async function GET() {
       ? rows.reduce((max, r) => (r.generatedAt > max ? r.generatedAt : max), rows[0].generatedAt).toISOString()
       : new Date().toISOString();
 
-    return NextResponse.json({ version: "v3-p5", asOf, signals });
+    return NextResponse.json({ version: "v3-p5", asOf, signals }, { headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300" } });
   } catch (err) {
     console.error("[api/cotuc/timing-signals] Lỗi:", err);
     return NextResponse.json({ error: "Không đọc được Timing Signals." }, { status: 500 });
