@@ -120,3 +120,17 @@ trung bình đã báo. **learnSignalWeights và calibration KHÔNG bật** — c
   lễ rơi cuối tuần nghỉ bù; 02/09 + 1 ngày liền kề từ 2021). Kiểm chứng 10 năm phiên VN-Index thật: khớp 106/106 ngày, không
   đánh nhầm ngày nào. Ngày nghỉ nối do Chính phủ đổi ngày làm việc lấy từ Gateway `/api/market/trading-calendar` (quan sát
   phiên thật + `MARKET_HOLIDAYS`) — `refreshVnHolidayCalendar()` mỗi lượt cron, lỗi thì dùng quy tắc.
+
+## Dữ liệu thật cho cả danh mục + Timeline điểm mua (2026-10)
+
+- `lib/cotuc/vndirect-fundamentals.ts`: theo lô (~5 giây / 281 mã) — `/v4/ratios` (P/E, P/B, BVPS, EPS 4 quý, tỷ suất cổ tức,
+  beta) + `/v4/financial_statements` quý (21001 doanh thu, 23000 LNST mẹ, 13000 nợ phải trả, 14000 vốn chủ). ROE = LNST mẹ
+  4 quý liên tiếp / vốn chủ quý gần nhất. Độ phủ 03/10/2026: P/E 264, ROE 275, D/E 279 / 281 mã.
+- `/api/cotuc/fundamentals` và `/api/cotuc/earnings` chuyển sang nguồn này (VCI 403), giữ hợp đồng cũ; `price`/`rsi14` = null
+  (giao diện dùng giá khớp trực tiếp SSI).
+- `timing-v3/buy-timeline.ts` + `GET /api/cotuc/buy-timeline`: Timeline điểm mua — gộp cửa sổ chu kỳ cổ tức (ảnh chụp quyết
+  định, `snapshot.backtest` nay lưu đủ chi tiết cửa sổ) và mùa vụ KQKD (E1–E4 quanh ngày công bố dự kiến). Hai bậc tách bạch:
+  VALIDATED (qua cổng thống kê) và NEAR (gần đạt, ghi rõ còn thiếu gì). Ngày vùng mua = mốc sự kiện ± số phiên theo lịch tự
+  tính. Không có "vùng giá mua" (chưa có mô hình giá đã kiểm định).
+- Lưu ý thống kê (chưa sửa, chờ quyết định): `netExpectancy` là trung bình ĐÃ CO về 0, còn `netExpectancyLcb` bootstrap trên số
+  CHƯA CO -> cận dưới có thể > kỳ vọng (VD REE w3: 3,5% / 5,5%); cổng "cận dưới > 0" vì vậy kém thận trọng hơn thiết kế.

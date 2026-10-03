@@ -1,45 +1,42 @@
 import { NextResponse } from "next/server";
-import { fetchQuarterlyIncomeBatch } from "@/lib/cotuc/vci-financials-adapter";
 import { calculateEarningsGrowth, rankBestEarnings, estimateNextDisclosureDeadline } from "@/lib/cotuc/earnings-scoring";
-import { DIVIDEND_STOCKS } from "@/lib/quant-cotuc";
+import { getCotucUniverse } from "@/lib/cotuc/cotuc-universe";
+import { fetchVndFundamentalsBulk, toQuarterlyIncomeRows } from "@/lib/cotuc/vndirect-fundamentals";
 
-// FIX P0 (2026-09-12): 10s qua thap cho 17 request song song toi VCI - rui
-// ro timeout giong het cac route khac da gap trong du an (Loc nganh, HOSE
-// ingest). Tang len 30s.
-export const maxDuration = 30;
+// "📈 KQKD Theo Quý": tăng trưởng doanh thu/LNST (YoY, QoQ) cho cả danh mục Siêu Quét (~300 mã) từ BCTC quý VNDirect.
+// Thay nguồn VCI (403 từ 10/2026 -> 17/17 mã lỗi). Giữ nguyên hợp đồng cũ và logic chấm điểm earnings-scoring.ts.
+export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const tickers = DIVIDEND_STOCKS.map((s) => s.ticker);
-
   try {
-    const financialsResults = await fetchQuarterlyIncomeBatch(tickers);
+    const universe = await getCotucUniverse();
+    const tickers = universe.tickers.map((t) => t.ticker);
+    const { statements, errors: fetchErrors } = await fetchVndFundamentalsBulk(tickers);
 
-    const growthResults = financialsResults
-      .filter((r) => r.available)
-      .map((r) => calculateEarningsGrowth(r.ticker, r.quarters))
+    const growthResults = tickers
+      .map((t) => calculateEarningsGrowth(t, toQuarterlyIncomeRows(t, statements.get(t) ?? [])))
       .filter((r): r is NonNullable<typeof r> => r !== null);
 
-    const rankedTop20 = rankBestEarnings(growthResults, 20);
-    const deadline = estimateNextDisclosureDeadline();
+    const available = new Set(growthResults.map((r) => r.ticker));
+    const failedTickers = tickers.filter((t) => !available.has(t));
 
-    const failedResults = financialsResults.filter((r) => !r.available);
-    const failedTickers = failedResults.map((r) => r.ticker);
-    // FIX P0: du lieu loi CHI TIET (r.error) da co san o tang adapter tu
-    // truoc, nhung CHUA TUNG duoc dua vao response - khien UI (da viet san
-    // phan "Xem ly do chi tiet") khong bao gio hien duoc gi. Bo sung field
-    // nay, khong doi logic gi khac.
-    const errors = failedResults.map((r) => ({ ticker: r.ticker, reason: r.error ?? "Không rõ nguyên nhân" }));
-
-    return NextResponse.json({
-      generatedAt: new Date().toISOString(),
-      totalRequested: tickers.length,
-      totalAvailable: growthResults.length,
-      failedTickers,
-      errors,
-      deadline,
-      rankedTop20,
-    });
+    return NextResponse.json(
+      {
+        generatedAt: new Date().toISOString(),
+        source: "VNDIRECT",
+        totalRequested: tickers.length,
+        totalAvailable: growthResults.length,
+        failedTickers,
+        errors: [
+          ...fetchErrors.map((reason) => ({ ticker: "*", reason })),
+          ...failedTickers.map((ticker) => ({ ticker, reason: "VNDirect chưa có BCTC quý" })),
+        ],
+        deadline: estimateNextDisclosureDeadline(),
+        rankedTop20: rankBestEarnings(growthResults, 20),
+      },
+      { headers: { "Cache-Control": "public, s-maxage=1800, stale-while-revalidate=7200" } },
+    );
   } catch (err) {
     console.error("[api/cotuc/earnings] Lỗi:", err);
     return NextResponse.json({ error: "Không thể tải dữ liệu KQKD lúc này." }, { status: 500 });
