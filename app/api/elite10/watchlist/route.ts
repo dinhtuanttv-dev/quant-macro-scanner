@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { fetchConvergenceV2 } from "@/lib/market-data/convergence-v2-adapter";
 
 // Elite 10 - "Danh sach ma" THAT: hop nhat 3 nguon da co san va DA CHAY
 // THAT tu truoc (KHONG viet lai logic, chi goi lai + port 2 ham nho vi
 // Backend/Frontend la 2 repo TACH BIET, khong import cheo duoc):
 //   - /api/pattern-scan (Pattern Scanner that, quet VN30/VN100)
-//   - /api/convergence-scan (Bo Loc Hop Luu Wyckoff+SMC+FVG, quet
-//     VN30/VN100 - dung mot implementation SMC/Wyckoff KHAC voi
-//     lib/elite10/smc-detector.ts, da ghi ro trong bao cao ra soat)
+//   - Bo Loc Hop Luu v2 cua Market Gateway (/api/market/strategies/convergence,
+//     2026-10-09: thay /api/convergence-scan cu — Yahoo chua dieu chinh, Wyckoff v1;
+//     chi lay PHIA MUA, compositeScore = diem Hop luu v2 0–100; kiem dinh: EXPERIMENTAL)
 //   - "Dong Thuan TA": PORT Y HET 2 ham selectGoldenFilter() +
 //     computeTAConsensus() tu global-quanta/src/lib/ta-command-center/
 //     golden-filter/ (khong doi cong thuc, chi copy sang moi truong
@@ -75,17 +76,16 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const filter = (searchParams.get("filter") ?? "all").toLowerCase();
 
-    const [patternRes, convergenceRes] = await Promise.all([
+    const [patternRes, convergenceData] = await Promise.all([
       fetch(`${origin}/api/pattern-scan`, { cache: "no-store" }),
-      fetch(`${origin}/api/convergence-scan`, { cache: "no-store" }),
+      fetchConvergenceV2().catch(() => null),
     ]);
 
-    if (!patternRes.ok || !convergenceRes.ok) {
-      return NextResponse.json({ error: "Không thể tải danh sách mã lúc này (nguồn Pattern Scanner/Convergence Scan lỗi)." }, { status: 502 });
+    if (!patternRes.ok || !convergenceData) {
+      return NextResponse.json({ error: "Không thể tải danh sách mã lúc này (nguồn Pattern Scanner / Hợp lưu v2 Gateway lỗi)." }, { status: 502 });
     }
 
     const patternData = await patternRes.json();
-    const convergenceData = await convergenceRes.json();
 
     const goldenFilter = selectGoldenFilter(patternData.matches ?? [], 20);
     const consensus = computeTAConsensus(goldenFilter, convergenceData.results ?? []);

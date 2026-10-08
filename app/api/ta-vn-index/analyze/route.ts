@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { detectWyckoffSchematic, detectVCP } from "@/lib/elite10/smc-detector";
 import { stockUniverse } from "@/lib/quant-data";
+import { fetchConvergenceV2 } from "@/lib/market-data/convergence-v2-adapter";
 
 export const maxDuration = 30;
 
@@ -144,8 +145,8 @@ function computeRealVcpPatternEntry(ticker: string, priceSeries: any[]) {
  * DANH DOI VE HIEU NANG (minh bach, khong giau): de tranh phai fetch +
  * tinh VCP/Wyckoff MOI cho 10-15 ma cung nganh MOI LAN 1 ticker duoc
  * xem (se cham/de timeout, route nay maxDuration=30s), Decorrelation
- * TAI DUNG /api/convergence-scan DA CO SAN (quet san TOAN BO VN30/VN100
- * moi 20 phut qua cache, dung mot implementation SMC/Wyckoff KHAC -
+ * TAI DUNG Bo Loc Hop Luu v2 cua Market Gateway (thay /api/convergence-scan
+ * tu 2026-10-09; quet san ~225 ma sau ATC, chi phia mua; dung mot implementation KHAC -
  * don gian hon - so voi detectVCP/detectWyckoffSchematic moi). Day la
  * lua chon THUC TE nhat hien tai; neu can nhat quan hoan toan 1
  * implementation, buoc tiep theo la 1 cron job rieng tinh truoc va luu
@@ -158,10 +159,9 @@ function computeRealVcpPatternEntry(ticker: string, priceSeries: any[]) {
  * da 30% (giong % da cong bo tu truoc trong UI). */
 async function computeSectorDecorrelation(origin: string, ticker: string, sector: string, geometricMatchPct: number): Promise<{ isDampened: boolean; dampenedConfidencePct: number; sameSectorMatchCount: number }> {
   try {
-    const res = await fetch(`${origin}/api/convergence-scan`, { cache: "no-store" });
-    if (!res.ok) return { isDampened: false, dampenedConfidencePct: geometricMatchPct, sameSectorMatchCount: 0 };
-    const data = await res.json();
-    const results: { ticker: string; sector: string; compositeScore: number }[] = data.results ?? [];
+    // 2026-10-09: nguồn = Bộ lọc Hợp lưu v2 của Market Gateway (thay /api/convergence-scan cũ); sector theo stockUniverse.
+    void origin;
+    const results = (await fetchConvergenceV2()).results;
 
     const sameSectorMatches = results.filter((r) => r.ticker !== ticker && r.sector === sector && r.compositeScore >= 60);
     const n = sameSectorMatches.length;
