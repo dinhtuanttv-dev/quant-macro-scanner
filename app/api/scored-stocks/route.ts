@@ -86,9 +86,6 @@ export async function GET(request: Request) {
     const top20 = diversified.slice(0, topN);
 
     // Phan loai sub-tab
-    const goldenFilter = top20.filter((s) =>
-      s.ma50Status === "safe" && (s.rs3m ?? 0) > 0 && s.scores.confluence >= 3
-    );
 
     const bearTrap = sorted.filter((s) =>
       s.ma50Status === "broken" || (s.rs3m !== null && s.rs3m < -5)
@@ -103,7 +100,6 @@ export async function GET(request: Request) {
       totalAnalyzed: scored.length,
       afterConfluenceFilter: confluenceFiltered.length,
       top20,
-      goldenFilter,
       bearTrap,
       foreignAccum,
       sectorDistribution: sectorCount,
