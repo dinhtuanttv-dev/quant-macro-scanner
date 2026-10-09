@@ -1,8 +1,8 @@
 // Elite 10 - Muc A/B (Tech Spec v2) Giai doan 2/4: tom tat du lieu tu 3
 // nguon THAT da co san (Confluence Engine, SMC/Wyckoff, Time Engine)
 // thanh 1 "goi du lieu" gon gang de dua vao prompt AI - KHONG goi lai
-// route nao MOI, chi FETCH NOI BO 3 route DA CO (giong cach golden-filter
-// da lam voi pattern-scan/scored-stocks), va CHON LOC cac truong quan
+// route nao MOI, chi FETCH NOI BO 3 route DA CO (giong cach route golden-filter cu
+// tung lam voi pattern-scan/scored-stocks — route nay da go 2026-10-10), va CHON LOC cac truong quan
 // trong nhat (khong dua toan bo raw JSON qua lon vao prompt).
 export interface DebateDataPackage {
   ticker: string;

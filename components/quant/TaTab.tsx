@@ -1,12 +1,11 @@
 "use client";
 
-import { Activity, Zap, RefreshCw, AlertCircle, CheckCircle2, TrendingUp, TrendingDown, Shield, Star, Bot } from "lucide-react";
+import { Activity, Zap, RefreshCw, AlertCircle, CheckCircle2, TrendingUp, TrendingDown, Shield, Bot } from "lucide-react";
 import type { Tang4Stock } from "@/lib/quant-funnel";
 import { useOhlcvData } from "@/lib/market-data/useOhlcvData";
 import { useScoredStocks } from "@/lib/market-data/useScoredStocks";
 import ChartDrawingPanel from "@/components/quant/ChartDrawingPanel";
 import TaCommandCenterTab from "@/components/quant/ta-command-center/TaCommandCenterTab";
-import GoldenFilterPanel from "@/components/quant/ta-command-center/GoldenFilterPanel";
 
 interface RrgSector {
   name: string; x: number; y: number; prevX: number; prevY: number;
@@ -108,12 +107,6 @@ function ConfidenceBadge({ score, confluence }: { score: number; confluence: num
   );
 }
 
-function DataQualityBadge({ quality }: { quality: string }) {
-  if (quality === "HARD_DATA") return <span className="flex items-center gap-0.5 text-[8px] text-emerald-400"><CheckCircle2 className="w-2.5 h-2.5" />THỰC</span>;
-  if (quality === "ESTIMATED") return <span className="text-[8px] text-amber-400">~ƯỚC</span>;
-  return <span className="text-[8px] text-slate-600">?</span>;
-}
-
 export default function TaTab({
   taMode, setTaMode, rrgSectors, selectedRrgSector, setSelectedRrgSector,
   quantRadarTab, setQuantRadarTab, tang4Result: _tang4Result, selectedStockId, setSelectedStockId, setActiveTab,
@@ -121,7 +114,6 @@ export default function TaTab({
   const selectedRrgSectorDetails = rrgSectors.find((s) => s.name === selectedRrgSector) || rrgSectors[0];
   const { scoredData, isLoading: scoreLoading, refresh: scoreRefresh } = useScoredStocks();
 
-  const goldenFilter = scoredData?.goldenFilter ?? [];
   const bearTrap = scoredData?.bearTrap ?? [];
   const foreignAccum = scoredData?.foreignAccum ?? [];
   const top20 = scoredData?.top20 ?? [];
@@ -229,7 +221,6 @@ export default function TaTab({
 
         <div style={{ background: "rgba(14,22,38,0.7)", border: "1px solid rgba(148,163,184,0.1)" }} className="flex p-1 rounded-xl text-[10px] font-bold mb-4 flex-wrap gap-1">
           {[
-            { id: "golden", label: "✦ Golden Filter", icon: Star },
             { id: "beartrap", label: "⚡ Bay Giam Gia", icon: TrendingDown },
             { id: "foreign", label: "🏆 Top 20 Ky Thuat", icon: TrendingUp },
             { id: "top20", label: "🎯 Doi Chieu & AI", icon: Shield },
@@ -246,35 +237,6 @@ export default function TaTab({
           <div className="flex items-center gap-2 text-xs text-slate-400 py-8 justify-center">
             <RefreshCw className="w-4 h-4 animate-spin" />
             Dang chay Scoring Algorithm (Confluence Check + BB Contraction)...
-          </div>
-        )}
-
-        {quantRadarTab === "golden" && (
-          <div>
-            <p className="text-[10px] text-slate-500 mb-3 italic">MA50 safe + RS duong + Confluence ≥ 3/4. BB Contraction bonus +20% khi sap breakout.</p>
-            {goldenFilter.length === 0 && !scoreLoading && <p className="text-xs text-slate-500 italic py-4 text-center">Khong co ma nao dat tieu chuan Golden Filter hom nay.</p>}
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead><tr className="border-b border-slate-800/60 text-slate-400 text-[10px] uppercase">
-                  <th className="pb-2">Ma</th><th className="pb-2">Nganh</th><th className="pb-2 text-center">Diem/ĐT</th>
-                  <th className="pb-2 text-right">RS 3T</th><th className="pb-2 text-right">Vol</th>
-                  <th className="pb-2 text-center">BB</th><th className="pb-2 text-center">Data</th>
-                </tr></thead>
-                <tbody className="divide-y divide-slate-800/30">
-                  {goldenFilter.map((s: any, i: number) => (
-                    <tr key={i} onClick={() => { setSelectedStockId(s.ticker); setActiveTab("elite"); }} className="hover:bg-slate-900/30 transition cursor-pointer">
-                      <td className="py-2.5 font-black text-amber-400">{s.ticker}</td>
-                      <td className="py-2.5 text-slate-400 text-[10px]">{s.sector}</td>
-                      <td className="py-2.5 text-center"><ConfidenceBadge score={s.scores.total} confluence={s.scores.confluence} /></td>
-                      <td className="py-2.5 text-right font-mono"><span className={s.rs3m >= 0 ? "text-emerald-400" : "text-red-400"}>{s.rs3m !== null ? `${s.rs3m >= 0 ? "+" : ""}${s.rs3m}%` : "-"}</span></td>
-                      <td className="py-2.5 text-right font-mono text-slate-300">{s.volumeSpikeRatio !== null ? `${s.volumeSpikeRatio}x` : "-"}</td>
-                      <td className="py-2.5 text-center">{s.isContracting ? <span className="text-[9px] text-purple-400 font-bold">TIGHT</span> : <span className="text-slate-600 text-[9px]">-</span>}</td>
-                      <td className="py-2.5 text-center"><DataQualityBadge quality={s.dataQuality} /></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
           </div>
         )}
 
@@ -386,9 +348,6 @@ export default function TaTab({
                 30% Pattern (RS+BB) | 20% Volume | 20% RS | 30% Momentum (MA50+Regime) — Cap nhat: {new Date(scoredData.generatedAt).toLocaleString("vi-VN")}
               </p>
             )}
-            <div className="mt-4 pt-4 border-t border-slate-800/60">
-              <GoldenFilterPanel onSelectTicker={(t) => { setSelectedStockId(t); setActiveTab("elite"); }} />
-            </div>
           </div>
         )}
       </div>

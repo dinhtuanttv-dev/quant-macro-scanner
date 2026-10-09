@@ -66,7 +66,7 @@ export default function ScannerPage() {
   const [focusSector, setFocusSector] = useState("All");
   const [selectedStockId, setSelectedStockId] = useState("FPT");
   const [taMode, setTaMode] = useState("Nen Thuc");
-  const [quantRadarTab, setQuantRadarTab] = useState("golden");
+  const [quantRadarTab, setQuantRadarTab] = useState("foreign");
   const [selectedRrgSector, setSelectedRrgSector] = useState("Cong nghe");
   const [totalCapital, setTotalCapital] = useState(1000000000);
   const [expectedWinRate, setExpectedWinRate] = useState(55);
