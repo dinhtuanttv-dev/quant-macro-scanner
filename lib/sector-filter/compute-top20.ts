@@ -18,7 +18,7 @@ const BATCH_SIZE = 18;
 const TICKER_SECTOR_MAP: Record<string, string> = {};
 stockUniverse.forEach((s: any) => { TICKER_SECTOR_MAP[s.ticker] = s.sector; });
 
-async function fetchRiskOnScore(): Promise<number> {
+export async function fetchRiskOnScore(): Promise<number> {
   try {
     const supabase = createServiceClient();
     const { data } = await supabase
