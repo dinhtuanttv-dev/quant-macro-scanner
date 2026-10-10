@@ -9,7 +9,7 @@ import {
 } from "@/lib/market-data/technical-indicators";
 import { stockUniverse } from "@/lib/quant-data";
 import { rankTop20, type ConfluenceInput, type ConfluenceResult } from "@/lib/sector-filter/scoring/confluence-score";
-import { computeRRGPoints } from "@/lib/sector-filter/rrg/compute-rrg";
+import { computeRRGPoints, rrgKeyOfStockSector } from "@/lib/sector-filter/rrg/compute-rrg";
 import { calculateRiskOnIndex } from "@/lib/scoring/weighted-macro-score";
 import { createServiceClient } from "@/lib/supabase/client";
 import type { RRGQuadrant } from "@/lib/sector-filter/rrg/rrg-calculator";
@@ -66,7 +66,9 @@ export async function computeSectorTop20(filterSectorKey?: string | null): Promi
       if (!res.success || !res.data || res.data.length < 60) return;
 
       const sectorKey = TICKER_SECTOR_MAP[ticker] ?? "OTHER";
-      if (filterSectorKey && sectorKey !== filterSectorKey) return;
+      const rrgKey = rrgKeyOfStockSector(sectorKey);
+      // bộ lọc nhận cả mã RRG (frontend gửi khi bấm ngành trong ma trận) lẫn tên ngành (cách gọi cũ)
+      if (filterSectorKey && sectorKey !== filterSectorKey && rrgKey !== filterSectorKey) return;
 
       const closes = extractCloses(res.data);
       const rs3m = vnCloses.length > 0 ? calculateRelativeStrength(closes, vnCloses, 63) : null;
@@ -75,7 +77,7 @@ export async function computeSectorTop20(filterSectorKey?: string | null): Promi
       const adScore = calculateADTrendScore(res.data, 20);
 
       inputs.push({
-        ticker, sectorKey, sectorQuadrant: quadrantMap[sectorKey] ?? "Lagging",
+        ticker, sectorKey, sectorQuadrant: (rrgKey ? quadrantMap[rrgKey] : undefined) ?? "Lagging",
         rs3m, volumeSpikeRatio, pvtScore, adScore,
       });
     });
