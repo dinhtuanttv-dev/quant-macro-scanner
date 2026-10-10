@@ -31,6 +31,22 @@ export const SECTOR_PROXIES: { sectorKey: string; sectorLabel: string; proxyTick
   { sectorKey: "SHIPPING", sectorLabel: "Van tai bien", proxyTicker: "GMD" },
 ];
 
+/**
+ * FIX (2026-10-10, L0): ngành của cổ phiếu trong stockUniverse là TÊN ("Ban le", "Ngan hang"...) còn RRG dùng MÃ
+ * ("RETAIL", "BANKING"...) -> trước đây Top 20 tra quadrant theo tên nên KHÔNG BAO GIỜ khớp (mọi mã hiện "Lagging") và
+ * bấm một ngành trong ma trận (gửi mã RETAIL) lọc ra danh sách rỗng. Bảng này chỉ ánh xạ ĐÚNG ngành có proxy RRG;
+ * ngành chưa có trong RRG trả null (giữ cách xử lý cũ ở tầng gọi — đủ ngành ở bước L1/L5 với dữ liệu Gateway).
+ */
+export const STOCK_SECTOR_TO_RRG_KEY: Readonly<Record<string, string>> = Object.freeze({
+  "Ngan hang": "BANKING", "Bat dong san": "REAL_ESTATE", "Thep": "STEEL", "Cong nghe": "TECH",
+  "Ban le": "RETAIL", "Chung khoan": "SECURITIES", "Dau khi": "OIL_GAS", "Van tai bien": "SHIPPING",
+});
+
+/** Mã ngành RRG của một tên ngành cổ phiếu (null nếu ngành chưa có proxy RRG). */
+export function rrgKeyOfStockSector(sectorLabel: string): string | null {
+  return STOCK_SECTOR_TO_RRG_KEY[sectorLabel] ?? null;
+}
+
 export interface RRGComputeResult {
   points: RRGPoint[];
   benchmark: string;
