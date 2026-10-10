@@ -609,3 +609,25 @@ model CotucSignalTrack {
   @@index([ticker])
   @@index([issuedAt])
 }
+
+// Lọc ngành (L5) — sổ theo dõi tín hiệu NGÀNH thực tế (cron sector-timing-scan ghi, /api/locnganh/signal-tracking đọc).
+// Bảng tạo bằng raw SQL CREATE TABLE IF NOT EXISTS trong cron (cùng quy ước CotucSignalTrack, không dùng prisma migrate).
+model SectorSignalTrack {
+  id                   String    @id // SECTOR:windowId:entryDate
+  sectorCode           String
+  windowId             String
+  level                String
+  predictedProbability Float
+  components           Json
+  transitionDate       String
+  entryDate            String
+  plannedExitDate      String
+  issuedAt             DateTime
+  outcome              Int?
+  realizedCar          Float?
+  exitDate             String?
+  outcomeRecordedAt    DateTime?
+
+  @@index([sectorCode])
+  @@index([issuedAt])
+}

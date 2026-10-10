@@ -166,7 +166,8 @@ export function computeSectorTiming(input: SectorTimingInput): { signals: Sector
       action, combined: fused.combined,
       entryPlan: entryPlan ?? { tranches: [], runTooFar: { percentile: null, hasRunTooFar: false }, invalidationLevel: null, invalidated: false, timeStopped: false, pauseFurtherEntries: false },
       marketRegime: fused.marketRegime, transitionDateConfirmed: true,
-      confluenceCorroborates: conf === null || pr === null ? null : (conf >= 50) === (pr >= 0.5),
+      // chưa có xác suất lịch sử -> "không mâu thuẫn" khi Confluence kỹ thuật không tiêu cực (≥ 50); không có Confluence -> chưa biết
+      confluenceCorroborates: conf === null ? null : pr === null ? conf >= 50 : (conf >= 50) === (pr >= 0.5),
       liquidityOk: s.thin ? false : null,
     });
     signals.push({
