@@ -35,8 +35,12 @@ async function fromGateway(ticker: string, fetchImpl: typeof fetch): Promise<Cyc
   return { bars, provider: "GATEWAY_TA_SERIES", priceBasis: String(json?.priceBasis ?? "UNKNOWN") };
 }
 
-async function fromYahooAdjusted(yahooTicker: string, range: string, fetchImpl: typeof fetch): Promise<CycleHistory> {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooTicker)}?range=${range}&interval=1d`;
+// LƯU Ý: Yahoo với `range=max` trả NẾN THÁNG dù interval=1d (đã xác nhận: NT2 chỉ 137 nến 2015→2026) — khung "tuần" trước đây
+// thực chất gộp từ nến tháng. Dùng period1/period2 tường minh để nhận nến NGÀY thật.
+async function fromYahooAdjusted(yahooTicker: string, years: number | "max", fetchImpl: typeof fetch): Promise<CycleHistory> {
+  const now = Math.floor(Date.now() / 1000);
+  const from = years === "max" ? 0 : now - Math.round(years * 365.25 * 86400);
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooTicker)}?period1=${from}&period2=${now}&interval=1d`;
   const res = await fetchImpl(url, {
     headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", Accept: "application/json" },
     cache: "no-store", signal: AbortSignal.timeout(10_000),
@@ -65,7 +69,7 @@ export async function fetchCycleHistory(rawTicker: string, timeframe: Timeframe,
   if (timeframe === "daily") {
     try { return await fromGateway(ticker, fetchImpl); }
     catch (err) {
-      const fb = await fromYahooAdjusted(`${ticker}.VN`, "5y", fetchImpl);
+      const fb = await fromYahooAdjusted(`${ticker}.VN`, 5, fetchImpl);
       return { ...fb, fallbackReason: `Gateway lỗi: ${String((err as Error)?.message ?? err)}` };
     }
   }

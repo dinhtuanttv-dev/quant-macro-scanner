@@ -25,7 +25,10 @@ describe("fetchCycleHistory (CF1)", () => {
   });
 
   it("khung tuần dùng Yahoo adjclose: OHLC nhân hệ số adjclose/close, bỏ phiên khối lượng 0", async () => {
-    const h = await fetchCycleHistory("NT2", "weekly", (async () => json(yahooBody(300))) as typeof fetch);
+    const urls: string[] = [];
+    const h = await fetchCycleHistory("NT2", "weekly", (async (url: string) => { urls.push(url); return json(yahooBody(300)); }) as typeof fetch);
+    expect(urls[0]).toContain("period1=0&period2="); // không dùng range=max (Yahoo trả nến tháng)
+    expect(urls[0]).not.toContain("range=");
     expect(h.provider).toBe("YAHOO_ADJCLOSE");
     expect(h.bars).toHaveLength(270);
     expect(h.bars[0].close).toBeCloseTo(80);
