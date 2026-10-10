@@ -3,7 +3,7 @@ import { computeSectorTop20 } from "@/lib/sector-filter/compute-top20";
 
 // FIX RELIABILITY (2026-09-11): 10s qua thap - route nay xu ly 61+ ma qua
 // Yahoo Finance, truoc day CON tu goi HTTP sang route /rrg (da loai bo,
-// xem lib/sector-filter/rrg/compute-rrg.ts). Tang len 60s giong cac route
+// RRG Yahoo cũ đã gỡ 2026-10-10 — góc phần tư lấy từ RRG ngành ICB của Gateway). Tang len 60s giong cac route
 // xu ly nang khac trong du an.
 //
 // GIAI DOAN 1a (Giai Trinh Hoi Tu): logic tinh toan da TACH sang

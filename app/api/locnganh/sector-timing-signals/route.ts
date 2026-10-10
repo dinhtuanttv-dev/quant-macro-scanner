@@ -8,8 +8,8 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const { details: _details, ...bulk } = await getSectorTiming();
-    void _details;
+    const { details: _details, bench: _bench, indexPrices: _ix, ...bulk } = await getSectorTiming();
+    void _details; void _bench; void _ix;
     return NextResponse.json(bulk, { headers: { "Cache-Control": "public, s-maxage=900, stale-while-revalidate=1800" } });
   } catch (err) {
     console.error("[locnganh/sector-timing-signals]", err);

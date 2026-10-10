@@ -12,6 +12,7 @@
     { "path": "/api/catalysts/scan", "schedule": "40 22 * * *" },
     { "path": "/api/cron/sector-top20-scan", "schedule": "35 22 * * *" },
     { "path": "/api/cron/timing-signals-scan", "schedule": "50 22 * * *" },
+    { "path": "/api/cron/sector-timing-scan", "schedule": "20 9 * * 1-5" },
     { "path": "/api/cron/earnings-seasonality-scan?phase=collect&offset=0&limit=3", "schedule": "5 23 * * *" },
     { "path": "/api/cron/earnings-seasonality-scan?phase=collect&offset=3&limit=3", "schedule": "10 23 * * *" },
     { "path": "/api/cron/earnings-seasonality-scan?phase=collect&offset=6&limit=3", "schedule": "15 23 * * *" },

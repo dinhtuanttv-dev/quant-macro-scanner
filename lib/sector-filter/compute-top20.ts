@@ -9,10 +9,9 @@ import {
 } from "@/lib/market-data/technical-indicators";
 import { stockUniverse } from "@/lib/quant-data";
 import { rankTop20, type ConfluenceInput, type ConfluenceResult } from "@/lib/sector-filter/scoring/confluence-score";
-import { computeRRGPoints, rrgKeyOfStockSector } from "@/lib/sector-filter/rrg/compute-rrg";
+import { fetchIcbQuadrantMap } from "@/lib/sector-filter/gateway-quadrants";
 import { calculateRiskOnIndex } from "@/lib/scoring/weighted-macro-score";
 import { createServiceClient } from "@/lib/supabase/client";
-import type { RRGQuadrant } from "@/lib/sector-filter/rrg/rrg-calculator";
 
 const BATCH_SIZE = 18;
 const TICKER_SECTOR_MAP: Record<string, string> = {};
@@ -43,14 +42,12 @@ export interface Top20Result {
 }
 
 export async function computeSectorTop20(filterSectorKey?: string | null): Promise<Top20Result> {
-  const [rrgResult, riskOnScore, vnResult] = await Promise.all([
-    computeRRGPoints(),
+  const [icb, riskOnScore, vnResult] = await Promise.all([
+    fetchIcbQuadrantMap(),
     fetchRiskOnScore(),
     fetchOhlcvHistory("^VNINDEX.VN", "6mo"),
   ]);
 
-  const quadrantMap: Record<string, RRGQuadrant> = {};
-  rrgResult?.points.forEach((p) => { quadrantMap[p.sectorKey] = p.quadrant; });
 
   const vnCloses = vnResult.success && vnResult.data ? extractCloses(vnResult.data) : [];
 
@@ -66,9 +63,9 @@ export async function computeSectorTop20(filterSectorKey?: string | null): Promi
       if (!res.success || !res.data || res.data.length < 60) return;
 
       const sectorKey = TICKER_SECTOR_MAP[ticker] ?? "OTHER";
-      const rrgKey = rrgKeyOfStockSector(sectorKey);
-      // bộ lọc nhận cả mã RRG (frontend gửi khi bấm ngành trong ma trận) lẫn tên ngành (cách gọi cũ)
-      if (filterSectorKey && sectorKey !== filterSectorKey && rrgKey !== filterSectorKey) return;
+      // L5: góc phần tư = góc của NGÀNH ICB cấp 2 chứa mã (RRG tuần Gateway); bộ lọc nhận mã ICB (4 số) hoặc tên ngành cũ
+      const icbSector = icb.of(ticker);
+      if (filterSectorKey && sectorKey !== filterSectorKey && icbSector?.code !== filterSectorKey) return;
 
       const closes = extractCloses(res.data);
       const rs3m = vnCloses.length > 0 ? calculateRelativeStrength(closes, vnCloses, 63) : null;
@@ -77,7 +74,7 @@ export async function computeSectorTop20(filterSectorKey?: string | null): Promi
       const adScore = calculateADTrendScore(res.data, 20);
 
       inputs.push({
-        ticker, sectorKey, sectorQuadrant: (rrgKey ? quadrantMap[rrgKey] : undefined) ?? "Lagging",
+        ticker, sectorKey, sectorQuadrant: icbSector?.quadrant ?? "Lagging", icbCode: icbSector?.code ?? null, icbName: icbSector?.name ?? null,
         rs3m, volumeSpikeRatio, pvtScore, adScore,
       });
     });

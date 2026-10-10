@@ -14,10 +14,14 @@ async function build() {
     gateway: { engine: ctx.engine, dataAsOf: ctx.gatewayAsOf, closedThrough: ctx.closedThrough, method: ctx.method, coverage: ctx.coverage },
     market: { riskOnScore: ctx.riskOnScore, macroRegime: ctx.macroRegime },
     windows: SECTOR_WINDOWS,
-    evidence: { label: "EXPERIMENTAL", reason: "Chưa kiểm định ngoài mẫu (bước L3) — xác suất và cửa sổ chỉ để tham khảo, không phải khuyến nghị." },
+    // L3 (Gateway sectors/validation.js): kiểm định đặt trước "ngành vào Cải thiện" — KHÔNG ĐẠT -> EXPERIMENTAL
+    evidence: ctx.evidence ?? { label: "EXPERIMENTAL", reason: "Chưa có kết quả kiểm định ngoài mẫu — tham khảo, không phải khuyến nghị." },
     signals: r.signals,
     opportunities: r.opportunities,
     details: r.details,
+    // cho cron theo dõi tín hiệu (không trả qua API)
+    bench: ctx.bench,
+    indexPrices: new Map([...ctx.histories].map(([code, h]) => [code, h.index.map(([date, close]) => ({ date, adjClose: close }))])),
     generatedAt: new Date().toISOString(),
   };
 }

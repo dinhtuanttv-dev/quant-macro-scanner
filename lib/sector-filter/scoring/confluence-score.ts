@@ -4,6 +4,9 @@ export interface ConfluenceInput {
   ticker: string;
   sectorKey: string;
   sectorQuadrant: RRGQuadrant;
+  /** L5: ngành ICB cấp 2 (Gateway) chứa mã — nguồn của sectorQuadrant. */
+  icbCode?: string | null;
+  icbName?: string | null;
   rs3m: number | null;
   volumeSpikeRatio: number | null;
   // MOI (2026-09-11): -100 (dong tien rut manh) den +100 (dong tien vao

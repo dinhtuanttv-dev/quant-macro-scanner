@@ -13,7 +13,7 @@ import type { GatewaySectorHistory, GatewaySectorSummary, SectorTimingInput } fr
 import type { MacroRegime } from "./sector-types";
 import { fetchGatewayHolidays, makeVnTradingCalendar } from "@/lib/cotuc/timing-v3/vn-trading-calendar";
 
-interface RrgSummaryDoc { engine: string; dataAsOf: string; closedThrough: string | null; partialWeek: boolean; method: string; coverage: unknown; sectors: GatewaySectorSummary[] }
+interface RrgSummaryDoc { engine: string; dataAsOf: string; closedThrough: string | null; partialWeek: boolean; method: string; coverage: unknown; sectors: GatewaySectorSummary[]; evidence?: { label: string; reason: string } }
 
 async function getJson<T>(path: string, timeoutMs = 20_000): Promise<T> {
   const res = await fetch(`${MARKET_GATEWAY_URL}${path}`, { cache: "no-store", signal: AbortSignal.timeout(timeoutMs) });
@@ -58,7 +58,7 @@ async function confluenceBySector(symbols: Record<string, { l2?: string; l3?: st
   }
 }
 
-export interface SectorTimingContext extends SectorTimingInput { engine: string; gatewayAsOf: string; method: string; coverage: unknown; riskOnScore: number | null }
+export interface SectorTimingContext extends SectorTimingInput { engine: string; gatewayAsOf: string; method: string; coverage: unknown; riskOnScore: number | null; evidence: { label: string; reason: string } | null }
 
 export async function loadSectorTimingInput(): Promise<SectorTimingContext> {
   const [summary, taxonomy] = await Promise.all([
@@ -76,7 +76,7 @@ export async function loadSectorTimingInput(): Promise<SectorTimingContext> {
   const l1Of = new Map<string, string | null>(summary.sectors.filter((s) => s.level === 2).map((s) => [s.code, s.parent]));
   const benchPrices: PricePoint[] = bench.bars.filter((b) => !b.partial && b.close > 0).map((b) => ({ date: b.date, adjClose: b.close }));
   return {
-    engine: summary.engine, gatewayAsOf: summary.dataAsOf, method: summary.method, coverage: summary.coverage, riskOnScore,
+    engine: summary.engine, gatewayAsOf: summary.dataAsOf, method: summary.method, coverage: summary.coverage, riskOnScore, evidence: summary.evidence ?? null,
     summaries: summary.sectors,
     histories: new Map(histories.filter((h): h is GatewaySectorHistory => !!h).map((h) => [h.code, h])),
     l1Of, bench: benchPrices, closedThrough: summary.closedThrough, asOf: benchPrices.at(-1)?.date ?? summary.dataAsOf,
