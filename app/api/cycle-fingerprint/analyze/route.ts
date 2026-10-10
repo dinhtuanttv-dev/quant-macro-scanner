@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { fetchOhlcvHistory } from "@/lib/market-data/yahoo-finance-adapter";
+import { fetchCycleHistory, type CycleHistory } from "@/lib/cycle-fingerprint/history-source";
 import { extractCloses, calculateAtrSeries, detectMarketRegime } from "@/lib/market-data/technical-indicators";
 import { findTopKCycles, computeQualityScore, computeSummaryStats, computeFanChart, computeTimingForecast, computeExplainability, computePairwiseDistanceMatrix } from "@/lib/cycle-fingerprint/cycle-scanner";
 import { resampleToWeekly, resampleToMonthly } from "@/lib/cycle-fingerprint/resample";
@@ -18,22 +18,12 @@ export const maxDuration = 30;
 const MIN_WINDOW = 10;
 const MAX_WINDOW = 90;
 const DEFAULT_WINDOW = 30;
-// NHOM 2 (Da khung thoi gian): "5y" du cho Ngay, nhung Tuan/Thang can
-// LICH SU DAI HON NHIEU (windowSize=90 THANG ~ 7.5 nam, cong them 60 thang
-// du bao phia sau ~ 5 nam nua) - dung "max" (toan bo lich su Yahoo Finance
-// co) cho ca 2 khung nay. Neu ma qua tre (IPO gan day), se tra ve dung
-// state "insufficient" (da xu ly san ben duoi), KHONG crash.
-const HISTORY_RANGE_DAILY = "5y";
-const HISTORY_RANGE_LONG = "max";
 // So ung vien dung rieng de tinh Fan Chart/Timing Forecast (thong ke rong
 // hon, dang tin cay hon), TACH RIENG voi so match hien thi (K=5, TopKList/
 // Summary/QualityScore - giu nguyen y het Giai doan 1, KHONG doi).
 const STATS_POOL_SIZE = 20;
 const VALID_TIMEFRAMES = ["daily", "weekly", "monthly"] as const;
 
-function toTicker(rawTicker: string): string {
-  return rawTicker.toUpperCase().endsWith(".VN") ? rawTicker.toUpperCase() : `${rawTicker.toUpperCase()}.VN`;
-}
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -52,14 +42,15 @@ export async function GET(request: Request) {
   const windowSize = Math.max(MIN_WINDOW, Math.min(MAX_WINDOW, Number(windowParam) || DEFAULT_WINDOW));
 
   try {
-    const yahooTicker = toTicker(rawTicker);
     // NHOM 2: fetch lich su THO theo NGAY luon (Yahoo Finance khong ho tro
     // truc tiep interval=1wk/1mo dang dung o day) - gop nen tuan/thang tu
     // chinh du lieu ngay nay bang resample.ts, KHONG doi bat ky logic nao
     // khac phia sau (findTopKCycles/computeFanChart/... nhan bars nao thi
     // xu ly y het, khong biet/khong can biet no la ngay/tuan/thang).
-    const historyRange = timeframe === "daily" ? HISTORY_RANGE_DAILY : HISTORY_RANGE_LONG;
-    const result = await fetchOhlcvHistory(yahooTicker, historyRange);
+    // CF1 (2026-10-10): Ngày = Gateway ADJUSTED_CUMULATIVE; Tuần/Tháng = Yahoo adjclose (lịch sử dài) — xem history-source.ts.
+    let history: CycleHistory | null = null;
+    try { history = await fetchCycleHistory(rawTicker, timeframe); } catch (err) { console.error("[cycle-fingerprint/analyze] nguồn lịch sử:", err); }
+    const result = { success: Boolean(history), data: history?.bars ?? null };
 
     if (!result.success || !result.data) {
       return NextResponse.json({
@@ -168,6 +159,7 @@ export async function GET(request: Request) {
       ticker: rawTicker.toUpperCase(),
       windowSize, timeframe, asOfDate: new Date().toISOString(),
       state: displayMatches.length > 0 ? "success" : "insufficient",
+      dataSource: { provider: history!.provider, priceBasis: history!.priceBasis, fallbackReason: history!.fallbackReason ?? null, bars: bars.length, lastDate: bars[bars.length - 1]?.date ?? null },
       priceSeries,
       topMatches,
       cluster: null,
