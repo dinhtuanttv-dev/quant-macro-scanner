@@ -42,10 +42,10 @@ export async function GET(request: Request) {
   const timeframeParam = searchParams.get("timeframe") ?? "daily";
 
   if (!rawTicker) {
-    return NextResponse.json({ error: "Thieu tham so ticker." }, { status: 400 });
+    return NextResponse.json({ error: "Thiếu tham số ticker." }, { status: 400 });
   }
   if (!VALID_TIMEFRAMES.includes(timeframeParam as any)) {
-    return NextResponse.json({ error: `timeframe khong hop le: ${timeframeParam}` }, { status: 400 });
+    return NextResponse.json({ error: `timeframe không hợp lệ: ${timeframeParam}` }, { status: 400 });
   }
   const timeframe = timeframeParam as (typeof VALID_TIMEFRAMES)[number];
 
@@ -132,6 +132,11 @@ export async function GET(request: Request) {
       alignedSeries: m.alignedSeries.map((pt) => ({
         sessionOffset: pt.sessionOffset, normalizedClose: { value: Math.round(pt.normalizedClose * 100) / 100, source: "HARD_DATA" as const },
       })),
+      // CF0: diễn biến SAU giai đoạn (base=100 tại điểm kết thúc, offset 0..+60) — để UI vẽ "chồng lên hiện tại + 60 phiên sau".
+      // Trường bổ sung, không đổi alignedSeries.
+      forwardSeries: m.forwardSeries.map((pt) => ({
+        sessionOffset: pt.sessionOffset, normalizedClose: { value: Math.round(pt.normalizedClose * 100) / 100, source: "HARD_DATA" as const },
+      })),
     }));
 
     const fanChartForResponse = fanChart.map((b) => ({
@@ -145,6 +150,7 @@ export async function GET(request: Request) {
 
     const timingForecastForResponse = {
       targetReturnPct: timingForecast.targetReturnPct,
+      poolSize: pool.length,
       hittingProbability: timingForecast.hittingProbability.map((h) => ({
         withinSessions: h.withinSessions, probabilityPct: { value: h.probabilityPct, source: "ESTIMATED" as const },
       })),
@@ -195,6 +201,6 @@ export async function GET(request: Request) {
     });
   } catch (err) {
     console.error("[cycle-fingerprint/analyze] Loi:", err);
-    return NextResponse.json({ error: "Khong phan tich duoc chu ky gia luc nay.", detail: String(err) }, { status: 500 });
+    return NextResponse.json({ error: "Không phân tích được chu kỳ giá lúc này.", detail: String(err) }, { status: 500 });
   }
 }

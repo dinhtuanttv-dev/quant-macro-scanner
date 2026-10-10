@@ -349,19 +349,19 @@ export function computeExplainability(qs: QualityScoreResult, matchCount: number
   return [
     {
       name: "Similarity", contributionPct: Math.round((weighted.similarity / total) * 1000) / 10,
-      description: `Cac chu ky lich su tim duoc co do tuong dong trung binh ${Math.round(qs.similarity * 100)}% (DTW) voi mau hinh hien tai.`,
+      description: `Độ tương đồng trung bình ${Math.round(qs.similarity * 100)}% (DTW) — thang TƯƠNG ĐỐI trong lần quét: giai đoạn khớp nhất luôn được 100%, không phải mức giống tuyệt đối.`,
     },
     {
       name: "Liquidity", contributionPct: Math.round((weighted.liquidity / total) * 1000) / 10,
-      description: `Khoi luong giao dich gan day dat ${Math.round(qs.liquidity * 100)}% muc tham chieu (uoc tinh don gian tren chinh lich su cua ma, chua phai xep hang thanh khoan toan thi truong).`,
+      description: `Khối lượng 20 phiên gần nhất đạt ${Math.round(qs.liquidity * 100)}% mức tham chiếu (ước tính đơn giản trên chính lịch sử của mã, chưa phải xếp hạng thanh khoản toàn thị trường).`,
     },
     {
       name: "Regime", contributionPct: Math.round((weighted.regime / total) * 1000) / 10,
-      description: `Do tin cay nhan dien trang thai thi truong hien tai (xu huong tang/giam/di ngang) dat ${Math.round(qs.regime * 100)}%.`,
+      description: `Độ tin cậy nhận diện trạng thái hiện tại của mã (xu hướng tăng/giảm/đi ngang) đạt ${Math.round(qs.regime * 100)}%.`,
     },
     {
       name: "Sample-size", contributionPct: Math.round((weighted.sampleSize / total) * 1000) / 10,
-      description: `Tim duoc ${matchCount} chu ky lich su du dieu kien (toi da 5 de dat diem tuyet doi).`,
+      description: `Tìm được ${matchCount} giai đoạn lịch sử đủ điều kiện (đủ 5 là đạt điểm tối đa — các giai đoạn đều của chính mã này và không độc lập hoàn toàn).`,
     },
   ];
 }
