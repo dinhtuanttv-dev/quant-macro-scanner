@@ -8,7 +8,6 @@ import DrawingPalette from "./DrawingPalette";
 import LayerToggleBar from "./LayerToggleBar";
 import AISignalLogPanel from "./AISignalLogPanel";
 import TimeframeSelector from "./TimeframeSelector";
-import PatternList from "./PatternList";
 import { SMCPanel, VSAPanel, ElliottWavePanelPlaceholder, WyckoffPanelPlaceholder } from "./MethodPanels";
 import type { OhlcvBar } from "@/lib/ta-drawing/ChartManager";
 import type { DrawingToolType, DrawnPrimitive } from "@/lib/ta-command-center/DrawingManager";
@@ -17,7 +16,6 @@ import type { SignalLogEntry } from "@/lib/ta-command-center/AIEngine";
 import type { OrderBlock, FairValueGap, BreakOfStructure } from "@/lib/ta-command-center/detectors/smcDetector";
 import type { VSASignal } from "@/lib/ta-command-center/detectors/vsaDetector";
 import type { Timeframe } from "@/lib/ta-command-center/TimeframeController";
-import type { PatternMatch } from "@/lib/ta-command-center/detectors/patternScanner";
 
 interface Props { bars: OhlcvBar[]; ticker: string; onRequestTickerChange?: (ticker: string) => void; }
 
@@ -93,14 +91,6 @@ export default function TVChartPanel({ bars, ticker, onRequestTickerChange }: Pr
 
   const handleTimeframeChange = (tf: Timeframe) => {
     controllerRef.current?.setTimeframe(tf);
-  };
-
-  const handleSelectPattern = (pattern: PatternMatch) => {
-    if (pattern.ticker !== ticker && onRequestTickerChange) {
-      onRequestTickerChange(pattern.ticker);
-    }
-    setHighlightRange({ start: pattern.dateRangeStart, end: pattern.dateRangeEnd });
-    controllerRef.current?.logPatternConfluence(pattern);
   };
 
   const getSvgCoords = useCallback((e: React.MouseEvent) => {
@@ -273,7 +263,8 @@ export default function TVChartPanel({ bars, ticker, onRequestTickerChange }: Pr
         <WyckoffPanelPlaceholder />
       </div>
 
-      <PatternList onSelectPattern={handleSelectPattern} />
+      {/* Pattern Scanner cũ (/api/pattern-scan) đã gỡ 2026-10-10 — dùng Pattern Scanner v2 (Martin Pring) ở tab TA VN-Index của dinhtuan-ck. */}
+      <p className="text-[10px] text-slate-500">Pattern Scanner đã chuyển sang Pattern Scanner v2 (mô hình giá Martin Pring, Gateway) ở tab TA VN-Index của dinhtuan-ck.vercel.app.</p>
 
       <AISignalLogPanel log={log} />
     </div>
