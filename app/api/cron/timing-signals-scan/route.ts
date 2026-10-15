@@ -1,10 +1,6 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@/lib/generated/prisma";
 import { prisma } from "@/lib/prisma";
-import { loadBacktestRates, memoTtl } from "@/lib/cotuc/decision-state-lite";
-
-// Gateway gọi cron này mỗi 3 phút trong phiên: prior liên mã đổi chậm -> đọc gọn (jsonb) và đệm 30 phút / instance.
-const storedRatesCached = memoTtl(30 * 60_000, loadBacktestRates);
 import { getCotucUniverse } from "@/lib/cotuc/cotuc-universe";
 import { appendIntradayBar, fetchLiveIndex, fetchLiveQuotes } from "@/lib/cotuc/timing-v3/intraday";
 import { buildCycleContext, buildCycleStatsV3, fetchBenchmarkPricesOnce, type CycleComputeContext } from "@/lib/cotuc/timing-v3/compute-cycle-io";
@@ -112,7 +108,11 @@ export async function GET(req: Request) {
     type Rate = { ticker: string; id: string; nEvents: number; winRate: number };
     const batchRates: Rate[] = ctxs.flatMap((c) => c.stats.windows.map((w) => ({ ticker: c.ctx.ticker, id: w.id, nEvents: w.nEvents, winRate: w.winRate })));
     const inBatch = new Set(ctxs.map((c) => c.ctx.ticker));
-    const storedRates: Rate[] = (await storedRatesCached()).filter((r) => !inBatch.has(r.ticker)).flatMap((r) => r.bt.map((w) => ({ ticker: r.ticker, ...w })));
+    const storedRows = await prisma.cotucDecisionState.findMany({ where: { ticker: { notIn: [...inBatch] } }, select: { ticker: true, snapshot: true } });
+    const storedRates: Rate[] = storedRows.flatMap((r) => {
+      const bt = (r.snapshot as { backtest?: { id: string; nEvents: number; winRate: number }[] } | null)?.backtest ?? [];
+      return bt.map((w) => ({ ticker: r.ticker, ...w }));
+    });
     const allRates = [...batchRates, ...storedRates];
     const windowIds = new Set(allRates.map((r) => r.id));
     const priorFor = (ticker: string): Record<string, { alpha0: number; beta0: number }> => {

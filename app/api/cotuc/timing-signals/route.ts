@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { loadDecisionFlags } from "@/lib/cotuc/decision-state-lite";
 
 // Tich hop Sprint 4-5 (Screener 4 cot moi): endpoint tra TimingSignal
 // cho CA vu tru trong MOT request (khong nhan tham so ticker).
@@ -27,7 +26,7 @@ export async function GET() {
     const [rows, seasonRows, decisionRows] = await Promise.all([
       prisma.timingSignalCache.findMany(),
       prisma.earningsSeasonalityCache.findMany({ select: { ticker: true, earningsSignal: true } }),
-      loadDecisionFlags(), // chỉ exDate.status + earningsImpact.conflict (không kéo nguyên snapshot)
+      prisma.cotucDecisionState.findMany({ select: { ticker: true, snapshot: true } }),
     ]);
     // Cột "KQKD" của Screener: tăng trưởng LNST/doanh thu kỳ vừa công bố (EarningsSeasonalityCache, VNDirect) +
     // xung đột KQKD với cửa sổ nắm giữ và trạng thái ngày GDKHQ (ảnh chụp quyết định, cron timing-signals-scan).

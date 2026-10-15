@@ -64,8 +64,7 @@ async function collect(tickers: string[], meta: Map<string, CotucUniverseTicker>
 }
 
 async function finalize() {
-  // chỉ các cột cần cho finalize — KHÔNG kéo paths / stats / calendar (JSON rất lớn) của mọi mã
-  const rows = await prisma.earningsSeasonalityCache.findMany({ select: { ticker: true, sector: true, samples: true, announceDates: true, notes: true } });
+  const rows = await prisma.earningsSeasonalityCache.findMany();
   const all: CollectedTicker[] = rows.map((r) => ({
     ticker: r.ticker, sector: r.sector, samples: r.samples as unknown as SamplesByQuarter, announce: r.announceDates as unknown as AnnounceByQuarter,
   }));
