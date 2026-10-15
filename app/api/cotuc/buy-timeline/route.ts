@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCotucUniverse } from "@/lib/cotuc/cotuc-universe";
-import { refreshVnHolidayCalendar, vnHolidayCalendar } from "@/lib/cotuc/timing-v3/vn-holidays";
+import { refreshVnHolidayCalendar, vnHolidayCalendar, vnHolidayCalendarVersion } from "@/lib/cotuc/timing-v3/vn-holidays";
+import { cotucSourceStamp, loadDecisionForTimeline, memoByStamp } from "@/lib/cotuc/decision-state-lite";
 import { buildBuyTimeline, type DecisionInput, type SeasonInput, type StoredWindow } from "@/lib/cotuc/timing-v3/buy-timeline";
 import type { EarningsCycleStatsV3, EarningsSignal } from "@/lib/cotuc/timing-v3/timing-types";
 
@@ -18,12 +19,30 @@ type Snap = {
   backtest?: Partial<StoredWindow>[];
 };
 
+// Băng thông Supabase (2026-10-15): route được thanh bên gọi trên MỌI tab. Kết quả chỉ phụ thuộc: ngày hôm nay, lịch nghỉ,
+// danh mục (Gateway), CotucDecisionState, EarningsSeasonalityCache -> đệm theo dấu của các nguồn đó; nguồn không đổi thì trả lại
+// đúng kết quả lần trước (giống hệt), đổi thì đọc & tính lại. Nhánh snapshot chỉ lấy exDate, decision.level, signals, backtest.
+type Universe = Awaited<ReturnType<typeof getCotucUniverse>>;
+let lastUniverse: Universe | null = null;
+const timelineCached = memoByStamp(async () => {
+  await refreshVnHolidayCalendar();
+  lastUniverse = await getCotucUniverse();
+  const uni = lastUniverse.tickers.map((t) => `${t.ticker}:${t.sector ?? ""}`).join(",");
+  return [vnToday(), vnHolidayCalendarVersion(), uni, await cotucSourceStamp()].join("#");
+}, () => buildBody(lastUniverse!));
+
 export async function GET() {
   try {
-    await refreshVnHolidayCalendar();
-    const [universe, decisionRows, seasonRows] = await Promise.all([
-      getCotucUniverse(),
-      prisma.cotucDecisionState.findMany({ select: { ticker: true, snapshot: true, computedAt: true } }),
+    return NextResponse.json(await timelineCached(), { headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300" } });
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
+  }
+}
+
+async function buildBody(universe: Universe) {
+  {
+    const [decisionRows, seasonRows] = await Promise.all([
+      loadDecisionForTimeline(),
       prisma.earningsSeasonalityCache.findMany({ select: { ticker: true, earningsSignal: true, stats: true, finalizedAt: true } }),
     ]);
     const decisions: DecisionInput[] = decisionRows.map((r) => {
@@ -45,7 +64,7 @@ export async function GET() {
       sectors: new Map(universe.tickers.map((t) => [t.ticker, t.sector])),
     });
     const latest = (dates: (Date | null)[]) => dates.reduce<Date | null>((m, d) => (d && (!m || d > m) ? d : m), null)?.toISOString() ?? null;
-    return NextResponse.json(
+    return (
       {
         today,
         asOf: { decisions: latest(decisionRows.map((r) => r.computedAt)), seasonality: latest(seasonRows.map((r) => r.finalizedAt)) },
@@ -55,10 +74,7 @@ export async function GET() {
           inWindow: rows.filter((r) => r.status === "IN_WINDOW").length, upcoming: rows.filter((r) => r.status === "UPCOMING").length,
         },
         rows,
-      },
-      { headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300" } },
+      }
     );
-  } catch (e) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }
 }

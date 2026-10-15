@@ -14,6 +14,9 @@ let current = makeVnTradingCalendar(null);
 let loadedAt = 0;
 const TTL_MS = 6 * 3_600_000;
 
+/** Phiên bản lớp lịch Gateway đang dùng (thời điểm nạp) — chỉ đọc, cho dấu thay đổi của bộ đệm. */
+export const vnHolidayCalendarVersion = (): number => loadedAt;
+
 /** Lich dung chung (dong bo). Mac dinh = quy tac tu tinh; sau refreshVnHolidayCalendar() co them lop Gateway. */
 export const vnHolidayCalendar: HolidayCalendar = { isTradingDay: (dayNumber) => current.isTradingDay(dayNumber) };
 
