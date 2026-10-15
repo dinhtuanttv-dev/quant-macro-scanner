@@ -32,8 +32,14 @@ function mapSeverity(severity: string): { decayRate: number; horizon: Horizon } 
   }
 }
 
-function directionFromImpact(rawImpact: number): ImpactDirection {
-  return rawImpact >= 0 ? "benefit" : "harm";
+// X1 (2026-10-16): rawImpact = 0 là tin TRUNG LẬP (VD sự kiện quyền HOSE: GDKHQ cổ tức tiền/cổ phiếu — giá điều chỉnh
+// cơ học, không phải catalyst có hướng). Trước đây `>= 0` gán nhầm thành "benefit" (VD KDH chia cổ tức cổ phiếu bị chấm
+// "có lợi"). Tin trung lập KHÔNG được chuyển thành ImpactEdge — xem NEUTRAL_IMPACT & ingestFromMacroNews.
+export const NEUTRAL_IMPACT = 0;
+
+export function directionFromImpact(rawImpact: number): ImpactDirection | null {
+  if (!Number.isFinite(rawImpact) || rawImpact === NEUTRAL_IMPACT) return null;
+  return rawImpact > 0 ? "benefit" : "harm";
 }
 
 function clampWeight(rawImpact: number): number {
@@ -52,6 +58,8 @@ export interface IngestResult {
 export async function ingestFromMacroNews(limit = 50): Promise<IngestResult> {
   const unconverted = await prisma.macroNewsRecord.findMany({
     where: {
+      // tin trung lập không bao giờ được chuyển -> loại ngay khi truy vấn, để không chiếm chỗ `take` của tin có hướng
+      rawImpact: { not: NEUTRAL_IMPACT },
       NOT: {
         id: {
           in: (
@@ -76,6 +84,10 @@ export async function ingestFromMacroNews(limit = 50): Promise<IngestResult> {
     try {
       const { decayRate, horizon } = mapSeverity(record.severity);
       const direction = directionFromImpact(record.rawImpact);
+      if (!direction) {
+        skippedCount++;
+        continue;
+      }
       const baseWeight = clampWeight(record.rawImpact);
       const category = mapCategory(record.type);
 
