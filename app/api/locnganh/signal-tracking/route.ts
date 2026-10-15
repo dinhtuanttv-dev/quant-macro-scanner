@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   let rows: SectorTrackRow[] = [];
   try {
-    rows = (await prisma.sectorSignalTrack.findMany({ orderBy: { issuedAt: "desc" } })).map((r) => ({
+    rows = (await prisma.sectorSignalTrack.findMany({ orderBy: { issuedAt: "desc" }, take: 2000 })).map((r) => ({
       ...r, level: r.level as DecisionLevel, components: (r.components ?? []) as SectorTrackRow["components"], issuedAt: r.issuedAt.toISOString(),
       outcome: r.outcome === null ? null : r.outcome ? 1 : 0, outcomeRecordedAt: r.outcomeRecordedAt?.toISOString() ?? null,
     }));
