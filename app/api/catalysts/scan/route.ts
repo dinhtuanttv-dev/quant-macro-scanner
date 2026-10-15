@@ -1,4 +1,4 @@
-﻿// app/api/catalysts/scan/route.ts - PHASE 2 + PHASE 3 UPGRADE
+// app/api/catalysts/scan/route.ts - PHASE 2 + PHASE 3 UPGRADE
 // PHASE 2: Da thay redis.set(key, data, {ex: 1800}) bang writeSnapshotSafe() - khong con
 // TTL lam mat du lieu, thay bang co che "stale-aware" o tang doc (latest/route.ts).
 // PHASE 3: Ghi tung tin hieu that vao SignalLedger de sau nay doi chieu gia that,
@@ -8,8 +8,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { Redis } from "@upstash/redis";
 import { prisma } from "@/lib/prisma";
 import { CatalystEngine } from "@/lib/catalyst/CatalystEngine";
-import { ingestFromMacroNews } from "@/lib/catalyst/newsIngestion";
+import { ingestFromMacroNews, NEUTRAL_IMPACT } from "@/lib/catalyst/newsIngestion";
 import { fetchMarketSignalsReal } from "@/lib/catalyst/marketSignals";
+import { fetchGatewaySignalInputs } from "@/lib/catalyst/gatewaySignals";
 import { stockUniverse } from "@/lib/quant-data";
 import { writeSnapshotSafe } from "@/lib/catalyst/engine/SnapshotStore";
 import { recordNewSignal } from "@/lib/catalyst/engine/SignalLedger";
@@ -20,7 +21,14 @@ export const maxDuration = 60;
 const redis = new Redis({ url: process.env.KV_REST_API_URL!, token: process.env.KV_REST_API_TOKEN! });
 
 async function fetchSourcesAndEdges(): Promise<{ sources: CatalystSource[]; edges: ImpactEdge[] }> {
-  const sources = await prisma.catalystSource.findMany({ orderBy: { publishedDate: "desc" }, take: 200 });
+  const all = await prisma.catalystSource.findMany({ orderBy: { publishedDate: "desc" }, take: 200 });
+  // X1: nguồn tạo từ tin TRUNG LẬP (rawImpact = 0, VD GDKHQ cổ tức) trước bản sửa đã bị gán "benefit" — loại khi đọc
+  // (không xoá dữ liệu cũ trong DB).
+  const originIds = all.map((s: { originRecordId?: string | null }) => s.originRecordId).filter((x: string | null | undefined): x is string => !!x);
+  const neutral = originIds.length
+    ? new Set((await prisma.macroNewsRecord.findMany({ where: { id: { in: originIds }, rawImpact: NEUTRAL_IMPACT }, select: { id: true } })).map((r: { id: string }) => r.id))
+    : new Set<string>();
+  const sources: CatalystSource[] = all.filter((s: { originRecordId?: string | null }) => !s.originRecordId || !neutral.has(s.originRecordId));
   const edges = await prisma.impactEdge.findMany({ where: { sourceId: { in: sources.map((s) => s.id) } } });
   return { sources, edges };
 }
@@ -39,8 +47,11 @@ async function runScan() {
   const ingestResult = await ingestFromMacroNews();
   const { sources, edges } = await fetchSourcesAndEdges();
   const allTickers = Array.from(new Set(edges.filter((e) => e.targetType === "ticker").map((e) => e.targetId)));
+  // X1: universe = Siêu Quét trên Gateway (~276 mã, giá điều chỉnh) thay vì 61 mã stockUniverse; Gateway lỗi -> giữ 61 mã cũ.
+  const gatewayInputs = await fetchGatewaySignalInputs();
+  const universe = gatewayInputs.ok ? [...new Set([...gatewayInputs.tickers.keys(), ...stockUniverse.map((s) => s.ticker)])] : stockUniverse.map((s) => s.ticker);
   const [marketSignals, calibration, watchlistTickers, previousRanksRaw] = await Promise.all([
-    fetchMarketSignalsReal(allTickers), fetchCalibration(), fetchWatchlistTickers(),
+    fetchMarketSignalsReal(allTickers, gatewayInputs), fetchCalibration(), fetchWatchlistTickers(),
     redis.get<Record<string, number>>("catalyst:ranks:previous"),
   ]);
   for (const ticker of watchlistTickers) { const s = marketSignals.get(ticker); if (s) s.isWatchlisted = true; }
@@ -53,10 +64,11 @@ async function runScan() {
   const downMovers = engine.getTopMovers("harm", 20);
   const activeAlerts = engine.getActiveAlerts(DEFAULT_ALERT_CONFIG);
   const upcomingEvents = engine.getUpcomingMacroEvents(10);
-  const tickerImpacts = engine.getImpactForTickers(stockUniverse.map((s) => s.ticker));
+  const tickerImpacts = engine.getImpactForTickers(universe);
 
   const snapshot = {
     scannedAt: new Date().toISOString(), ingestResult, sectors, emerging,
+    marketData: { source: gatewayInputs.ok ? "gateway" : "unavailable", dataAsOf: gatewayInputs.dataAsOf, universeSize: universe.length, error: gatewayInputs.error ?? null },
     upMovers, downMovers,
     totalBenefitCount: edges.filter((e) => e.targetType === "ticker" && e.direction === "benefit").length,
     totalHarmCount: edges.filter((e) => e.targetType === "ticker" && e.direction === "harm").length,
