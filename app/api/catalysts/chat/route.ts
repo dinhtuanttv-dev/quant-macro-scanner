@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import { Redis } from "@upstash/redis";
 import { readSnapshotWithStaleness } from "@/lib/catalyst/engine/SnapshotStore";
+import { sanitizeLegacySnapshot } from "@/lib/catalyst/provenance";
 import { runChat, type ChatEvent } from "@/lib/catalyst/chat/chatEngine";
 import { buildSystemPrompt, buildToolList, createToolExecutor, fetchMacroToolSpecs } from "@/lib/catalyst/chat/chatTools";
 import type { CatalystSnapshotLike } from "@/lib/catalyst/chat/catalystTools";
@@ -91,7 +92,7 @@ export async function POST(request: Request) {
   const execTool = createToolExecutor({
     getSnapshot: async () => {
       const r = await readSnapshotWithStaleness<CatalystSnapshotLike>(redis);
-      return r.snapshot ? { ...r.snapshot, isStale: r.isStale, ageMinutes: r.ageMinutes ?? undefined } : null;
+      return r.snapshot ? { ...sanitizeLegacySnapshot(r.snapshot as Parameters<typeof sanitizeLegacySnapshot>[0]), isStale: r.isStale, ageMinutes: r.ageMinutes ?? undefined } as CatalystSnapshotLike : null;
     },
   });
 

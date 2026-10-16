@@ -1,4 +1,4 @@
-﻿// app/api/catalysts/latest/route.ts — PHASE 2 UPGRADE + resilience fix
+// app/api/catalysts/latest/route.ts — PHASE 2 UPGRADE + resilience fix
 // Da tich hop readSnapshotWithStaleness - client gio nhan them isStale + ageMinutes
 // thay vi chi "co du lieu / khong co du lieu". UI co the hien "Du lieu cu (45 phut)"
 // thay vi bien mat hoan toan khi scan that bai lien tuc.
@@ -7,6 +7,7 @@
 import { NextResponse } from "next/server";
 import { Redis } from "@upstash/redis";
 import { readSnapshotWithStaleness } from "@/lib/catalyst/engine/SnapshotStore";
+import { sanitizeLegacySnapshot } from "@/lib/catalyst/provenance";
 
 const redis = new Redis({
   url: process.env.KV_REST_API_URL!,
@@ -19,7 +20,8 @@ export async function GET() {
     if (!snapshot) {
       return NextResponse.json({ error: "Chua co du lieu - cho lan quet dau tien" });
     }
-    return NextResponse.json({ ...snapshot, isStale, ageMinutes });
+    // snapshot quét trước bản sửa nguồn gốc/X1: ẩn dữ liệu mẫu + tin trung lập khi đọc (không ghi lại kho)
+    return NextResponse.json({ ...sanitizeLegacySnapshot(snapshot as Parameters<typeof sanitizeLegacySnapshot>[0]), isStale, ageMinutes });
   } catch (err) {
     console.error("[api/catalysts/latest] Redis loi:", err);
     return NextResponse.json(
