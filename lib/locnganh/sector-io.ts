@@ -31,6 +31,17 @@ async function mapLimit<T, R>(items: T[], n: number, fn: (x: T) => Promise<R>): 
   return out;
 }
 
+/**
+ * Risk-On Index đã kiểm định đặt trước (Gateway backend/src/market/riskOnValidation/RON-results.md, 2026-10-16): 10 năm,
+ * 124 mẫu không chồng lấn, IC +0,049, KTC95 [−0,103; +0,217] -> KHÔNG ĐẠT. Theo hệ quả đã đăng ký trước, Risk-On KHÔNG còn
+ * tham gia chế độ thị trường của quyết định Lọc ngành (chỉ còn xu hướng MA200/biến động VN-Index); điểm vẫn trả về để hiển thị.
+ */
+export const RISK_ON_IN_DECISION = false;
+export const RISK_ON_EVIDENCE = {
+  label: "HEURISTIC_FAILED" as const,
+  reason: "Risk-On đã kiểm định đặt trước 10 năm (124 mẫu): IC +0,05, KTC95 [−0,10; +0,22] — không đạt. Chỉ hiển thị, không dùng trong quyết định.",
+};
+
 /** Ngưỡng giống hệt nhãn Risk-On của tab Lọc ngành (LocNganhPanel / weighted-macro-score). */
 export const macroRegimeOf = (score: number | null): MacroRegime => (score === null ? "TRUNG_LAP" : score >= 65 ? "RISK_ON" : score <= 35 ? "RISK_OFF" : "TRUNG_LAP");
 
@@ -59,7 +70,7 @@ async function confluenceBySector(symbols: Record<string, { l2?: string; l3?: st
   }
 }
 
-export interface SectorTimingContext extends SectorTimingInput { engine: string; gatewayAsOf: string; method: string; coverage: unknown; riskOnScore: number | null; evidence: { label: string; reason: string } | null }
+export interface SectorTimingContext extends SectorTimingInput { engine: string; gatewayAsOf: string; method: string; coverage: unknown; riskOnScore: number | null; riskOnDisplayRegime: MacroRegime; evidence: { label: string; reason: string } | null }
 
 export async function loadSectorTimingInput(): Promise<SectorTimingContext> {
   const [summary, taxonomy] = await Promise.all([
@@ -82,6 +93,6 @@ export async function loadSectorTimingInput(): Promise<SectorTimingContext> {
     summaries: summary.sectors,
     histories: new Map(histories.filter((h): h is GatewaySectorHistory => !!h).map((h) => [h.code, h])),
     l1Of, bench: benchPrices, closedThrough: summary.closedThrough, asOf: benchPrices.at(-1)?.date ?? summary.dataAsOf,
-    macroRegime: macroRegimeOf(riskOnScore), confluenceBySector: confluence, cal: makeVnTradingCalendar(holidays), worldSignals,
+    macroRegime: RISK_ON_IN_DECISION ? macroRegimeOf(riskOnScore) : "TRUNG_LAP", riskOnDisplayRegime: macroRegimeOf(riskOnScore), confluenceBySector: confluence, cal: makeVnTradingCalendar(holidays), worldSignals,
   };
 }

@@ -61,6 +61,10 @@ function normalizeTrendScore(score: number | null): number {
 const WEIGHTS_RISK_OFF: WeightSet = { rrg: 0.35, rs: 0.30, volume: 0.10, pvt: 0.125, ad: 0.125 };
 const WEIGHTS_RISK_ON: WeightSet = { rrg: 0.15, rs: 0.25, volume: 0.20, pvt: 0.20, ad: 0.20 };
 
+/**
+ * HEURISTIC: trọng số động nội suy theo Risk-On Index. Risk-On đã kiểm định đặt trước (Gateway riskOnValidation/RON-results.md,
+ * 2026-10-16) và KHÔNG ĐẠT — việc nghiêng trọng số theo Risk-On là luật đặt tay, không có bằng chứng ngoài mẫu.
+ */
 export function computeDynamicWeights(riskOnScore: number): WeightSet {
   const t = Math.max(0, Math.min(100, riskOnScore)) / 100;
   return {

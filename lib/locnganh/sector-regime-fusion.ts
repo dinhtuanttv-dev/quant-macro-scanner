@@ -32,6 +32,9 @@ export function confluenceToProbability(confluenceScore: number): number {
  * nguồn mâu thuẫn, vì macro score là chỉ báo RỘNG hơn (tổng hợp nhiều chỉ báo dòng tiền), còn
  * MA200/biến động chỉ là một lớp xác nhận thêm; chỉ hạ xuống RISK_OFF khi macro TRUNG_LAP mà
  * MA200/biến động xấu, không đảo ngược một RISK_ON rõ ràng từ macro score.
+ *
+ * 2026-10-16: Risk-On KHÔNG ĐẠT kiểm định đặt trước -> sector-io truyền "TRUNG_LAP" (RISK_ON_IN_DECISION = false), nên trên
+ * thực tế chế độ thị trường chỉ còn do MA200/biến động VN-Index quyết định. Hàm giữ nguyên để bật lại nếu một bản Risk-On mới ĐẠT.
  */
 export function fuseMacroAndTrendRegime(macroRegime: MacroRegime, trend: RegimeResult): MarketRegime {
   if (macroRegime === 'RISK_OFF') return 'RISK_OFF';
