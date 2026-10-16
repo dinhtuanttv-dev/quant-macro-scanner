@@ -1,7 +1,7 @@
 // Lọc ngành (L2) — bộ nhớ đệm 30 phút cho engine xoay vòng ngành: một lần tính phục vụ cả bulk lẫn chi tiết từng ngành.
 // Không ghi DB.
 import { computeSectorTiming, SECTOR_TIMING_VERSION, SECTOR_WINDOWS } from "./sector-timing";
-import { loadSectorTimingInput } from "./sector-io";
+import { loadSectorTimingInput, RISK_ON_EVIDENCE, RISK_ON_IN_DECISION } from "./sector-io";
 
 const TTL_MS = 30 * 60_000;
 
@@ -12,7 +12,8 @@ async function build() {
     version: SECTOR_TIMING_VERSION,
     asOf: ctx.asOf,
     gateway: { engine: ctx.engine, dataAsOf: ctx.gatewayAsOf, closedThrough: ctx.closedThrough, method: ctx.method, coverage: ctx.coverage },
-    market: { riskOnScore: ctx.riskOnScore, macroRegime: ctx.macroRegime },
+    // macroRegime = chế độ ĐÃ dùng trong quyết định (TRUNG_LAP khi Risk-On bị loại); riskOnRegime = nhãn hiển thị của điểm Risk-On
+    market: { riskOnScore: ctx.riskOnScore, macroRegime: ctx.macroRegime, riskOnRegime: ctx.riskOnDisplayRegime, riskOnInDecision: RISK_ON_IN_DECISION, riskOnEvidence: RISK_ON_EVIDENCE },
     windows: SECTOR_WINDOWS,
     // L3 (Gateway sectors/validation.js): kiểm định đặt trước "ngành vào Cải thiện" — KHÔNG ĐẠT -> EXPERIMENTAL
     evidence: ctx.evidence ?? { label: "EXPERIMENTAL", reason: "Chưa có kết quả kiểm định ngoài mẫu — tham khảo, không phải khuyến nghị." },
