@@ -1,6 +1,8 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { marketAgentSchema, newsAgentSchema, evidenceAgentSchema, dividendAnalysisSchema } from "./schemas";
 import { VALID_SECTOR_KEYS } from "@/lib/mapping/macro-mapping";
+import type { WorldAiContext } from "./world-context";
+import { verifySectorImpacts, type CheckedImpact } from "./verify-sector-impacts";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
@@ -8,6 +10,18 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 // co ket luan RIENG, tranh Gemini "lam bieng" copy 1 direction/reasoning
 // cho tat ca sectorImpacts (hanh vi thuc te da gap khi chi doi schema ma
 // khong doi ca huong dan prompt).
+// 2026-10-17: khi có ngữ cảnh Gateway, sectorKey = MÃ NGÀNH ICB VIỆT NAM (danh sách động) và agent nhận điểm định lượng
+// thuận/ngược gió đã kiểm định đặt trước — phần bổ sung ICB_RULES bên dưới.
+const ICB_RULES = (sectorList: string) => `
+
+BỔ SUNG (chế độ ngành ICB Việt Nam):
+A. "sectorKey" là MÃ NGÀNH ICB 4 chữ số, CHỈ chọn trong danh sách: ${sectorList}.
+B. Các data point "ws:<mã ICB>" là ĐIỂM ĐỊNH LƯỢNG ngành thế giới → ngành VN (độ lệch chuẩn σ). Xếp hạng ngắn hạn đã qua kiểm định
+   đặt trước nhưng lợi thế NHỎ (IC ≈ 0,02); trung hạn CHƯA đạt kiểm định. KHÔNG kết luận trái chiều với điểm ngắn hạn khi |điểm| ≥ 0,5
+   trừ khi có tin tức cụ thể trong dữ liệu — nếu vậy phải trích dẫn tin đó và nêu rõ lý do.
+C. Mỗi ngành trong sectorImpacts PHẢI trích dẫn ít nhất 1 ID "ws:<mã>" của chính ngành đó cộng các ID chỉ số / hàng hoá (mk:, mc:, cm:) liên quan.
+D. Ưu tiên tối đa 8 ngành có |điểm| lớn nhất hoặc có hàng hoá/tin tức rõ ràng; không liệt kê ngành không có cơ sở.`;
+
 const MARKET_AGENT_SYSTEM_PROMPT = `Bạn là Market Agent trong hệ thống phân tích tài chính Global Quanta.
 
 NHIỆM VỤ DUY NHẤT: Phân tích dữ liệu thị trường thô (giá, % thay đổi) được cung cấp, xác định NGÀNH NÀO bị ảnh hưởng VÀ TÁC ĐỘNG RIÊNG của sự kiện lên TỪNG NGÀNH đó.
@@ -71,10 +85,14 @@ export async function runDividendAnalysisAgent(stockData: Record<string, unknown
   return JSON.parse(result.response.text());
 }
 
-export async function runMarketAgent(dataPoints: DataPoint[]) {
+export async function runMarketAgent(dataPoints: DataPoint[], ctx?: WorldAiContext | null) {
+  const sectorList = ctx ? [...ctx.sectors.values()].map((s) => `${s.icb} (${s.nameVi})`).join(", ") : "";
+  const system = ctx
+    ? MARKET_AGENT_SYSTEM_PROMPT.replace(`"sectorKey" trong mỗi phần tử CHỈ được chọn từ danh sách sau: ${VALID_SECTOR_KEYS.join(", ")}. Không tự tạo key mới.`, `"sectorKey" là mã ngành ICB (xem mục A bên dưới). Không tự tạo mã mới.`) + ICB_RULES(sectorList)
+    : MARKET_AGENT_SYSTEM_PROMPT;
   const model = genAI.getGenerativeModel({
     model: "gemini-3.6-flash",
-    systemInstruction: MARKET_AGENT_SYSTEM_PROMPT,
+    systemInstruction: system,
     generationConfig: { responseMimeType: "application/json", responseSchema: marketAgentSchema as any },
   });
   const prompt = `DỮ LIỆU ĐẦU VÀO:\n${JSON.stringify(dataPoints, null, 2)}\n\nPhân tích tác động đến thị trường Việt Nam. Nhớ: mỗi ngành trong sectorImpacts phải có direction/reasoningVi RIÊNG, không dùng chung 1 kết luận.`;
@@ -120,6 +138,10 @@ interface SectorImpactRaw {
 export interface SectorImpactResult extends SectorImpactRaw {
   verified: boolean;
   discrepancies: string[];
+  /** chế độ ICB: điểm định lượng của ngành, mã thành phần thật, tên ngành */
+  quant?: CheckedImpact["quant"];
+  vnTickers?: string[];
+  sectorNameVi?: string | null;
 }
 
 export interface MultiAgentAnalysisResult {
@@ -129,11 +151,13 @@ export interface MultiAgentAnalysisResult {
   newsVerified: boolean;
   newsDiscrepancies: string[];
   disclaimer: string;
+  /** "gateway-icb" = dữ liệu Gateway + mã ICB + kiểm chứng bằng code; "legacy" = bảng Supabase + khoá ngành cũ */
+  mode: "gateway-icb" | "legacy";
 }
 
-export async function runMultiAgentAnalysis(dataPoints: DataPoint[], newsItems: { title: string; url: string; publishedAt: string }[]): Promise<MultiAgentAnalysisResult> {
+export async function runMultiAgentAnalysis(dataPoints: DataPoint[], newsItems: { title: string; url: string; publishedAt: string }[], ctx?: WorldAiContext | null): Promise<MultiAgentAnalysisResult> {
   const [marketResult, newsResult] = await Promise.all([
-    runMarketAgent(dataPoints),
+    runMarketAgent(dataPoints, ctx),
     newsItems.length > 0 ? runNewsAgent(newsItems) : Promise.resolve(null),
   ]);
 
@@ -145,6 +169,17 @@ export async function runMultiAgentAnalysis(dataPoints: DataPoint[], newsItems: 
   const verificationMap = new Map<string, { verified: boolean; finalConfidence: number; discrepancies: string[] }>(
     (evidenceResult.sectorVerifications ?? []).map((v: any) => [v.sectorKey, v]),
   );
+
+  if (ctx) {
+    // chế độ ICB: kiểm chứng BẰNG CODE (ref thật, mã ICB hợp lệ, không trái chiều điểm định lượng) + kết quả Evidence Agent
+    const sectors = verifySectorImpacts(marketResult.sectorImpacts ?? [], dataPoints, ctx.sectors, verificationMap);
+    return {
+      overallSummaryVi: marketResult.overallSummaryVi, sectors, news: newsResult,
+      newsVerified: evidenceResult.newsVerified ?? false, newsDiscrepancies: evidenceResult.newsDiscrepancies ?? [],
+      disclaimer: "Thông tin mang tính tham khảo, không phải khuyến nghị đầu tư. Kết luận AI được kiểm chứng bằng code với dữ liệu Gateway và điểm ngành định lượng.",
+      mode: "gateway-icb",
+    };
+  }
 
   const sectors: SectorImpactResult[] = (marketResult.sectorImpacts ?? []).map((s: SectorImpactRaw) => {
     const verification = verificationMap.get(s.sectorKey);
@@ -172,5 +207,6 @@ export async function runMultiAgentAnalysis(dataPoints: DataPoint[], newsItems: 
     newsVerified: evidenceResult.newsVerified ?? false,
     newsDiscrepancies: evidenceResult.newsDiscrepancies ?? [],
     disclaimer: "Thông tin mang tính tham khảo, không phải khuyến nghị đầu tư.",
+    mode: "legacy",
   };
 }
