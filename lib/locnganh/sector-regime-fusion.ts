@@ -19,6 +19,7 @@ import type { CombinedProbability, WeightedSignal } from "@/lib/cotuc/timing-v3/
 import { REGIME_WEIGHT_MULTIPLIER, classifyMarketRegime } from "@/lib/cotuc/timing-v3/decision/market-regime";
 import type { MarketRegime, RegimeResult } from "@/lib/cotuc/timing-v3/decision/market-regime";
 import type { ConfluenceStock, MacroRegime } from "./sector-types";
+import { WORLD_SIGNAL_WEIGHT } from "./world-context";
 
 /** Quy đổi Confluence Score (0-100, đã có sẵn) sang xác suất [0,1] cho log-odds-combiner. */
 export function confluenceToProbability(confluenceScore: number): number {
@@ -39,6 +40,28 @@ export function fuseMacroAndTrendRegime(macroRegime: MacroRegime, trend: RegimeR
   return trend.regime;
 }
 
+const SHRINK_STRENGTH = 4;
+const logit = (p: number) => { const c = Math.min(1 - 1e-6, Math.max(1e-6, p)); return Math.log(c / (1 - c)); };
+const invLogit = (x: number) => 1 / (1 + Math.exp(-x));
+
+/**
+ * Bối cảnh thế giới là một bước cập nhật Bayes RIÊNG trên xác suất đã gộp (không đưa vào combineLogOdds): bộ gộp chuẩn hoá theo
+ * trọng số TRUNG BÌNH nên thêm một tín hiệu trọng số thấp sẽ KHUẾCH ĐẠI các tín hiệu khác — một bối cảnh bất lợi khi đó lại làm
+ * xác suất TĂNG (phát hiện bằng test). Ở đây: logit(p') = logit(p) + κ·logit(p_thế giới), κ = w / (W + w + shrink) < 1 —
+ * đơn điệu (thuận -> tăng, bất lợi -> giảm), mức ảnh hưởng thấp và giảm khi bằng chứng khác (W) nhiều. Không usable -> giữ nguyên.
+ */
+export function applyWorldContext(combined: CombinedProbability, world: SectorRegimeFusionInput["world"], weight: number): CombinedProbability {
+  if (!world?.usable || world.probability === null || !(weight > 0)) return combined;
+  const kappa = weight / (combined.totalWeight + weight + SHRINK_STRENGTH);
+  const delta = kappa * logit(world.probability);
+  return {
+    ...combined,
+    probability: invLogit(logit(combined.probability) + delta),
+    contributions: [...combined.contributions, { name: 'Bối cảnh thế giới (ngoài mẫu)', probability: world.probability, weight, logOdds: logit(world.probability), share: kappa }],
+    totalWeight: combined.totalWeight + weight,
+  };
+}
+
 export interface SectorRegimeFusionInput {
   /** Xác suất outperform đã tính (Beta-Binomial) cho cửa sổ được chọn — null nếu NO_SIGNAL. */
   reactionProbability: number | null;
@@ -47,6 +70,11 @@ export interface SectorRegimeFusionInput {
   confluence: ConfluenceStock | null;
   macroRegime: MacroRegime;
   vnIndexCloses: number[];
+  /**
+   * Bối cảnh thế giới (Kết nối thế giới, gói macro-center 1.2): xác suất đã hiệu chỉnh theo tỷ lệ đúng hướng NGOÀI MẪU, chỉ có
+   * khi cổng kiểm định ngoài mẫu đạt trên số liệu thật (`usable`). Không truyền / không usable -> trọng số 0, kết quả không đổi.
+   */
+  world?: { usable: boolean; probability: number | null } | null;
 }
 
 export interface SectorRegimeFusionResult {
@@ -80,6 +108,6 @@ export function fuseSectorSignals(input: SectorRegimeFusionInput): SectorRegimeF
     },
   ];
 
-  const combined = combineLogOdds(signals, { shrinkStrength: 4 });
+  const combined = applyWorldContext(combineLogOdds(signals, { shrinkStrength: SHRINK_STRENGTH }), input.world, WORLD_SIGNAL_WEIGHT * regimeMultiplier);
   return { combined, marketRegime, trendDetail: trend };
 }

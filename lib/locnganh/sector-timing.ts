@@ -22,6 +22,7 @@ import { buildEventSamplesFromPaths, computeIndustryGroupPrior, computeSectorCyc
 import { fuseSectorSignals } from "./sector-regime-fusion";
 import { computeSectorDecisionState } from "./compute-sector-decision-state";
 import { scanSectorOpportunities } from "./scan-sector-opportunities";
+import { worldContextFor, type WorldSectorSignalsDoc } from "./world-context";
 import type { ConfluenceStock, MacroRegime, Quadrant, RRGPoint, SectorCycleStatsV3, SectorOpportunity, SectorTimingAction, SectorTimingSignal } from "./sector-types";
 
 export const SECTOR_TIMING_VERSION = "locnganh-timing/L2";
@@ -60,6 +61,8 @@ export interface SectorTimingInput {
   /** Lịch giao dịch VN (quy tắc + ngày nghỉ quan sát của Gateway) — biết cả ngày TƯƠNG LAI, nên dịch offset quanh lần chuyển
    *  góc gần đây không vượt phạm vi dữ liệu (lịch suy từ giá chỉ biết ngày đã có giá -> addTradingDays dừng an toàn & ném lỗi). */
   cal?: HolidayCalendar;
+  /** Tín hiệu Kết nối thế giới theo rổ ngành (Gateway /api/world/sector-signals) — null nếu không lấy được. */
+  worldSignals?: WorldSectorSignalsDoc | null;
 }
 
 export interface SectorTimingDetail {
@@ -157,7 +160,9 @@ export function computeSectorTiming(input: SectorTimingInput): { signals: Sector
       });
     }
     const conf = input.confluenceBySector?.get(s.code) ?? null;
+    const world = worldContextFor(s.code, input.worldSignals ?? null);
     const fused = fuseSectorSignals({
+      world: world ? { usable: world.usable, probability: world.probability } : null,
       reactionProbability: stats.reactionProbability?.mean ?? null, reactionProbabilityNEvents: sel?.nEvents ?? 0,
       confluence: conf !== null ? ({ confluenceScore: conf } as ConfluenceStock) : null, macroRegime: input.macroRegime, vnIndexCloses: vnCloses,
     });
@@ -169,6 +174,7 @@ export function computeSectorTiming(input: SectorTimingInput): { signals: Sector
       // chưa có xác suất lịch sử -> "không mâu thuẫn" khi Confluence kỹ thuật không tiêu cực (≥ 50); không có Confluence -> chưa biết
       confluenceCorroborates: conf === null ? null : pr === null ? conf >= 50 : (conf >= 50) === (pr >= 0.5),
       liquidityOk: s.thin ? false : null,
+      world: world ? { usable: world.usable, probability: world.probability, reason: world.reason, tierA: world.tierA } : null,
     });
     signals.push({
       sectorKey: s.code, action, tdSinceTransition: t,
