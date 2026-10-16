@@ -32,6 +32,12 @@ export interface SectorDecisionInput {
   confluenceCorroborates: boolean | null;
   /** null = chưa kiểm tra thanh khoản (ADTV của rổ cổ phiếu đại diện ngành) — không chặn FAVORABLE. */
   liquidityOk: boolean | null;
+  /**
+   * Bối cảnh thế giới (tuỳ chọn; chỉ ngành có rổ tương ứng ở Kết nối thế giới). Dòng kiểm tra CHỈ MANG TÍNH THÔNG TIN: không bao
+   * giờ "✖" (không chặn FAVORABLE) — ảnh hưởng tới quyết định duy nhất là qua xác suất tổng hợp, với trọng số thấp và chỉ khi cổng
+   * ngoài mẫu đạt.
+   */
+  world?: { usable: boolean; probability: number | null; reason: string; tierA: string[] } | null;
 }
 
 const ACTION_TEXT: Record<SectorTimingAction, string> = {
@@ -53,7 +59,7 @@ export function computeSectorDecisionState(
   input: SectorDecisionInput,
   thresholds: SectorDecisionThresholds = DEFAULT_SECTOR_DECISION_THRESHOLDS,
 ): DecisionState {
-  const { action, combined, entryPlan, marketRegime, transitionDateConfirmed, confluenceCorroborates, liquidityOk } = input;
+  const { action, combined, entryPlan, marketRegime, transitionDateConfirmed, confluenceCorroborates, liquidityOk, world } = input;
   const p = combined.probability;
 
   const checks: ConditionCheck[] = [
@@ -106,19 +112,29 @@ export function computeSectorDecisionState(
       detail: liquidityOk === null ? 'Chưa kiểm tra' : liquidityOk ? 'Đủ' : 'Thấp — khó vào/ra ở khối lượng dự kiến',
     },
   ];
+  if (world) {
+    checks.push({
+      key: 'worldContext',
+      label: 'Bối cảnh thế giới (kiểm định ngoài mẫu)',
+      passed: world.usable && world.probability !== null && world.probability >= 0.5 ? true : null,
+      detail: world.usable && world.probability !== null
+        ? `${world.probability >= 0.5 ? 'Thuận' : 'Bất lợi'} (${pct(world.probability)}; liên kết bậc A: ${world.tierA.join(', ')}) — ${world.reason}`
+        : `Chưa dùng trong quyết định — ${world.reason}`,
+    });
+  }
 
   const hardAvoid = HARD_AVOID_ACTIONS.has(action) || entryPlan.timeStopped || entryPlan.invalidated;
 
   let level: DecisionLevel;
   if (hardAvoid || p < thresholds.watchProbability) {
     level = 'AVOID';
-  } else if (action === 'IN_WINDOW' && p >= thresholds.favorableProbability && checks.every((c) => c.key === 'liquidity' || c.passed !== false)) {
+  } else if (action === 'IN_WINDOW' && p >= thresholds.favorableProbability && checks.every((c) => c.key === 'liquidity' || c.key === 'worldContext' || c.passed !== false)) {
     level = 'FAVORABLE';
   } else {
     level = 'WATCH';
   }
 
-  const failedMandatory = checks.filter((c) => c.key !== 'liquidity' && c.passed === false);
+  const failedMandatory = checks.filter((c) => c.key !== 'liquidity' && c.key !== 'worldContext' && c.passed === false);
   const headline =
     level === 'FAVORABLE'
       ? `Thuận lợi để vào — xác suất tổng hợp ${pct(p)}`

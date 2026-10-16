@@ -7,7 +7,7 @@ import { Redis } from "@upstash/redis";
 import { readSnapshotWithStaleness } from "@/lib/catalyst/engine/SnapshotStore";
 import { sanitizeLegacySnapshot } from "@/lib/catalyst/provenance";
 import { runChat, type ChatEvent } from "@/lib/catalyst/chat/chatEngine";
-import { buildSystemPrompt, buildToolList, createToolExecutor, fetchMacroToolSpecs } from "@/lib/catalyst/chat/chatTools";
+import { buildSystemPrompt, buildToolList, createToolExecutor, fetchMacroToolSpecs, fetchWorldToolSpecs } from "@/lib/catalyst/chat/chatTools";
 import type { CatalystSnapshotLike } from "@/lib/catalyst/chat/catalystTools";
 
 export const runtime = "nodejs";
@@ -87,8 +87,8 @@ export async function POST(request: Request) {
   }
   if (used > DAILY_LIMIT) return json(429, { error: `Đã dùng hết ${DAILY_LIMIT} câu hỏi hôm nay — quay lại ngày mai.` });
 
-  const macro = await fetchMacroToolSpecs();
-  const tools = buildToolList(macro);
+  const [macro, world] = await Promise.all([fetchMacroToolSpecs(), fetchWorldToolSpecs()]);
+  const tools = buildToolList(macro, world);
   const execTool = createToolExecutor({
     getSnapshot: async () => {
       const r = await readSnapshotWithStaleness<CatalystSnapshotLike>(redis);
@@ -99,18 +99,18 @@ export async function POST(request: Request) {
   const enc = new TextEncoder();
   const body = new ReadableStream<Uint8Array>({
     async start(controller) {
-      const send = (e: ChatEvent | { type: "meta"; remaining: number; macroMode: string | null }) => {
+      const send = (e: ChatEvent | { type: "meta"; remaining: number; macroMode: string | null; worldMode: string | null }) => {
         try {
           controller.enqueue(enc.encode(`data: ${JSON.stringify(e)}\n\n`));
         } catch {
           // client đã đóng
         }
       };
-      send({ type: "meta", remaining: Math.max(0, DAILY_LIMIT - used), macroMode: macro?.mode ?? null });
+      send({ type: "meta", remaining: Math.max(0, DAILY_LIMIT - used), macroMode: macro?.mode ?? null, worldMode: world?.mode ?? null });
       const t0 = Date.now();
       try {
         await runChat({
-          messages: parsed, system: buildSystemPrompt(macro, vnToday()), tools,
+          messages: parsed, system: buildSystemPrompt(macro, vnToday(), world), tools,
           api: anthropic.beta.messages, signal: request.signal,
           execTool: async (name, input) => {
             const t = Date.now();

@@ -12,6 +12,7 @@ import type { PricePoint } from "@/lib/cotuc/timing-v3/compute-cycle-paths";
 import type { GatewaySectorHistory, GatewaySectorSummary, SectorTimingInput } from "./sector-timing";
 import type { MacroRegime } from "./sector-types";
 import { fetchGatewayHolidays, makeVnTradingCalendar } from "@/lib/cotuc/timing-v3/vn-trading-calendar";
+import { fetchWorldSectorSignals } from "./world-context";
 
 interface RrgSummaryDoc { engine: string; dataAsOf: string; closedThrough: string | null; partialWeek: boolean; method: string; coverage: unknown; sectors: GatewaySectorSummary[]; evidence?: { label: string; reason: string } }
 
@@ -66,12 +67,13 @@ export async function loadSectorTimingInput(): Promise<SectorTimingContext> {
     getJson<{ symbols: Record<string, { l1?: string; l2?: string; l3?: string }> }>("/api/market/sectors/taxonomy").catch(() => ({ symbols: {} as Record<string, { l2?: string; l3?: string }> })),
   ]);
   const year = Number(summary.dataAsOf.slice(0, 4));
-  const [histories, bench, riskOnScore, confluence, holidays] = await Promise.all([
+  const [histories, bench, riskOnScore, confluence, holidays, worldSignals] = await Promise.all([
     mapLimit(summary.sectors, 6, (s) => getJson<GatewaySectorHistory>(`/api/market/sectors/${s.code}/history`).catch(() => null)),
     getJson<{ bars: { date: string; close: number; partial?: boolean }[] }>("/api/market/ohlcv?symbol=VNINDEX&range=5y", 30_000),
     fetchRiskOnScore().catch(() => null),
     confluenceBySector(taxonomy.symbols),
     fetchGatewayHolidays(MARKET_GATEWAY_URL, `${year - 6}-01-01`, `${year + 1}-12-31`),
+    fetchWorldSectorSignals(),
   ]);
   const l1Of = new Map<string, string | null>(summary.sectors.filter((s) => s.level === 2).map((s) => [s.code, s.parent]));
   const benchPrices: PricePoint[] = bench.bars.filter((b) => !b.partial && b.close > 0).map((b) => ({ date: b.date, adjClose: b.close }));
@@ -80,6 +82,6 @@ export async function loadSectorTimingInput(): Promise<SectorTimingContext> {
     summaries: summary.sectors,
     histories: new Map(histories.filter((h): h is GatewaySectorHistory => !!h).map((h) => [h.code, h])),
     l1Of, bench: benchPrices, closedThrough: summary.closedThrough, asOf: benchPrices.at(-1)?.date ?? summary.dataAsOf,
-    macroRegime: macroRegimeOf(riskOnScore), confluenceBySector: confluence, cal: makeVnTradingCalendar(holidays),
+    macroRegime: macroRegimeOf(riskOnScore), confluenceBySector: confluence, cal: makeVnTradingCalendar(holidays), worldSignals,
   };
 }

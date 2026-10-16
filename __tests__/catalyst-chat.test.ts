@@ -5,7 +5,7 @@ vi.mock("@/lib/prisma", () => ({ prisma: {} }));
 import { runChat, type ChatEvent, type StreamingMessages } from "@/lib/catalyst/chat/chatEngine";
 import { runCatalystTool, type CatalystSnapshotLike } from "@/lib/catalyst/chat/catalystTools";
 import { auditNumbers, readings } from "@/lib/catalyst/chat/numberAudit";
-import { buildToolList, buildSystemPrompt } from "@/lib/catalyst/chat/chatTools";
+import { buildToolList, buildSystemPrompt, createToolExecutor } from "@/lib/catalyst/chat/chatTools";
 
 // Model giả có kịch bản: mỗi lượt trả về một message dựng sẵn (text và/hoặc tool_use).
 type Turn = { text?: string; tools?: { name: string; input: unknown }[]; stop?: string };
@@ -141,5 +141,36 @@ describe("X4 — công cụ xúc tác", () => {
     const sp = buildSystemPrompt(null, "2026-10-16");
     expect(sp).toMatch(/Không đưa khuyến nghị mua\/bán/);
     expect(sp).toMatch(/không lấy được dữ liệu/);
+  });
+});
+
+describe("X4 — công cụ Kết nối thế giới (world_*)", () => {
+  const world = {
+    anthropic: [{ name: "world_links", description: "d", input_schema: { type: "object", properties: {} } }, { name: "world_events", description: "d", input_schema: { type: "object", properties: {} } }],
+    guidelines: "Quy tắc bổ sung khi dùng công cụ world_*: không gọi bậc C là \"có tác động\"; sự kiện pending chưa đo được.",
+    mode: "real" as const, notice: null,
+  };
+  it("danh sách công cụ + system prompt có quy tắc bậc A/B/C và yếu tố chưa có nguồn", () => {
+    const tools = buildToolList(null, world);
+    expect(tools.map((t) => t.name)).toEqual(["world_links", "world_events", "macro_catalyst_calendar", "catalyst_overview", "catalyst_ticker", "catalyst_sector"]);
+    const sp = buildSystemPrompt(null, "2026-10-16", world);
+    expect(sp).toMatch(/không gọi bậc C/);
+    expect(sp).toMatch(/pending/);
+    expect(sp).toMatch(/CHƯA có nguồn dữ liệu/);
+    expect(sp).toMatch(/S_PORT cảng/);
+    expect(buildSystemPrompt(null, "2026-10-16", null)).toMatch(/Kết nối thế giới hiện không khả dụng/);
+  });
+  it("world_* thực thi trên Gateway /api/world/tools/:name; lỗi HTTP -> ok:false có nhãn đúng", async () => {
+    const urls: string[] = [];
+    const fetchImpl = (async (url: string) => {
+      urls.push(url);
+      return url.includes("world_events") ? new Response(JSON.stringify({ ok: true, data: { events: [{ id: "fomc-2025-09-17", tier: "C" }] } })) : new Response("x", { status: 503 });
+    }) as unknown as typeof fetch;
+    const exec = createToolExecutor({ getSnapshot: async () => null, fetchImpl });
+    const ok = await exec("world_events", {});
+    expect(ok).toMatchObject({ ok: true, data: { events: [{ tier: "C" }] } });
+    expect(urls[0]).toMatch(/\/api\/world\/tools\/world_events$/);
+    const bad = await exec("world_links", {});
+    expect(bad).toEqual({ ok: false, error: "Kết nối thế giới lỗi HTTP 503." });
   });
 });
