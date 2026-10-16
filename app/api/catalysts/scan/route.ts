@@ -13,6 +13,7 @@ import { fetchMarketSignalsReal } from "@/lib/catalyst/marketSignals";
 import { fetchGatewaySignalInputs } from "@/lib/catalyst/gatewaySignals";
 import { stockUniverse } from "@/lib/quant-data";
 import { writeSnapshotSafe } from "@/lib/catalyst/engine/SnapshotStore";
+import { isTraceableSource } from "@/lib/catalyst/provenance";
 import { recordNewSignal } from "@/lib/catalyst/engine/SignalLedger";
 import type { CatalystSource, ImpactEdge, CalibrationEntry, AlertConfig } from "@/lib/catalyst/types";
 
@@ -28,7 +29,9 @@ async function fetchSourcesAndEdges(): Promise<{ sources: CatalystSource[]; edge
   const neutral = originIds.length
     ? new Set((await prisma.macroNewsRecord.findMany({ where: { id: { in: originIds }, rawImpact: NEUTRAL_IMPACT }, select: { id: true } })).map((r: { id: string }) => r.id))
     : new Set<string>();
-  const sources: CatalystSource[] = all.filter((s: { originRecordId?: string | null }) => !s.originRecordId || !neutral.has(s.originRecordId));
+  // Nguồn gốc: chỉ nguồn TRUY ĐƯỢC (originRecordId hoặc sourceUrl) — loại dữ liệu mẫu còn sót trong DB (lib/catalyst/provenance.ts).
+  const sources: CatalystSource[] = all.filter((s: { originRecordId?: string | null; sourceUrl?: string | null }) =>
+    isTraceableSource(s) && (!s.originRecordId || !neutral.has(s.originRecordId)));
   const edges = await prisma.impactEdge.findMany({ where: { sourceId: { in: sources.map((s) => s.id) } } });
   return { sources, edges };
 }
