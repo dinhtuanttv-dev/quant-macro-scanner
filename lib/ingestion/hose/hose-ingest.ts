@@ -1,4 +1,4 @@
-﻿// lib/ingestion/hose/hose-ingest.ts
+// lib/ingestion/hose/hose-ingest.ts
 // Gop 2 nguon tu HOSE:
 // (1) Su kien co tuc/quyen THAT (tu bang "Su kien doanh nghiep" nhung trong
 //     tin hang ngay) - luon trung lap (khong bia huong tich cuc/tieu cuc,
@@ -8,26 +8,13 @@
 import { prisma } from "@/lib/prisma";
 import { fetchHoseNews, extractCorporateEvents, extractForeignNetBuyTickers, DAILY_SUMMARY_CAT_ID, type HoseNewsRecord } from "./hose-news-fetcher";
 import { stockUniverse } from "@/lib/quant-data";
+import { isStockTicker, matchExchangeNegative } from "@/lib/ingestion/exchangeEventRules";
 
-interface NegativeRule { keywords: string[]; severity: "critical" | "high"; rawImpact: number; typeLabel: string; }
-
-const NEGATIVE_RULES: NegativeRule[] = [
-  { keywords: ["đình chỉ giao dịch"], severity: "critical", rawImpact: -9, typeLabel: "HOSE - Dinh chi giao dich" },
-  { keywords: ["hủy niêm yết"], severity: "critical", rawImpact: -9, typeLabel: "HOSE - Huy niem yet" },
-  { keywords: ["chậm thanh toán"], severity: "critical", rawImpact: -8, typeLabel: "HOSE - Cham thanh toan" },
-  { keywords: ["kiểm soát đặc biệt", "diện kiểm soát"], severity: "high", rawImpact: -6, typeLabel: "HOSE - Dien kiem soat" },
-  { keywords: ["cảnh báo", "diện cảnh báo"], severity: "high", rawImpact: -5, typeLabel: "HOSE - Canh bao" },
-  { keywords: ["hạn chế giao dịch"], severity: "high", rawImpact: -5, typeLabel: "HOSE - Han che giao dich" },
-  { keywords: ["không đủ điều kiện giao dịch ký quỹ"], severity: "high", rawImpact: -3, typeLabel: "HOSE - Mat margin" },
-];
-
-function matchNegativeRule(title: string): NegativeRule | null {
-  const normalized = title.toLowerCase();
-  for (const rule of NEGATIVE_RULES) {
-    if (rule.keywords.some((kw) => normalized.includes(kw.toLowerCase()))) return rule;
-  }
-  return null;
-}
+// Quy tắc tin tiêu cực: dùng chung với HNX (lib/ingestion/exchangeEventRules.ts).
+const matchNegativeRule = (title: string) => {
+  const r = matchExchangeNegative(title);
+  return r && { ...r, typeLabel: `HOSE - ${r.labelVi}` };
+};
 
 function findSector(ticker: string): string[] {
   const stock = stockUniverse.find((s) => s.ticker === ticker);
@@ -60,21 +47,26 @@ export async function ingestHoseData(): Promise<HoseIngestResult> {
   for (const record of news) {
     const events = extractCorporateEvents(record);
     for (const ev of events) {
+      if (!isStockTicker(ev.ticker)) continue;
+      // Bảng "Sự kiện doanh nghiệp" có cả sự kiện TIÊU CỰC (bị đưa vào diện kiểm soát/cảnh báo, hạn chế giao dịch...) —
+      // chúng có hướng rõ ràng, không phải tin trung lập như GDKHQ.
+      const neg = matchNegativeRule(ev.description);
       const contentHash = `hose-event-${record.id}-${ev.ticker}`;
       try {
         await prisma.macroNewsRecord.upsert({
           where: { contentHash },
-          update: { affectedSectors: findSector(ev.ticker), relatedTickers: [ev.ticker] },
+          update: { affectedSectors: findSector(ev.ticker), relatedTickers: [ev.ticker], ...(neg ? { rawImpact: neg.rawImpact, severity: neg.severity, type: neg.typeLabel } : {}) },
           create: {
             headline: ev.description,
             summary: null,
             url: "https://www.hsx.vn",
-            type: "HOSE - Su kien co tuc/quyen",
+            type: neg ? neg.typeLabel : "HOSE - Su kien co tuc/quyen",
             scope: "vn_exchange_corporate_event",
             sourceId: contentHash,
             sourceName: "HOSE - Cong bo chinh thuc",
-            rawImpact: 0, // trung lap - chi la thong tin hanh chinh, khong phai catalyst co huong
-            severity: "low",
+            // sự kiện quyền: trung lập (thông tin hành chính); sự kiện tiêu cực của sở: theo quy tắc
+            rawImpact: neg ? neg.rawImpact : 0,
+            severity: neg ? neg.severity : "low",
             affectedSectors: findSector(ev.ticker),
             relatedTickers: [ev.ticker],
             contentHash,
@@ -96,8 +88,7 @@ export async function ingestHoseData(): Promise<HoseIngestResult> {
 
     const contentHash = `hose-neg-${record.id}`;
     // Doan mo ta co the chua ma CK - tim don gian bang regex chu hoa 3-5 ky tu
-    const tickerMatch = record.title.match(/\b([A-Z]{3,5})\b/);
-    const ticker = tickerMatch ? tickerMatch[1] : null;
+    const ticker = (record.title.match(/\b[A-Z0-9]{3,5}\b/g) ?? []).find((t) => isStockTicker(t)) ?? null;
 
     try {
       await prisma.macroNewsRecord.upsert({

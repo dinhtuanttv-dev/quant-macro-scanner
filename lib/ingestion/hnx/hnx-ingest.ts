@@ -1,4 +1,4 @@
-﻿// lib/ingestion/hnx/hnx-ingest.ts
+// lib/ingestion/hnx/hnx-ingest.ts
 // Loc CHI giu lai thong bao HNX co huong TIEU CUC ro rang that (dinh chi
 // giao dich, huy niem yet, canh bao, kiem soat dac biet, cham thanh toan
 // trai phieu). BO QUA moi loai khac (bao cao tai chinh dinh ky, hop DHCD,
@@ -8,41 +8,20 @@ import { prisma } from "@/lib/prisma";
 import { fetchHnxDisclosures, type HnxDisclosureRecord } from "./hnx-disclosure-scraper";
 import { stockUniverse } from "@/lib/quant-data";
 import { UPCOM_TICKER_SECTOR } from "./ticker-sector-lookup";
+import { isStockTicker, matchExchangeNegative } from "@/lib/ingestion/exchangeEventRules";
 
-interface NegativeSignalRule {
-  keywords: string[];
-  severity: "critical" | "high";
-  rawImpact: number;
-  typeLabel: string;
-}
-
-const NEGATIVE_RULES: NegativeSignalRule[] = [
-  { keywords: ["dinh chi giao dich", "đình chỉ giao dịch"], severity: "critical", rawImpact: -9, typeLabel: "HNX - Dinh chi giao dich" },
-  { keywords: ["huy niem yet", "hủy niêm yết", "huy dkgd"], severity: "critical", rawImpact: -9, typeLabel: "HNX - Huy niem yet" },
-  { keywords: ["cham thanh toan", "chậm thanh toán"], severity: "critical", rawImpact: -8, typeLabel: "HNX - Cham thanh toan trai phieu" },
-  { keywords: ["kiem soat dac biet", "kiểm soát đặc biệt", "dien kiem soat", "diện kiểm soát"], severity: "high", rawImpact: -6, typeLabel: "HNX - Dien kiem soat" },
-  { keywords: ["canh bao", "cảnh báo", "dien canh bao", "diện cảnh báo"], severity: "high", rawImpact: -5, typeLabel: "HNX - Canh bao" },
-  { keywords: ["han che giao dich", "hạn chế giao dịch"], severity: "high", rawImpact: -5, typeLabel: "HNX - Han che giao dich" },
-];
-
-function normalizeText(s: string): string {
-  return s.toLowerCase();
-}
-
-function matchNegativeRule(title: string): NegativeSignalRule | null {
-  const normalized = normalizeText(title);
-  for (const rule of NEGATIVE_RULES) {
-    if (rule.keywords.some((kw) => normalized.includes(normalizeText(kw)))) return rule;
-  }
-  return null;
-}
+// Quy tắc tin tiêu cực: dùng chung với HOSE (lib/ingestion/exchangeEventRules.ts).
+const matchNegativeRule = (title: string) => {
+  const r = matchExchangeNegative(title);
+  return r && { ...r, typeLabel: `HNX - ${r.labelVi}` };
+};
 
 // Tra 2 nguon theo thu tu uu tien: stockUniverse (ma lon, da phan loai san)
 // truoc, roi den UPCOM_TICKER_SECTOR (ma nho, tra cuu rieng, chi de hien
 // thi - khong dinh gi den diem so FA). Neu khong co o ca 2 -> tra ve rong,
 // KHONG bia nganh.
 function findSectorForTicker(ticker: string | null): string[] {
-  if (!ticker) return [];
+  if (!isStockTicker(ticker)) return [];
   const stock = stockUniverse.find((s) => s.ticker === ticker);
   if (stock) return [stock.sector];
   const upcomSector = UPCOM_TICKER_SECTOR[ticker];
@@ -82,7 +61,7 @@ export async function ingestHnxDisclosures(): Promise<HnxIngestResult> {
         where: { contentHash: record.originRecordId },
         update: {
           affectedSectors: findSectorForTicker(record.tickerGuess),
-          relatedTickers: record.tickerGuess ? [record.tickerGuess] : [],
+          relatedTickers: isStockTicker(record.tickerGuess) ? [record.tickerGuess] : [],
         },
         create: {
           headline: record.title,
@@ -95,7 +74,7 @@ export async function ingestHnxDisclosures(): Promise<HnxIngestResult> {
           rawImpact: rule.rawImpact,
           severity: rule.severity,
           affectedSectors: findSectorForTicker(record.tickerGuess),
-          relatedTickers: record.tickerGuess ? [record.tickerGuess] : [],
+          relatedTickers: isStockTicker(record.tickerGuess) ? [record.tickerGuess] : [],
           contentHash: record.originRecordId,
           publishedAt: record.publishedAt,
         },

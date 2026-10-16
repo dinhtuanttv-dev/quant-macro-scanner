@@ -3,6 +3,8 @@
 // nằm trong DB production và hiển thị như xúc tác thật (VD VCB "Thong tu moi siet room tin dung…"), lại chiếm 15/47 mẫu của
 // kiểm định X6. Mọi nguồn thật đều có dấu vết: originRecordId (tin RSS / HOSE / HNX / lịch vĩ mô) hoặc sourceUrl (CafeF).
 
+import { isStockTicker, matchExchangeNegative } from "@/lib/ingestion/exchangeEventRules";
+
 export interface ProvenanceFields {
   originRecordId?: string | null;
   sourceUrl?: string | null;
@@ -29,7 +31,7 @@ export function isNeutralCorporateEventTitle(title: string): boolean {
 /** Ngày triển khai bộ lọc X1 + nguồn gốc; snapshot quét TRƯỚC ngày này cần làm sạch khi đọc. */
 export const PROVENANCE_FIX_DATE = "2026-10-16T00:00:00Z";
 
-interface CardLike { ticker: string; sourceTitle: string }
+interface CardLike { ticker: string; sourceTitle: string; direction?: string }
 interface SectorLike { primaryCards: CardLike[]; cascadeCards: CardLike[] }
 interface MoverLike { ticker: string; label: string }
 
@@ -40,29 +42,32 @@ interface MoverLike { ticker: string; label: string }
 export function sanitizeLegacySnapshot<T extends { scannedAt: string; sectors?: SectorLike[]; upMovers?: MoverLike[]; downMovers?: MoverLike[] }>(snap: T): T & { sanitized?: { removedCards: number; removedMovers: number; reason: string } } {
   if (!snap?.scannedAt || snap.scannedAt >= PROVENANCE_FIX_DATE) return snap;
   const bad = (t: string) => DEMO_SEED_TITLES.has(t.trim()) || isNeutralCorporateEventTitle(t);
+  // sự kiện tiêu cực của sở (bị kiểm soát / cảnh báo...) bị chấm "có lợi" trước bản sửa — sai chiều, ẩn đi
+  const wrongBenefit = (t: string) => !!matchExchangeNegative(t);
   let removedCards = 0;
   const sectors = (snap.sectors ?? [])
     .map((s) => {
-      const primaryCards = s.primaryCards.filter((c) => !bad(c.sourceTitle));
-      const cascadeCards = s.cascadeCards.filter((c) => !bad(c.sourceTitle));
+      const keep = (c: CardLike) => isStockTicker(c.ticker) && !bad(c.sourceTitle) && !(c.direction === "benefit" && wrongBenefit(c.sourceTitle));
+      const primaryCards = s.primaryCards.filter(keep);
+      const cascadeCards = s.cascadeCards.filter(keep);
       removedCards += s.primaryCards.length - primaryCards.length + s.cascadeCards.length - cascadeCards.length;
       return { ...s, primaryCards, cascadeCards };
     })
     .filter((s) => s.primaryCards.length + s.cascadeCards.length > 0);
   let removedMovers = 0;
-  const clean = (list?: MoverLike[]) => {
-    const out = (list ?? []).filter((m) => !bad(m.label));
+  const clean = (list: MoverLike[] | undefined, benefitSide: boolean) => {
+    const out = (list ?? []).filter((m) => isStockTicker(m.ticker) && !bad(m.label) && !(benefitSide && wrongBenefit(m.label)));
     removedMovers += (list?.length ?? 0) - out.length;
     return out;
   };
-  const upMovers = clean(snap.upMovers);
-  const downMovers = clean(snap.downMovers);
+  const upMovers = clean(snap.upMovers, true);
+  const downMovers = clean(snap.downMovers, false);
   if (!removedCards && !removedMovers) return snap;
   return {
     ...snap, sectors, upMovers, downMovers,
     sanitized: {
       removedCards, removedMovers,
-      reason: "Đã ẩn các mục từ dữ liệu mẫu và tin trung lập (sự kiện quyền) của lần quét cũ; điểm ngành chưa được tính lại cho tới lần quét kế tiếp.",
+      reason: "Đã ẩn các mục của lần quét cũ không đạt chuẩn: dữ liệu mẫu, tin trung lập (sự kiện quyền), sự kiện tiêu cực bị chấm nhầm “có lợi”, mã không phải cổ phiếu (VD HOSE); điểm ngành chưa được tính lại cho tới lần quét kế tiếp.",
     },
   };
 }

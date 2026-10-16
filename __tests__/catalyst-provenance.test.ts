@@ -37,3 +37,31 @@ describe("nguồn gốc xúc tác", () => {
     expect(sanitizeLegacySnapshot(fresh)).toBe(fresh);
   });
 });
+
+import { isStockTicker, matchExchangeNegative } from "@/lib/ingestion/exchangeEventRules";
+
+describe("quy tắc tin tiêu cực của sở (dùng chung HOSE/HNX)", () => {
+  it("chịu được biến thể 'diện bị ...' và không phân biệt dấu", () => {
+    expect(matchExchangeNegative("VPG bị đưa vào diện bị kiểm soát kể từ ngày 09/10/2026")?.id).toBe("controlled");
+    expect(matchExchangeNegative("SBV bị đưa vào diện bị cảnh báo kể từ ngày 24/09/2026")?.id).toBe("warning");
+    expect(matchExchangeNegative("dinh chi giao dich co phieu ABC")?.id).toBe("suspended");
+    expect(matchExchangeNegative("HOSE: Thông báo danh sách bổ sung chứng khoán không được giao dịch ký quỹ")?.id).toBe("margin");
+    expect(matchExchangeNegative("KDH giao dịch không hưởng quyền - trả cổ tức")).toBeNull();
+  });
+  it("mã của sở không phải cổ phiếu", () => {
+    expect(isStockTicker("HOSE")).toBe(false);
+    expect(isStockTicker("VPG")).toBe(true);
+    expect(isStockTicker("ab")).toBe(false);
+  });
+  it("snapshot cũ: ẩn tin tiêu cực bị chấm 'có lợi' và mã HOSE", () => {
+    const s = sanitizeLegacySnapshot({
+      scannedAt: "2026-10-10T22:56:00Z",
+      sectors: [{ primaryCards: [{ ticker: "VPG", sourceTitle: "VPG bị đưa vào diện bị kiểm soát", direction: "benefit" }, { ticker: "VXB", sourceTitle: "Thông báo về việc hạn chế giao dịch", direction: "harm" }], cascadeCards: [] }],
+      upMovers: [{ ticker: "SBV", label: "SBV bị đưa vào diện bị cảnh báo" }],
+      downMovers: [{ ticker: "HOSE", label: "HOSE: Thông báo danh sách bổ sung" }, { ticker: "VXB", label: "Thông báo về việc hạn chế giao dịch" }],
+    });
+    expect(s.sectors![0].primaryCards.map((c) => c.ticker)).toEqual(["VXB"]);
+    expect(s.upMovers).toEqual([]);
+    expect(s.downMovers!.map((m) => m.ticker)).toEqual(["VXB"]);
+  });
+});
