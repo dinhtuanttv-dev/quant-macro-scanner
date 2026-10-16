@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/client";
 import { runMultiAgentAnalysis } from "@/lib/ai/gemini-agents";
 import { fetchMacroNews } from "@/lib/news/macro-rss";
+import { fetchWorldAiContext } from "@/lib/ai/world-context";
+
+// 2026-10-17: phiên bản định dạng kết quả — cache cũ khác phiên bản bị bỏ qua (định dạng ICB mới hiện ngay).
+const RESULT_VERSION = "icb-v1";
 
 // FIX (2026-08-29): tang tu 30 len 60 - them News Agent (fetch RSS + Gemini
 // them 1 lan goi) khien tong thoi gian co the vuot 30s, dac biet lan dau
@@ -26,15 +30,19 @@ export async function POST(request: Request) {
 
   if (cached) {
     const ageMinutes = (Date.now() - new Date(cached.generated_at).getTime()) / 60000;
-    if (ageMinutes < CACHE_MAX_AGE_MINUTES) {
+    if (ageMinutes < CACHE_MAX_AGE_MINUTES && (cached.result as { resultVersion?: string })?.resultVersion === RESULT_VERSION) {
       return NextResponse.json({ ...cached.result, cached: true, cacheAgeMinutes: Math.round(ageMinutes) });
     }
   }
 
-  const { data: latestMarkets, error: queryError } = await supabase
-    .from("world_market_pulse").select("*").order("fetched_at", { ascending: false }).limit(10);
+  // Ưu tiên dữ liệu Gateway (có ngày, 19 hàng hoá, điểm 22 ngành ICB); lỗi -> dự phòng bảng Supabase như trước.
+  const ctx = await fetchWorldAiContext();
+  const useGateway = ctx.ok;
+  const { data: latestMarkets, error: queryError } = useGateway
+    ? { data: null, error: null }
+    : await supabase.from("world_market_pulse").select("*").order("fetched_at", { ascending: false }).limit(10);
 
-  if (queryError) {
+  if (!useGateway && queryError) {
     console.error("[/api/ai/analyze] Loi truy van Supabase:", queryError);
     return NextResponse.json(
       { error: `Lỗi truy vấn Supabase: ${queryError.message}`, code: queryError.code ?? null },
@@ -42,17 +50,17 @@ export async function POST(request: Request) {
     );
   }
 
-  if (!latestMarkets || latestMarkets.length === 0) {
+  if (!useGateway && (!latestMarkets || latestMarkets.length === 0)) {
     return NextResponse.json({ error: "Chưa có dữ liệu thị trường để phân tích (bảng market_pulse rỗng thật)." }, { status: 503 });
   }
 
-  const dataPoints = latestMarkets.map((m: any) => ({
-    id: m.id, label: `${m.name} (${m.symbol})`, value: `${m.value} (${m.change_percent}%)`, timestamp: m.fetched_at,
-  }));
+  const dataPoints = useGateway
+    ? ctx.dataPoints
+    : (latestMarkets ?? []).map((m: any) => ({ id: m.id, label: `${m.name} (${m.symbol})`, value: `${m.value} (${m.change_percent}%)`, timestamp: m.fetched_at }));
 
   try {
     const news = await fetchMacroNews();
-    const analysis = await runMultiAgentAnalysis(dataPoints, news);
+    const analysis = await runMultiAgentAnalysis(dataPoints, news, useGateway ? ctx : null);
 
     // NANG CAP: 1 UUID danh dau toan bo cac ban ghi thuoc CUNG 1 lan chay
     // nay - de frontend co the tach lich su theo tung lan bam nut, thay
@@ -75,7 +83,8 @@ export async function POST(request: Request) {
       const { lookupSectorMapping } = await import("@/lib/mapping/macro-mapping");
       const events = analysis.sectors
         .map((sector) => {
-          const mapping = lookupSectorMapping(sector.sectorKey);
+          // chế độ ICB: khoá = mã ICB, mã CP = thành phần thật theo tỷ trọng (Gateway); chế độ cũ: bảng ánh xạ đặt tay
+          const mapping = analysis.mode === "gateway-icb" ? { vnTickers: sector.vnTickers ?? [] } : lookupSectorMapping(sector.sectorKey);
           if (!mapping) return null; // Bo qua sector key khong xac dinh, khong bia mapping rong
           return {
             analysis_run_id: runId,
@@ -133,7 +142,10 @@ export async function POST(request: Request) {
       }
     }
 
-    const responsePayload = { ...analysis, runId, impactEventsWritten, impactEventsError };
+    const responsePayload = {
+      ...analysis, runId, impactEventsWritten, impactEventsError, resultVersion: RESULT_VERSION,
+      context: useGateway ? { source: "gateway", generatedAt: ctx.generatedAt, dataPoints: dataPoints.length, evidenceVi: ctx.evidenceVi, missing: ctx.errors } : { source: "supabase-world_market_pulse", dataPoints: dataPoints.length },
+    };
 
     await supabase.from("ai_analysis_cache").upsert({ id: "latest", result: responsePayload, generated_at: new Date().toISOString() });
 
