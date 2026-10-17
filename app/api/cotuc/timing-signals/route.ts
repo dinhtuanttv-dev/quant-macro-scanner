@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { loadDecisionFlags } from "@/lib/cotuc/decision-state-lite";
+import { readThroughByVersion } from "@/lib/cotuc/data-version";
 
 // Tich hop Sprint 4-5 (Screener 4 cot moi): endpoint tra TimingSignal
 // cho CA vu tru trong MOT request (khong nhan tham so ticker).
@@ -24,6 +25,17 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
+    // N2: đọc qua KV theo phiên bản dữ liệu Cổ tức — Neon chỉ bị đọc khi dữ liệu đổi.
+    const body = await readThroughByVersion("timing-signals", buildBody);
+    return NextResponse.json(body, { headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=3600" } });
+  } catch (err) {
+    console.error("[api/cotuc/timing-signals] Lỗi:", err);
+    return NextResponse.json({ error: "Không đọc được Timing Signals." }, { status: 500 });
+  }
+}
+
+async function buildBody() {
+  {
     const [rows, seasonRows, decisionRows] = await Promise.all([
       prisma.timingSignalCache.findMany(),
       prisma.earningsSeasonalityCache.findMany({ select: { ticker: true, earningsSignal: true } }),
@@ -62,9 +74,6 @@ export async function GET() {
       ? rows.reduce((max, r) => (r.generatedAt > max ? r.generatedAt : max), rows[0].generatedAt).toISOString()
       : new Date().toISOString();
 
-    return NextResponse.json({ version: "v3-p5", asOf, signals }, { headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300" } });
-  } catch (err) {
-    console.error("[api/cotuc/timing-signals] Lỗi:", err);
-    return NextResponse.json({ error: "Không đọc được Timing Signals." }, { status: 500 });
+    return { version: "v3-p5", asOf, signals };
   }
 }

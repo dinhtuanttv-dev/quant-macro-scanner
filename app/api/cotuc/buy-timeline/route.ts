@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
+import { readThroughByVersion } from "@/lib/cotuc/data-version";
 import { getCotucUniverse } from "@/lib/cotuc/cotuc-universe";
 import { refreshVnHolidayCalendar, vnHolidayCalendar, vnHolidayCalendarVersion } from "@/lib/cotuc/timing-v3/vn-holidays";
 import { cotucSourceStamp, loadDecisionForTimeline, memoByStamp } from "@/lib/cotuc/decision-state-lite";
@@ -24,18 +26,27 @@ type Snap = {
 // đúng kết quả lần trước (giống hệt), đổi thì đọc & tính lại. Nhánh snapshot chỉ lấy exDate, decision.level, signals, backtest.
 type Universe = Awaited<ReturnType<typeof getCotucUniverse>>;
 let lastUniverse: Universe | null = null;
+let lastInputs = "";
+// N2: kết quả còn đệm trong KV theo phiên bản dữ liệu Cổ tức (khoá gồm ngày, lịch nghỉ, danh mục) -> phiên bản bản Vercel
+// mới khởi động cũng không phải đọc Neon khi dữ liệu không đổi.
 const timelineCached = memoByStamp(async () => {
   await refreshVnHolidayCalendar();
   lastUniverse = await getCotucUniverse();
   const uni = lastUniverse.tickers.map((t) => `${t.ticker}:${t.sector ?? ""}`).join(",");
-  return [vnToday(), vnHolidayCalendarVersion(), uni, await cotucSourceStamp()].join("#");
-}, () => buildBody(lastUniverse!));
+  lastInputs = [vnToday(), vnHolidayCalendarVersion(), uni].join("#");
+  return [lastInputs, await cotucSourceStamp()].join("#");
+}, () => {
+  const universe = lastUniverse!;
+  return readThroughByVersion(`buy-timeline:${createHash("sha1").update(lastInputs).digest("hex").slice(0, 16)}`, () => buildBody(universe));
+});
 
 export async function GET() {
   try {
-    return NextResponse.json(await timelineCached(), { headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300" } });
+    return NextResponse.json(await timelineCached(), { headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=3600" } });
   } catch (e) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
+    // N4: không trả nguyên văn lỗi Prisma/CSDL ra trình duyệt — ghi log phía máy chủ.
+    console.error("[api/cotuc/buy-timeline] Lỗi:", e);
+    return NextResponse.json({ error: "Không tải được Timeline điểm mua lúc này." }, { status: 500 });
   }
 }
 

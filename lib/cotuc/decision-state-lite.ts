@@ -3,6 +3,7 @@
 //   - Đệm theo DẤU THAY ĐỔI (không theo thời gian): hỏi count + max(thời điểm cập nhật) (~200 byte); chỉ khi dữ liệu nguồn
 //     đổi mới đọc & tính lại -> cùng đầu vào thì cùng đầu ra, không có dữ liệu cũ.
 import { prisma } from "@/lib/prisma";
+import { getCotucDataVersion } from "@/lib/cotuc/data-version";
 
 export interface StoredRate { id: string; nEvents: number; winRate: number }
 
@@ -54,6 +55,9 @@ export async function loadDecisionFlags(): Promise<{ ticker: string; snapshot: {
 
 /** Dấu thay đổi của hai bảng nguồn Cổ tức (~200 byte). */
 export async function cotucSourceStamp(): Promise<string> {
+  // N2: phiên bản dữ liệu trong KV (hai cron ghi tăng sau mỗi lô) -> không truy vấn Neon; chưa có thì dùng dấu Postgres như cũ.
+  const v = await getCotucDataVersion();
+  if (v) return `kv:${v}`;
   const [d, s] = await Promise.all([
     // count + max + TỔNG epoch: bất kỳ dòng nào được ghi (kể cả thời điểm nhỏ hơn max hiện tại) đều đổi dấu
     prisma.$queryRaw<{ n: number; m: Date | null; sm: string | null }[]>`SELECT count(*)::int AS n, max("computedAt") AS m, sum(extract(epoch from "computedAt"))::text AS sm FROM "CotucDecisionState"`,
