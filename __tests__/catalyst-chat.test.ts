@@ -156,7 +156,8 @@ describe("X4 — công cụ Kết nối thế giới (world_*)", () => {
     const sp = buildSystemPrompt(null, "2026-10-16", world);
     expect(sp).toMatch(/không gọi bậc C/);
     expect(sp).toMatch(/pending/);
-    expect(sp).toMatch(/CHƯA có nguồn dữ liệu/);
+    expect(sp).toMatch(/CHƯA có nguồn/);
+    expect(sp).toMatch(/PMI Mỹ dùng proxy Philly Fed/);
     expect(sp).toMatch(/S_PORT cảng/);
     expect(buildSystemPrompt(null, "2026-10-16", null)).toMatch(/Kết nối thế giới hiện không khả dụng/);
   });
