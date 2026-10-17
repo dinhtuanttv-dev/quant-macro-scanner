@@ -20,7 +20,8 @@ B. Các data point "ws:<mã ICB>" là ĐIỂM ĐỊNH LƯỢNG ngành thế gi�
    đặt trước nhưng lợi thế NHỎ (IC ≈ 0,02); trung hạn CHƯA đạt kiểm định. KHÔNG kết luận trái chiều với điểm ngắn hạn khi |điểm| ≥ 0,5
    trừ khi có tin tức cụ thể trong dữ liệu — nếu vậy phải trích dẫn tin đó và nêu rõ lý do.
 C. Mỗi ngành trong sectorImpacts PHẢI trích dẫn ít nhất 1 ID "ws:<mã>" của chính ngành đó cộng các ID chỉ số / hàng hoá (mk:, mc:, cm:) liên quan.
-D. Ưu tiên tối đa 8 ngành có |điểm| lớn nhất hoặc có hàng hoá/tin tức rõ ràng; không liệt kê ngành không có cơ sở.`;
+D. Ưu tiên tối đa 8 ngành có |điểm| lớn nhất hoặc có hàng hoá/tin tức rõ ràng; không liệt kê ngành không có cơ sở.
+E. Các data point "st:<mã ICB>" là CHIẾN LƯỢC định lượng (α ngắn hạn = IC·σ·z, P vượt VN-Index, tư thế; trung hạn chỉ là bối cảnh, KHÔNG dự báo). Khi nhắc tới tư thế/α phải trích dẫn "st:<mã>"; nêu rõ lợi thế nhỏ, không biến thành khuyến nghị mua/bán.`;
 
 const MARKET_AGENT_SYSTEM_PROMPT = `Bạn là Market Agent trong hệ thống phân tích tài chính Global Quanta.
 

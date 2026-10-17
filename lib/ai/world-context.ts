@@ -5,6 +5,7 @@
 //   /api/commodities/snapshot   — 19 hàng hoá (Yahoo ngày / World Bank Pink Sheet tháng)
 //   /api/world-sectors/scores   — điểm thuận/ngược gió 22 ngành ICB VN (kiểm định đặt trước WS-v1)
 //   /api/market/sectors/rrg     — thành phần + tỷ trọng thật của từng ngành ICB
+//   /api/world-sectors/strategy — chiến lược: α ngắn hạn = IC·σ·z (IC đã kiểm định) + bối cảnh trung hạn (không dự báo)
 // Mỗi data point có ID ổn định để agent trích dẫn và để code kiểm chứng (verify-sector-impacts.ts).
 import { MARKET_GATEWAY_URL } from "@/lib/market-data/ssi-gateway-adapter";
 
@@ -18,7 +19,7 @@ const sgn = (v: unknown, d = 2) => (typeof v === "number" && Number.isFinite(v) 
 const LABEL_VI: Record<string, string> = { tailwind: "thuận gió", headwind: "ngược gió", neutral: "trung tính", na: "chưa có thông tin mới" };
 
 /** Dựng data point + bảng ngành từ 4 tài liệu Gateway (hàm thuần, có test). */
-export function buildWorldAiContext(docs: { pulse: Json | null; commodities: Json | null; scores: Json | null; rrg: Json | null }, nowIso: string): WorldAiContext {
+export function buildWorldAiContext(docs: { pulse: Json | null; commodities: Json | null; scores: Json | null; rrg: Json | null; strategy?: Json | null }, nowIso: string): WorldAiContext {
   const dp: DataPoint[] = [];
   const errors: string[] = [];
   const pulse = docs.pulse;
@@ -52,6 +53,20 @@ export function buildWorldAiContext(docs: { pulse: Json | null; commodities: Jso
       });
     }
   } else errors.push("world-sectors");
+  const SHORT_VI: Record<string, string> = { overweight: "ưu tiên", neutral: "trung tính", underweight: "giảm tỷ trọng", na: "—" };
+  const MED_VI: Record<string, string> = { supportive: "bối cảnh thuận", mixed: "hỗn hợp", neutral: "trung tính", adverse: "bối cảnh bất lợi" };
+  const med = new Map<string, Json>((docs.strategy?.medium ?? []).map((m: Json) => [m.icb, m]));
+  for (const r of docs.strategy?.short?.rows ?? []) {
+    if (!sectors.has(r.icb)) continue;
+    const m = med.get(r.icb);
+    dp.push({
+      id: `st:${r.icb}`,
+      label: `Chiến lược ngành ${r.nameVi} (ICB ${r.icb})`,
+      value: `ngắn hạn α ${sgn(r.alphaBps, 1)} đcb/phiên so với VN-Index, P(vượt) ${f(r.pOutperform != null ? r.pOutperform * 100 : null, 1)}%, tư thế ${SHORT_VI[r.stance] ?? r.stance} (IC đã kiểm định ${f(r.ic, 3)} — lợi thế nhỏ) · trung hạn: ${m ? `${MED_VI[m.stance] ?? m.stance} (không dự báo)` : "—"}`,
+      timestamp: docs.strategy?.vnLast ?? nowIso,
+    });
+  }
+  if (docs.strategy?.regime?.stressed) dp.push({ id: "st:regime", label: "Bối cảnh rủi ro toàn cầu", value: docs.strategy.regime.noteVi, timestamp: docs.strategy.regime.date ?? nowIso });
   return {
     ok: dp.length > 0 && sectors.size > 0, dataPoints: dp, sectors, generatedAt: nowIso, errors,
     evidenceVi: docs.scores?.evidence?.reasonVi ?? null,
@@ -68,11 +83,12 @@ async function getJson(path: string, timeoutMs: number, fetchImpl: typeof fetch)
 }
 
 export async function fetchWorldAiContext(fetchImpl: typeof fetch = fetch): Promise<WorldAiContext> {
-  const [pulse, commodities, scores, rrg] = await Promise.all([
+  const [pulse, commodities, scores, rrg, strategy] = await Promise.all([
     getJson("/api/world/pulse", 20_000, fetchImpl),
     getJson("/api/commodities/snapshot", 30_000, fetchImpl),
     getJson("/api/world-sectors/scores", 40_000, fetchImpl),
     getJson("/api/market/sectors/rrg", 20_000, fetchImpl),
+    getJson("/api/world-sectors/strategy", 40_000, fetchImpl),
   ]);
-  return buildWorldAiContext({ pulse, commodities, scores, rrg }, new Date().toISOString());
+  return buildWorldAiContext({ pulse, commodities, scores, rrg, strategy }, new Date().toISOString());
 }
