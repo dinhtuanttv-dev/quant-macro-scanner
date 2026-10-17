@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { bumpCotucDataVersion } from "@/lib/cotuc/data-version";
 import { Prisma } from "@/lib/generated/prisma/client";
 import { DIVIDEND_STOCKS } from "@/lib/quant-cotuc";
 import { getCotucUniverse, type CotucUniverseTicker } from "@/lib/cotuc/cotuc-universe";
@@ -89,6 +90,14 @@ async function finalize() {
 
 export async function GET(req: Request) {
   if (!authorized(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    return await handle(req);
+  } finally {
+    await bumpCotucDataVersion(); // N2: mọi lô (kể cả lỗi giữa chừng) đều có thể đã ghi EarningsSeasonalityCache
+  }
+}
+
+async function handle(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const phase = searchParams.get("phase");

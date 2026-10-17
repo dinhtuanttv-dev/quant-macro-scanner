@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@/lib/generated/prisma";
 import { prisma } from "@/lib/prisma";
 import { loadBacktestRates } from "@/lib/cotuc/decision-state-lite";
+import { bumpCotucDataVersion } from "@/lib/cotuc/data-version";
 import { getCotucUniverse } from "@/lib/cotuc/cotuc-universe";
 import { appendIntradayBar, fetchLiveIndex, fetchLiveQuotes } from "@/lib/cotuc/timing-v3/intraday";
 import { buildCycleContext, buildCycleStatsV3, fetchBenchmarkPricesOnce, type CycleComputeContext } from "@/lib/cotuc/timing-v3/compute-cycle-io";
@@ -216,6 +217,7 @@ export async function GET(req: Request) {
     }
 
     const nextOffset = offset + limit >= allTickers.length ? 0 : offset + limit;
+    await bumpCotucDataVersion(); // N2: phía đọc Cổ tức thấy dữ liệu mới, tính lại đúng một lần
     return NextResponse.json({
       savedCount, skippedCount, noDividendHistory: noHistory.length, decisionCount, levels, regime: regime.regime, issuedCount, resolvedCount, errors,
       processedInThisCall: tickers.length, offset, limit, nextOffset, totalTickers: allTickers.length, universeSource: universe.source,
@@ -223,6 +225,7 @@ export async function GET(req: Request) {
     });
   } catch (err) {
     console.error("[api/cron/timing-signals-scan] Lỗi:", err);
+    await bumpCotucDataVersion(); // có thể đã ghi một phần
     return NextResponse.json({ error: "Không quét được Timing Signals." }, { status: 500 });
   }
 }
