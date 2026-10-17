@@ -46,3 +46,15 @@ describe("Phân tích AI × Gateway (2026-10-17)", () => {
     expect(out[2].discrepancies.join(" ")).toMatch(/không tồn tại/);
   });
 });
+
+describe("chiến lược trong ngữ cảnh AI", () => {
+  it("thêm st:<ICB> với α, P, tư thế và bối cảnh trung hạn; regime khi căng thẳng", () => {
+    const c = buildWorldAiContext({ ...docs, strategy: { vnLast: "2026-10-16", regime: { stressed: true, noteVi: "VIX cao", date: "2026-10-16" }, short: { rows: [{ icb: "0500", nameVi: "Dầu khí", alphaBps: 22.6, pOutperform: 0.536, stance: "overweight", ic: 0.101 }, { icb: "9999", nameVi: "x", alphaBps: 1, pOutperform: 0.5, stance: "neutral", ic: 0.02 }] }, medium: [{ icb: "0500", stance: "supportive" }] } }, "2026-10-17T00:00:00Z");
+    const st = c.dataPoints.find((d) => d.id === "st:0500")!;
+    expect(st.value).toContain("+22.6");
+    expect(st.value).toContain("ưu tiên");
+    expect(st.value).toContain("bối cảnh thuận");
+    expect(c.dataPoints.some((d) => d.id === "st:9999")).toBe(false); // ngành không có trong bảng ngành
+    expect(c.dataPoints.some((d) => d.id === "st:regime")).toBe(true);
+  });
+});
