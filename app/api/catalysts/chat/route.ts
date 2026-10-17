@@ -1,13 +1,16 @@
-// X4 — POST /api/catalysts/chat: "Hỏi đáp xúc tác" (Claude + công cụ vĩ mô/xúc tác), trả về luồng SSE.
+// X4 — POST /api/catalysts/chat: "Hỏi đáp xúc tác" (Claude hoặc Gemini + công cụ vĩ mô/xúc tác/thế giới), trả về luồng SSE.
+// Z2 (2026-10-17): body.provider = "claude" (mặc định) | "gemini" — cùng bộ công cụ, cùng kiểm tra con số.
 // Bảo vệ chi phí: cần đăng nhập (phiên Supabase của Global Quanta, xác minh qua GQ_SUPABASE_URL) + hạn mức theo người dùng/ngày
 // (Upstash). Không lưu nội dung hội thoại; log chỉ ghi tên công cụ, thời gian, ok.
 import { createHash } from "node:crypto";
 import Anthropic from "@anthropic-ai/sdk";
+import { FunctionCallingMode, GoogleGenerativeAI } from "@google/generative-ai";
+import { GEMINI_CHAT_MODEL, runChatGemini, type GeminiChatLike, type GeminiModelFactory } from "@/lib/catalyst/chat/geminiEngine";
 import { Redis } from "@upstash/redis";
 import { readSnapshotWithStaleness } from "@/lib/catalyst/engine/SnapshotStore";
 import { sanitizeLegacySnapshot } from "@/lib/catalyst/provenance";
 import { runChat, type ChatEvent } from "@/lib/catalyst/chat/chatEngine";
-import { buildSystemPrompt, buildToolList, createToolExecutor, fetchMacroToolSpecs, fetchWorldToolSpecs } from "@/lib/catalyst/chat/chatTools";
+import { buildSystemPrompt, buildToolList, createToolExecutor, fetchMacroToolSpecs, fetchWorldToolSpecs, fetchWsToolSpecs } from "@/lib/catalyst/chat/chatTools";
 import type { CatalystSnapshotLike } from "@/lib/catalyst/chat/catalystTools";
 
 export const runtime = "nodejs";
@@ -69,12 +72,28 @@ export async function OPTIONS() {
   return new Response(null, { status: 204, headers: CORS });
 }
 
+/** Gemini SDK -> GeminiModelFactory (engine thuần). Vòng cuối tắt gọi công cụ (FunctionCallingMode.NONE). */
+function geminiFactory(apiKey: string): GeminiModelFactory {
+  const genAI = new GoogleGenerativeAI(apiKey);
+  return {
+    startChat: ({ history, systemInstruction, tools, lastRound }) => genAI.getGenerativeModel({
+      model: GEMINI_CHAT_MODEL, systemInstruction,
+      ...(tools.length ? { tools: tools as never } : {}),
+      ...(lastRound && tools.length ? { toolConfig: { functionCallingConfig: { mode: FunctionCallingMode.NONE } } } : {}),
+      generationConfig: { temperature: 0.3 },
+    }).startChat({ history: history as never }) as unknown as GeminiChatLike,
+  };
+}
+
 export async function POST(request: Request) {
-  if (!process.env.ANTHROPIC_API_KEY) return json(503, { error: "Chưa cấu hình mô hình AI." });
+  const raw = await request.json().catch(() => null);
+  const provider = (raw as { provider?: unknown })?.provider === "gemini" ? "gemini" : "claude";
+  if (provider === "claude" && !process.env.ANTHROPIC_API_KEY) return json(503, { error: "Chưa cấu hình mô hình Claude." });
+  if (provider === "gemini" && !process.env.GEMINI_API_KEY) return json(503, { error: "Chưa cấu hình mô hình Gemini." });
   const userId = await verifyUser(request.headers.get("authorization")).catch(() => null);
   if (!userId) return json(401, { error: "Cần đăng nhập để dùng Hỏi đáp xúc tác." });
 
-  const parsed = parseMessages(await request.json().catch(() => null));
+  const parsed = parseMessages(raw);
   if (typeof parsed === "string") return json(400, { error: parsed });
 
   const quotaKey = `chat:xuctac:${createHash("sha256").update(userId).digest("hex").slice(0, 16)}:${vnToday()}`;
@@ -87,8 +106,8 @@ export async function POST(request: Request) {
   }
   if (used > DAILY_LIMIT) return json(429, { error: `Đã dùng hết ${DAILY_LIMIT} câu hỏi hôm nay — quay lại ngày mai.` });
 
-  const [macro, world] = await Promise.all([fetchMacroToolSpecs(), fetchWorldToolSpecs()]);
-  const tools = buildToolList(macro, world);
+  const [macro, world, ws] = await Promise.all([fetchMacroToolSpecs(), fetchWorldToolSpecs(), fetchWsToolSpecs()]);
+  const tools = buildToolList(macro, world, ws);
   const execTool = createToolExecutor({
     getSnapshot: async () => {
       const r = await readSnapshotWithStaleness<CatalystSnapshotLike>(redis);
@@ -99,29 +118,31 @@ export async function POST(request: Request) {
   const enc = new TextEncoder();
   const body = new ReadableStream<Uint8Array>({
     async start(controller) {
-      const send = (e: ChatEvent | { type: "meta"; remaining: number; macroMode: string | null; worldMode: string | null }) => {
+      const send = (e: ChatEvent | { type: "meta"; remaining: number; macroMode: string | null; worldMode: string | null; provider: string; model: string }) => {
         try {
           controller.enqueue(enc.encode(`data: ${JSON.stringify(e)}\n\n`));
         } catch {
           // client đã đóng
         }
       };
-      send({ type: "meta", remaining: Math.max(0, DAILY_LIMIT - used), macroMode: macro?.mode ?? null, worldMode: world?.mode ?? null });
+      send({ type: "meta", remaining: Math.max(0, DAILY_LIMIT - used), macroMode: macro?.mode ?? null, worldMode: world?.mode ?? null, provider, model: provider === "gemini" ? GEMINI_CHAT_MODEL : "claude-opus-5-5" });
+      const system = buildSystemPrompt(macro, vnToday(), world, ws);
+      const tracedExec = async (name: string, input: unknown) => {
+        const t = Date.now();
+        const r = await execTool(name, input);
+        console.log(`[catalyst-chat] provider=${provider} tool=${name} ok=${r.ok} ms=${Date.now() - t}`);
+        return r;
+      };
       const t0 = Date.now();
       try {
-        await runChat({
-          messages: parsed, system: buildSystemPrompt(macro, vnToday(), world), tools,
-          api: anthropic.beta.messages, signal: request.signal,
-          execTool: async (name, input) => {
-            const t = Date.now();
-            const r = await execTool(name, input);
-            console.log(`[catalyst-chat] tool=${name} ok=${r.ok} ms=${Date.now() - t}`);
-            return r;
-          },
-          emit: send,
-        });
+        if (provider === "gemini") {
+          await runChatGemini({ messages: parsed, system, tools: tools as never, model: geminiFactory(process.env.GEMINI_API_KEY!), signal: request.signal, execTool: tracedExec, emit: send });
+        } else {
+          await runChat({ messages: parsed, system, tools, api: anthropic.beta.messages, signal: request.signal, execTool: tracedExec, emit: send });
+        }
       } catch (e) {
-        const message = e instanceof Anthropic.RateLimitError ? "Mô hình AI đang quá tải — thử lại sau ít phút."
+        const message = provider === "gemini" ? (request.signal.aborted ? "Đã huỷ." : `Lỗi Gemini: ${e instanceof Error ? e.message.slice(0, 160) : "không rõ"}`)
+          : e instanceof Anthropic.RateLimitError ? "Mô hình AI đang quá tải — thử lại sau ít phút."
           : e instanceof Anthropic.APIError ? `Lỗi mô hình AI (HTTP ${e.status ?? "?"}).`
           : request.signal.aborted ? "Đã huỷ." : "Lỗi khi trả lời.";
         console.error("[catalyst-chat] lỗi:", e instanceof Error ? e.message : e);
