@@ -5,7 +5,9 @@
 //   - 5 công cụ Kết nối thế giới (world_*) của gói macro-center 1.2 — đặc tả + thực thi trên Gateway (/api/world/tools[/:name]),
 //     số liệu thật (thị trường, rổ ngành, yếu tố tháng, sự kiện đã kiểm duyệt);
 //   - 5 công cụ ngành thế giới → ngành ICB VN (ws_*) — chiến lược ngành, ngành, hàng hoá, phơi nhiễm cổ phiếu (Gateway
-//     /api/world-sectors/tools[/:name], Z1 2026-10-17).
+//     /api/world-sectors/tools[/:name], Z1 2026-10-17);
+//   - 3 công cụ trung tâm quyết định Elite 10 (elite_*) — danh mục, hồ sơ 360° một mã, bằng chứng tín hiệu (Gateway
+//     /api/elite/tools[/:name], E5 2026-10-17).
 // Mọi công cụ CHỈ ĐỌC.
 import type { BetaTool } from "@anthropic-ai/sdk/resources/beta/messages/messages";
 import { MARKET_GATEWAY_URL } from "@/lib/market-data/ssi-gateway-adapter";
@@ -44,6 +46,15 @@ function cachedSpecs<T>(path: string) {
 export const fetchMacroToolSpecs = cachedSpecs<GatewayToolSpecs>("/api/macro/tools");
 export const fetchWorldToolSpecs = cachedSpecs<WorldToolSpecs>("/api/world/tools");
 export const fetchWsToolSpecs = cachedSpecs<WorldToolSpecs>("/api/world-sectors/tools");
+export const fetchEliteToolSpecs = cachedSpecs<WorldToolSpecs>("/api/elite/tools");
+
+/** E5: vai trò trong chế độ tranh luận của Phòng họp AI (Elite 10). */
+export type ChatRole = "bull" | "bear" | "judge";
+export const ROLE_PROMPTS: Record<ChatRole, string> = {
+  bull: "VAI TRÒ: phe MUA trong một cuộc tranh luận có trọng tài. Xây dựng lập luận mạnh nhất cho việc nghiêng tỷ trọng TĂNG (mã hoặc danh mục được hỏi), CHỈ dựa trên kết quả công cụ. Bắt buộc: nêu bậc bằng chứng (A/B/C) của từng luận điểm, và kết thúc bằng điểm yếu lớn nhất của chính lập luận phe mua.",
+  bear: "VAI TRÒ: phe BÁN / thận trọng trong một cuộc tranh luận có trọng tài. Xây dựng lập luận mạnh nhất cho việc GIẢM hoặc không tăng tỷ trọng (mã hoặc danh mục được hỏi), CHỈ dựa trên kết quả công cụ. Bắt buộc: nêu bậc bằng chứng (A/B/C) của từng luận điểm, và kết thúc bằng điểm yếu lớn nhất của chính lập luận phe bán.",
+  judge: "VAI TRÒ: trọng tài độc lập. Câu hỏi chứa lập luận của phe mua và phe bán. Gọi công cụ để KIỂM CHỨNG các con số và luận điểm chính; chấm từng luận điểm theo bậc bằng chứng (A/B/C) và mức độ kiểm chứng được; chỉ rõ luận điểm sai, không truy được hoặc phóng đại. Kết luận cân bằng: bên nào có bằng chứng mạnh hơn và mạnh đến mức nào, kèm điều kiện cụ thể sẽ làm thay đổi kết luận. Không khuyến nghị mua/bán.",
+};
 
 const CALENDAR_TOOL: BetaTool = {
   name: "macro_catalyst_calendar",
@@ -51,9 +62,9 @@ const CALENDAR_TOOL: BetaTool = {
   input_schema: { type: "object", properties: { horizonDays: { type: "integer", minimum: 1, maximum: 180, description: "Số ngày tới, mặc định 45." } }, required: [], additionalProperties: false },
 };
 
-export function buildToolList(macro: GatewayToolSpecs | null, world: WorldToolSpecs | null = null, ws: WorldToolSpecs | null = null): BetaTool[] {
+export function buildToolList(macro: GatewayToolSpecs | null, world: WorldToolSpecs | null = null, ws: WorldToolSpecs | null = null, elite: WorldToolSpecs | null = null): BetaTool[] {
   const toTool = (t: { name: string; description: string; input_schema: Record<string, unknown> }): BetaTool => ({ name: t.name, description: t.description, input_schema: t.input_schema as BetaTool["input_schema"] });
-  const macroTools: BetaTool[] = [...(ws?.anthropic ?? []), ...(macro?.anthropic ?? []), ...(world?.anthropic ?? [])].map(toTool);
+  const macroTools: BetaTool[] = [...(elite?.anthropic ?? []), ...(ws?.anthropic ?? []), ...(macro?.anthropic ?? []), ...(world?.anthropic ?? [])].map(toTool);
   // eager_input_streaming: tham số công cụ stream ngay khi sinh; server không còn kiểm tra -> mọi tham số đều được kiểm tra lại
   // (công cụ vĩ mô: validateArgs trên Gateway; công cụ xúc tác: runCatalystTool).
   return [...macroTools, CALENDAR_TOOL, ...CATALYST_TOOL_SPECS].map((t) => ({ ...t, eager_input_streaming: true }));
@@ -74,12 +85,12 @@ export function createToolExecutor({ getSnapshot, fetchImpl = fetch }: { getSnap
       const b = await res.json();
       return { ok: true, notice: b.notice ?? null, data: { asOf: b.asOf, events: b.events, mode: b.mode }, guidance: [b.caveat, "Lịch công bố số liệu không có hướng tốt/xấu — chỉ biết sau khi công bố."] };
     }
-    if (name.startsWith("world_") || name.startsWith("macro_") || name.startsWith("ws_")) {
-      const base = name.startsWith("world_") ? "world" : name.startsWith("ws_") ? "world-sectors" : "macro";
+    if (name.startsWith("world_") || name.startsWith("macro_") || name.startsWith("ws_") || name.startsWith("elite_")) {
+      const base = name.startsWith("world_") ? "world" : name.startsWith("ws_") ? "world-sectors" : name.startsWith("elite_") ? "elite" : "macro";
       const res = await fetchImpl(`${MARKET_GATEWAY_URL}/api/${base}/tools/${encodeURIComponent(name)}`, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input ?? {}), signal: AbortSignal.timeout(60_000),
       });
-      const label = base === "world" ? "Kết nối thế giới" : base === "world-sectors" ? "Ngành thế giới" : "Trung tâm vĩ mô";
+      const label = base === "world" ? "Kết nối thế giới" : base === "world-sectors" ? "Ngành thế giới" : base === "elite" ? "Trung tâm quyết định Elite 10" : "Trung tâm vĩ mô";
       if (!res.ok) return { ok: false, error: res.status === 429 ? `${label} đang quá tải — thử lại sau.` : `${label} lỗi HTTP ${res.status}.` };
       return (await res.json()) as ChatToolResult;
     }
@@ -87,10 +98,12 @@ export function createToolExecutor({ getSnapshot, fetchImpl = fetch }: { getSnap
   };
 }
 
-export function buildSystemPrompt(macro: GatewayToolSpecs | null, todayVn: string, world: WorldToolSpecs | null = null, ws: WorldToolSpecs | null = null): string {
+export function buildSystemPrompt(macro: GatewayToolSpecs | null, todayVn: string, world: WorldToolSpecs | null = null, ws: WorldToolSpecs | null = null, elite: WorldToolSpecs | null = null, role: ChatRole | null = null): string {
   return [
+    ...(role ? [ROLE_PROMPTS[role], ""] : []),
     `Bạn là trợ lý "Hỏi đáp xúc tác" trong ứng dụng phân tích chứng khoán Việt Nam. Hôm nay là ${todayVn} (giờ Việt Nam).`,
     "Nhiệm vụ: trả lời câu hỏi về chất xúc tác (tin tức, sự kiện, chính sách tác động tới ngành/mã), bối cảnh vĩ mô và tác động của thế giới tới ngành/cổ phiếu Việt Nam, CHỈ dựa trên kết quả công cụ.",
+    "Khi hỏi về danh mục Elite 10, Điểm Elite, độ tin cậy của tín hiệu hay hồ sơ định lượng của một mã: dùng elite_decision / elite_ticker / elite_evidence trước.",
     "Cách phân tích một ngành hoặc một mã: (1) ws_stock / ws_sector để biết ngành ICB, tư thế ngắn hạn, bối cảnh trung hạn, hàng hoá dẫn dắt; (2) catalyst_* để xem tin/sự kiện tác động; (3) macro_* / world_* khi cần bối cảnh vĩ mô hay truyền dẫn. Kết luận theo thứ tự: tác động ngành -> tác động mã -> rủi ro / độ tin cậy.",
     "",
     "Quy tắc chung (bắt buộc):",
@@ -115,5 +128,7 @@ export function buildSystemPrompt(macro: GatewayToolSpecs | null, todayVn: strin
       : "Công cụ Kết nối thế giới hiện không khả dụng — nếu được hỏi về tác động của thế giới lên ngành, nói thật là không lấy được dữ liệu.",
     "",
     ws?.guidelines ?? "Công cụ ngành thế giới (ws_*) hiện không khả dụng.",
+    "",
+    elite?.guidelines ?? "Công cụ trung tâm quyết định Elite 10 (elite_*) hiện không khả dụng.",
   ].join("\n");
 }

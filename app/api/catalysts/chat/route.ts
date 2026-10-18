@@ -10,7 +10,7 @@ import { Redis } from "@upstash/redis";
 import { readSnapshotWithStaleness } from "@/lib/catalyst/engine/SnapshotStore";
 import { sanitizeLegacySnapshot } from "@/lib/catalyst/provenance";
 import { runChat, type ChatEvent } from "@/lib/catalyst/chat/chatEngine";
-import { buildSystemPrompt, buildToolList, createToolExecutor, fetchMacroToolSpecs, fetchWorldToolSpecs, fetchWsToolSpecs } from "@/lib/catalyst/chat/chatTools";
+import { buildSystemPrompt, buildToolList, createToolExecutor, fetchEliteToolSpecs, fetchMacroToolSpecs, fetchWorldToolSpecs, fetchWsToolSpecs, type ChatRole } from "@/lib/catalyst/chat/chatTools";
 import type { CatalystSnapshotLike } from "@/lib/catalyst/chat/catalystTools";
 
 export const runtime = "nodejs";
@@ -88,6 +88,9 @@ function geminiFactory(apiKey: string): GeminiModelFactory {
 export async function POST(request: Request) {
   const raw = await request.json().catch(() => null);
   const provider = (raw as { provider?: unknown })?.provider === "gemini" ? "gemini" : "claude";
+  // E5: vai trò tranh luận (Phòng họp AI Elite 10) — chỉ nhận giá trị trong danh sách.
+  const rawRole = (raw as { role?: unknown })?.role;
+  const role: ChatRole | null = rawRole === "bull" || rawRole === "bear" || rawRole === "judge" ? rawRole : null;
   if (provider === "claude" && !process.env.ANTHROPIC_API_KEY) return json(503, { error: "Chưa cấu hình mô hình Claude." });
   if (provider === "gemini" && !process.env.GEMINI_API_KEY) return json(503, { error: "Chưa cấu hình mô hình Gemini." });
   const userId = await verifyUser(request.headers.get("authorization")).catch(() => null);
@@ -106,8 +109,8 @@ export async function POST(request: Request) {
   }
   if (used > DAILY_LIMIT) return json(429, { error: `Đã dùng hết ${DAILY_LIMIT} câu hỏi hôm nay — quay lại ngày mai.` });
 
-  const [macro, world, ws] = await Promise.all([fetchMacroToolSpecs(), fetchWorldToolSpecs(), fetchWsToolSpecs()]);
-  const tools = buildToolList(macro, world, ws);
+  const [macro, world, ws, elite] = await Promise.all([fetchMacroToolSpecs(), fetchWorldToolSpecs(), fetchWsToolSpecs(), fetchEliteToolSpecs()]);
+  const tools = buildToolList(macro, world, ws, elite);
   const execTool = createToolExecutor({
     getSnapshot: async () => {
       const r = await readSnapshotWithStaleness<CatalystSnapshotLike>(redis);
@@ -126,7 +129,7 @@ export async function POST(request: Request) {
         }
       };
       send({ type: "meta", remaining: Math.max(0, DAILY_LIMIT - used), macroMode: macro?.mode ?? null, worldMode: world?.mode ?? null, provider, model: provider === "gemini" ? GEMINI_CHAT_MODEL : "claude-opus-5-5" });
-      const system = buildSystemPrompt(macro, vnToday(), world, ws);
+      const system = buildSystemPrompt(macro, vnToday(), world, ws, elite, role);
       const tracedExec = async (name: string, input: unknown) => {
         const t = Date.now();
         const r = await execTool(name, input);
