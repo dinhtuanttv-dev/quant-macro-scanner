@@ -20,7 +20,7 @@ export type Kv = {
   mget<T extends unknown[]>(...keys: string[]): Promise<T>;
   get<T>(key: string): Promise<T | null>;
   set(key: string, value: unknown, opts?: { ex?: number }): Promise<unknown>;
-  pipeline(): { incr(k: string): unknown; decr(k: string): unknown; expire(k: string, s: number): unknown; exec(): Promise<unknown[]> };
+  pipeline(): { incr(k: string): unknown; decr(k: string): unknown; expire(k: string, s: number): unknown; incrby?(k: string, n: number): unknown; exec(): Promise<unknown[]> };
 };
 
 const READ_OPS = new Set(["findUnique", "findUniqueOrThrow", "findFirst", "findFirstOrThrow", "findMany", "count", "aggregate", "groupBy"]);
@@ -34,6 +34,11 @@ const L1_MAX_BYTES = 48 * 1024 * 1024;
 // (mỗi truy vấn 1 lệnh MGET). Bật > 0 chỉ khi lệnh Upstash gần trần: lần ghi của tiến trình KHÁC hiện ra chậm tối đa N ms.
 const SNAPSHOT_MEMO_MS = Number(process.env.QUERY_CACHE_SNAPSHOT_MS) || 0;
 const RAW = "$raw"; // ghi SQL thô: mọi bản đệm phụ thuộc
+// Ngân sách lệnh Upstash (miễn phí 500k/tháng, dùng chung với các tính năng KV khác): đếm lệnh của lớp đệm theo tháng (đọc kèm
+// trong lệnh MGET phiên bản — không tốn thêm lệnh); quá ngưỡng -> lớp đệm tự ngừng dùng KV (đọc thẳng như cũ) tới tháng sau,
+// chừa phần còn lại cho phiên bản dữ liệu Cổ tức, đệm route…
+const KV_MONTH_LIMIT = Number(process.env.QUERY_CACHE_KV_MONTH_LIMIT) || 450_000;
+const COUNT_FLUSH_EVERY = 100;
 const ANY = "$any"; // mọi lần ghi: bản đệm của truy vấn SQL thô phụ thuộc
 
 // ---------- mã hoá giữ kiểu ----------
@@ -99,6 +104,24 @@ export function createQueryCache({
   // Đợt ghi đang giữ khoá trong tiến trình này: model -> { holders, refreshedAt, release: Promise | null }
   const held = new Map<string, { writers: number; refreshedAt: number; releaseTimer: ReturnType<typeof setTimeout> | null; done: (() => void) | null }>();
 
+  const monthKey = () => `qc:cmds:${new Date(now() + 7 * 3_600_000).toISOString().slice(0, 7)}`;
+  let unflushed = 0;
+  let degradedUntil = 0; // quá ngân sách -> đọc thẳng; 30 phút kiểm tra lại một lần (sang tháng mới tự hết)
+  let monthCount = 0;
+  function count(n: number) {
+    stats.kvCommands += n;
+    unflushed += n;
+    if (unflushed >= COUNT_FLUSH_EVERY && kv) {
+      const add = unflushed;
+      unflushed = 0;
+      const p = kv.pipeline();
+      if (p.incrby) {
+        p.incrby(monthKey(), add + 1);
+        p.expire(monthKey(), 40 * 24 * 3600);
+        p.exec().catch(() => { unflushed += add; });
+      }
+    }
+  }
   const vKey = (m: string) => `qc:v:${m}`;
   const lKey = (m: string) => `qc:l:${m}`;
 
@@ -108,10 +131,12 @@ export function createQueryCache({
     const memoKey = models.join(",");
     const memo = snapMemo.get(memoKey);
     if (SNAPSHOT_MEMO_MS > 0 && memo && now() - memo.at < SNAPSHOT_MEMO_MS) return memo.snap;
-    const keys = models.flatMap((m) => [vKey(m), lKey(m)]);
+    const keys = [...models.flatMap((m) => [vKey(m), lKey(m)]), monthKey()];
     try {
-      stats.kvCommands += 1;
+      count(1);
       const vals = await kv.mget<(string | number | null)[]>(...keys);
+      monthCount = Number(vals[keys.length - 1] ?? 0) + unflushed;
+      if (monthCount >= KV_MONTH_LIMIT) degradedUntil = now() + 30 * 60_000;
       let locked = false;
       const parts: string[] = [];
       for (let i = 0; i < models.length; i++) {
@@ -141,7 +166,7 @@ export function createQueryCache({
 
   /** Đọc qua đệm. models: các model kết quả phụ thuộc; keyParts: định danh truy vấn (model, thao tác, tham số). */
   async function read<T>(models: string[], keyParts: unknown, run: () => Promise<T>, { cacheIf = () => true }: { cacheIf?: (v: T) => boolean } = {}): Promise<T> {
-    if (!kv) return run();
+    if (!kv || now() < degradedUntil) return run();
     let keyText: string;
     try { keyText = encodeValue(keyParts); } catch { stats.skipped += 1; return run(); }
     const key = `qc:e:${createHash("sha1").update(keyText).digest("hex")}`;
@@ -151,7 +176,7 @@ export function createQueryCache({
     const mem = l1.get(key);
     if (mem && mem.stamp === snap.stamp) { stats.l1Hits += 1; return decodeValue<T>(mem.body); }
     try {
-      stats.kvCommands += 1;
+      count(1);
       const hit = await kv.get<{ s: string; z?: string; b?: string }>(key);
       if (hit && hit.s === snap.stamp) {
         const body = hit.z ? gunzipSync(Buffer.from(hit.z, "base64")).toString("utf8") : String(hit.b);
@@ -172,7 +197,7 @@ export function createQueryCache({
     l1Put(key, snap.stamp, body);
     const entry = body.length > 4096 ? { s: snap.stamp, z: gzipSync(body).toString("base64") } : { s: snap.stamp, b: body };
     if ((entry.z ?? entry.b ?? "").length <= MAX_L2_BYTES) {
-      try { stats.kvCommands += 1; await kv.set(key, entry, { ex: ENTRY_TTL_SEC }); } catch (e) { stats.kvErrors += 1; log.warn?.(`[query-cache] KV set: ${(e as Error).message}`); }
+      try { count(1); await kv.set(key, entry, { ex: ENTRY_TTL_SEC }); } catch (e) { stats.kvErrors += 1; log.warn?.(`[query-cache] KV set: ${(e as Error).message}`); }
     } else stats.skipped += 1;
     return value;
   }
@@ -181,7 +206,7 @@ export function createQueryCache({
     if (!kv) return;
     const p = kv.pipeline();
     const n = fill(p);
-    stats.kvCommands += n;
+    count(n);
     await p.exec();
   }
 
@@ -273,7 +298,7 @@ export function createQueryCache({
     depsOf,
     RAW, ANY,
     instance,
-    stats: () => ({ ...stats, l1Entries: l1.size, l1Mb: Math.round((l1Bytes / 1048576) * 10) / 10, heldLocks: [...held.keys()] }),
+    stats: () => ({ ...stats, kvMonthCommands: monthCount, kvMonthLimit: KV_MONTH_LIMIT, degraded: now() < degradedUntil, l1Entries: l1.size, l1Mb: Math.round((l1Bytes / 1048576) * 10) / 10, heldLocks: [...held.keys()] }),
     /** Vô hiệu hoá toàn bộ đệm (sau khi sửa Neon từ ngoài ứng dụng). */
     async invalidateAll() { await pipe((p) => { p.incr(vKey(RAW)); p.incr(vKey(ANY)); return 2; }); l1.clear(); l1Bytes = 0; snapMemo.clear(); },
   };

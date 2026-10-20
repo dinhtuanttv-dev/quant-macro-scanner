@@ -20,6 +20,7 @@ function fakeKv() {
         incr: (k: string) => { ops.push(() => m.set(k, Number(m.get(k) ?? 0) + 1)); return p; },
         decr: (k: string) => { ops.push(() => m.set(k, Number(m.get(k) ?? 0) - 1)); return p; },
         expire: () => { ops.push(() => {}); return p; },
+        incrby: (k: string, n: number) => { ops.push(() => m.set(k, Number(m.get(k) ?? 0) + n)); return p; },
         async exec() { commands += ops.length; if (fail) throw new Error("kv down"); ops.forEach((o) => o()); return []; },
       };
       return p;
@@ -170,5 +171,22 @@ describe("query-cache", () => {
     kv.m.set("qc:l:A", 0); // khoá tự hết hạn (EXPIRE) sau khi tiến trình chết
     kv.m.set("qc:l:$any", 0);
     expect(await reader.read(["A"], "k", async () => value)).toBe(2);
+  });
+  it("ngân sách lệnh KV tháng: đếm (đọc kèm MGET), quá ngưỡng -> đọc thẳng không tốn lệnh KV, 30 phút sau kiểm lại", async () => {
+    let t = Date.parse("2026-10-20T03:00:00Z");
+    const kv = fakeKv();
+    const qc = createQueryCache({ kv, now: () => t, releaseMs: 1, runAfter: () => false });
+    for (let i = 0; i < 120; i++) await qc.read(["A"], `k${i % 5}`, async () => i % 5);
+    expect(Number(kv.m.get("qc:cmds:2026-10"))).toBeGreaterThanOrEqual(100);
+    kv.m.set("qc:cmds:2026-10", 10_000_000); // giả lập đã gần hết hạn mức tháng
+    await qc.read(["A"], "k0", async () => 0); // lần đọc này phát hiện ngưỡng
+    const c0 = kv.commands();
+    expect(await qc.read(["A"], "k0", async () => 42)).toBe(42); // đọc thẳng
+    expect(kv.commands()).toBe(c0); // không tốn lệnh KV
+    expect(qc.stats().degraded).toBe(true);
+    t += 31 * 60_000;
+    kv.m.set("qc:cmds:2026-10", 0);
+    await qc.read(["A"], "k0", async () => 0);
+    expect(qc.stats().degraded).toBe(false);
   });
 });
