@@ -1,32 +1,106 @@
 {
   "version": 2,
   "crons": [
-    { "path": "/api/cron/refresh-macro", "schedule": "0 23 * * 1-5" },
-    { "path": "/api/cron/refresh-macro", "schedule": "0 6 * * 1-5" },
-    { "path": "/api/cron/dividend-universe-scan", "schedule": "0 22 * * *" },
-    { "path": "/api/cron/dividend-events-scan", "schedule": "5 22 * * *" },
-    { "path": "/api/cron/dividend-universe-score", "schedule": "15 22 * * *" },
-    { "path": "/api/cron/dividend-ai-analysis", "schedule": "30 22 * * *" },
-    { "path": "/api/cron/dividend-cycle-scan", "schedule": "0 23 * * 0" },
-    { "path": "/api/cron/sieu-quet-scan", "schedule": "45 22 * * *" },
-    { "path": "/api/catalysts/scan", "schedule": "40 22 * * *" },
-    { "path": "/api/cron/sector-top20-scan", "schedule": "35 22 * * *" },
-    { "path": "/api/cron/timing-signals-scan", "schedule": "50 22 * * *" },
-    { "path": "/api/cron/sector-timing-scan", "schedule": "20 9 * * 1-5" },
-    { "path": "/api/cron/earnings-seasonality-scan?phase=collect&offset=0&limit=3", "schedule": "5 23 * * *" },
-    { "path": "/api/cron/earnings-seasonality-scan?phase=collect&offset=3&limit=3", "schedule": "10 23 * * *" },
-    { "path": "/api/cron/earnings-seasonality-scan?phase=collect&offset=6&limit=3", "schedule": "15 23 * * *" },
-    { "path": "/api/cron/earnings-seasonality-scan?phase=collect&offset=9&limit=3", "schedule": "20 23 * * *" },
-    { "path": "/api/cron/earnings-seasonality-scan?phase=collect&offset=12&limit=3", "schedule": "25 23 * * *" },
-    { "path": "/api/cron/earnings-seasonality-scan?phase=collect&offset=15&limit=3", "schedule": "35 23 * * *" },
-    { "path": "/api/cron/earnings-seasonality-scan?phase=finalize", "schedule": "45 23 * * *" },
-    { "path": "/api/cron/elite10-agm-cycle-scan", "schedule": "0 0 * * 0" },
-    { "path": "/api/cron/sieu-quet-event-discover", "schedule": "0 1 * * *" },
-    { "path": "/api/cron/sieu-quet-event-discover", "schedule": "0 6 * * *" },
-    { "path": "/api/cron/sieu-quet-event-discover", "schedule": "0 13 * * *" },
-    { "path": "/api/cron/sieu-quet-universe-sync", "schedule": "30 23 * * 0" },
-    { "path": "/api/cron/resolve-insight-outcomes", "schedule": "15 23 * * *" },
-    { "path": "/api/cron/run-core-debates", "schedule": "30 23 * * *" }
+    {
+      "path": "/api/cron/refresh-macro",
+      "schedule": "0 23 * * 1-5"
+    },
+    {
+      "path": "/api/cron/refresh-macro",
+      "schedule": "0 6 * * 1-5"
+    },
+    {
+      "path": "/api/cron/dividend-universe-scan",
+      "schedule": "0 22 * * *"
+    },
+    {
+      "path": "/api/cron/dividend-events-scan",
+      "schedule": "5 22 * * *"
+    },
+    {
+      "path": "/api/cron/dividend-universe-score",
+      "schedule": "15 22 * * *"
+    },
+    {
+      "path": "/api/cron/dividend-ai-analysis",
+      "schedule": "30 22 * * *"
+    },
+    {
+      "path": "/api/cron/dividend-cycle-scan",
+      "schedule": "0 23 * * 0"
+    },
+    {
+      "path": "/api/cron/sieu-quet-scan",
+      "schedule": "45 22 * * *"
+    },
+    {
+      "path": "/api/catalysts/scan",
+      "schedule": "40 22 * * *"
+    },
+    {
+      "path": "/api/cron/sector-top20-scan",
+      "schedule": "35 22 * * *"
+    },
+    {
+      "path": "/api/cron/timing-signals-scan",
+      "schedule": "50 22 * * *"
+    },
+    {
+      "path": "/api/cron/sector-timing-scan",
+      "schedule": "20 9 * * 1-5"
+    },
+    {
+      "path": "/api/cron/earnings-seasonality-scan?phase=collect&offset=0&limit=3",
+      "schedule": "5 23 * * *"
+    },
+    {
+      "path": "/api/cron/earnings-seasonality-scan?phase=collect&offset=3&limit=3",
+      "schedule": "10 23 * * *"
+    },
+    {
+      "path": "/api/cron/earnings-seasonality-scan?phase=collect&offset=6&limit=3",
+      "schedule": "15 23 * * *"
+    },
+    {
+      "path": "/api/cron/earnings-seasonality-scan?phase=collect&offset=9&limit=3",
+      "schedule": "20 23 * * *"
+    },
+    {
+      "path": "/api/cron/earnings-seasonality-scan?phase=collect&offset=12&limit=3",
+      "schedule": "25 23 * * *"
+    },
+    {
+      "path": "/api/cron/earnings-seasonality-scan?phase=collect&offset=15&limit=3",
+      "schedule": "35 23 * * *"
+    },
+    {
+      "path": "/api/cron/earnings-seasonality-scan?phase=finalize",
+      "schedule": "45 23 * * *"
+    },
+    {
+      "path": "/api/cron/elite10-agm-cycle-scan",
+      "schedule": "0 0 * * 0"
+    },
+    {
+      "path": "/api/cron/sieu-quet-event-discover",
+      "schedule": "0 1 * * *"
+    },
+    {
+      "path": "/api/cron/sieu-quet-event-discover",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/sieu-quet-event-discover",
+      "schedule": "0 13 * * *"
+    },
+    {
+      "path": "/api/cron/sieu-quet-universe-sync",
+      "schedule": "30 23 * * 0"
+    },
+    {
+      "path": "/api/cron/resolve-insight-outcomes",
+      "schedule": "15 23 * * *"
+    }
   ],
   "functions": {
     "api/stock.py": {
