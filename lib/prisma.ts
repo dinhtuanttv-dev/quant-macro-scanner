@@ -1,6 +1,8 @@
 import "dotenv/config";
 
-import { PrismaClient } from "./generated/prisma/client";
+import { Prisma, PrismaClient } from "./generated/prisma/client";
+import { createQueryCache, kvFromEnv } from "./read-model/query-cache";
+import { queryCacheExtension } from "./read-model/prisma-extension";
 
 import { PrismaPg } from "@prisma/adapter-pg";
 
@@ -63,7 +65,7 @@ const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
 
 
-export const prisma =
+const basePrisma =
 
   globalForPrisma.prisma ??
 
@@ -74,6 +76,11 @@ export const prisma =
     log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
 
   });
+
+// D3 (2026-10-20): đệm kết quả truy vấn trong Upstash, có phiên bản theo model — lượt xem trang không đánh thức Neon,
+// kết quả giống hệt đọc thẳng (xem lib/read-model/query-cache.ts). QUERY_CACHE=off để tắt.
+export const queryCache = createQueryCache({ kv: kvFromEnv(), dmmf: (Prisma as unknown as { dmmf?: Parameters<typeof createQueryCache>[0]["dmmf"] }).dmmf });
+export const prisma = basePrisma.$extends(queryCacheExtension(queryCache));
 
 
 
@@ -96,7 +103,7 @@ export const prisma =
 // KHI CO THE (ca o production, khi serverless function duoc "warm"
 // tai su dung container giua cac lan goi lien tiep - rat pho bien
 // tren Vercel), thay vi luon tao moi.
-globalForPrisma.prisma = prisma;
+globalForPrisma.prisma = basePrisma;
 
 // FIX BO SUNG QUAN TRONG (2026-09-26, xac nhan qua kiem tra co he
 // thong): da thu CA 3 loai timeout cua Prisma/pg (connectionTimeoutMillis,
