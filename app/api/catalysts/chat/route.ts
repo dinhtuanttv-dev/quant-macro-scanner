@@ -1,8 +1,9 @@
 // X4 — POST /api/catalysts/chat: "Hỏi đáp xúc tác" (Claude hoặc Gemini + công cụ vĩ mô/xúc tác/thế giới), trả về luồng SSE.
 // Z2 (2026-10-17): body.provider = "claude" (mặc định) | "gemini" — cùng bộ công cụ, cùng kiểm tra con số.
-// Bảo vệ chi phí: cần đăng nhập (phiên Supabase của Global Quanta, xác minh qua GQ_SUPABASE_URL) + hạn mức theo người dùng/ngày
+// Bảo vệ chi phí: cần đăng nhập (token Gateway ĐINH TUẤN, kiểm qua JWKS — lib/catalyst/chat/gqAuth.ts) + hạn mức theo người dùng/ngày
 // (Upstash). Không lưu nội dung hội thoại; log chỉ ghi tên công cụ, thời gian, ok.
 import { createHash } from "node:crypto";
+import { createGqVerifier } from "@/lib/catalyst/chat/gqAuth";
 import Anthropic from "@anthropic-ai/sdk";
 import { FunctionCallingMode, GoogleGenerativeAI } from "@google/generative-ai";
 import { GEMINI_CHAT_MODEL, runChatGemini, type GeminiChatLike, type GeminiModelFactory } from "@/lib/catalyst/chat/geminiEngine";
@@ -32,23 +33,8 @@ const CORS = {
 
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { ...CORS, "content-type": "application/json; charset=utf-8" } });
 
-const authCache = new Map<string, { userId: string; exp: number }>();
-async function verifyUser(authorization: string | null): Promise<string | null> {
-  const token = /^Bearer\s+(.+)$/i.exec(authorization ?? "")?.[1]?.trim();
-  const url = (process.env.GQ_SUPABASE_URL || "").replace(/\/+$/, "");
-  const key = process.env.GQ_SUPABASE_PUBLISHABLE_KEY || "";
-  if (!token || !url || !key) return null;
-  const h = createHash("sha256").update(token).digest("hex");
-  const hit = authCache.get(h);
-  if (hit && hit.exp > Date.now()) return hit.userId;
-  const res = await fetch(`${url}/auth/v1/user`, { headers: { apikey: key, authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) });
-  if (!res.ok) return null;
-  const u = (await res.json()) as { id?: string };
-  if (!u.id) return null;
-  authCache.set(h, { userId: u.id, exp: Date.now() + 5 * 60_000 });
-  if (authCache.size > 1000) authCache.delete(authCache.keys().next().value as string);
-  return u.id;
-}
+// Đăng nhập đã chuyển sang Gateway (Railway) ngày 23/10/2026: kiểm JWT Ed25519 bằng JWKS của Gateway (GQ_GATEWAY_URL).
+const verifyUser = createGqVerifier();
 
 const vnToday = () => new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
 
