@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { Prisma } from "@/lib/generated/prisma";
-import { prisma } from "@/lib/prisma";
+import { storeList, storeUpsert, withDates } from "@/lib/cotuc/store/gateway-store";
 import { loadBacktestRates } from "@/lib/cotuc/decision-state-lite";
 import { bumpCotucDataVersion } from "@/lib/cotuc/data-version";
 import { getCotucUniverse } from "@/lib/cotuc/cotuc-universe";
@@ -26,6 +25,9 @@ import type { DecisionLevel } from "@/lib/cotuc/timing-v3/decision/decision-type
 // luc tao dong -> asOf dung yen; nay cap nhat moi lan quet.
 //
 // Hobby plan: van ho tro offset/limit de chia nho khi can (prior lien ma chi tinh tren cac ma trong lan goi).
+//
+// B2 (25/10/2026): LƯU vào kho Cổ tức trên Gateway (Railway Volume) thay Neon — engine/công thức không đổi. Ghi gom theo lô cuối lượt
+// (timing, decision, track, meta danh mục) thay vì từng dòng; lỗi ghi -> 500 (không báo thành công giả).
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
@@ -47,7 +49,7 @@ function authorized(req: Request): boolean {
   return !secret || req.headers.get("authorization") === `Bearer ${secret}`;
 }
 
-const toJson = (v: unknown): Prisma.InputJsonValue => JSON.parse(JSON.stringify(v)) as Prisma.InputJsonValue;
+const toJson = (v: unknown): unknown => JSON.parse(JSON.stringify(v));
 
 function rowToTrack(r: {
   id: string; ticker: string; windowId: string; level: string; predictedProbability: number; components: unknown; exDate: string; exDateStatus: string;
@@ -61,6 +63,7 @@ function rowToTrack(r: {
 
 export async function GET(req: Request) {
   if (!authorized(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  let wrote = false;
   try {
     const { searchParams } = new URL(req.url);
     const offset = Number(searchParams.get("offset") ?? "0");
@@ -124,11 +127,20 @@ export async function GET(req: Request) {
     };
 
     // 3) Mùa vụ KQKD (đã có từ cron earnings-seasonality-scan).
-    const seasonRows = await prisma.earningsSeasonalityCache.findMany({
-      where: { ticker: { in: ctxs.map((c) => c.ctx.ticker) } },
-      select: { ticker: true, earningsSignal: true, stats: true },
+    const seasonRows = await storeList<{ ticker: string; earningsSignal: unknown; stats: unknown }>("season", {
+      tickers: ctxs.map((c) => c.ctx.ticker), fields: ["ticker", "earningsSignal", "stats"],
     });
     const seasonBy = new Map(seasonRows.map((r) => [r.ticker, r]));
+    // Theo dõi tín hiệu đã ghi của các mã trong lô (một lần đọc).
+    const trackRows = await storeList<Record<string, unknown>>("track", { tickers: ctxs.map((c) => c.ctx.ticker) });
+    const tracksBy = new Map<string, TrackRow[]>();
+    for (const r of trackRows) {
+      const t = rowToTrack(withDates(r, ["issuedAt", "outcomeRecordedAt"] as const) as unknown as Parameters<typeof rowToTrack>[0]);
+      tracksBy.set(t.ticker, [...(tracksBy.get(t.ticker) ?? []), t]);
+    }
+    const timingOut: Record<string, unknown>[] = [];
+    const decisionOut: Record<string, unknown>[] = [];
+    const trackOut: Record<string, unknown>[] = [];
 
     const offsets = buildRequiredOffsets();
     let savedCount = 0, decisionCount = 0, issuedCount = 0, resolvedCount = 0;
@@ -170,34 +182,29 @@ export async function GET(req: Request) {
           expectedNetReturn: sel?.netExpectancyLcb ?? null, nEvents: sel?.nEvents ?? null, fdrQValue: sel?.fdrQValue ?? null,
           confidence: rec.confidence ?? baseConfidence, generatedAt: now,
         };
-        await prisma.timingSignalCache.upsert({ where: { ticker }, create: timingRow, update: timingRow });
+        timingOut.push(timingRow);
         savedCount++;
 
         const decisionRow = {
           ticker, level: snap.decision.level, action: rec.action, combinedProbability: snap.decision.combinedProbability,
           snapshot: toJson(snapToStore), computedAt: now,
         };
-        await prisma.cotucDecisionState.upsert({ where: { ticker }, create: decisionRow, update: decisionRow });
+        decisionOut.push(decisionRow);
         decisionCount++;
         levels[snap.decision.level] = (levels[snap.decision.level] ?? 0) + 1;
 
         // 4) Theo dõi thực tế: ghi kết quả các tín hiệu đã tới ngày thoát, rồi ghi tín hiệu mới (nếu có).
-        const existing = (await prisma.cotucSignalTrack.findMany({ where: { ticker } })).map(rowToTrack);
+        const existing = tracksBy.get(ticker) ?? [];
         for (const r of planResolutions(existing, ctx.stockPrices ?? [], ctx.benchmarkPrices ?? benchmarkPrices)) {
-          await prisma.cotucSignalTrack.update({
-            where: { id: r.id },
-            data: { outcome: r.outcome, realizedCar: r.realizedCar, exitDate: r.exitDate, outcomeRecordedAt: now },
-          });
+          trackOut.push({ id: r.id, ticker, outcome: r.outcome, realizedCar: r.realizedCar, exitDate: r.exitDate, outcomeRecordedAt: now });
           resolvedCount++;
         }
         const issue = planIssue(snap, existing, vnHolidayCalendar, now.toISOString());
         if (issue) {
-          await prisma.cotucSignalTrack.create({
-            data: {
-              id: issue.id, ticker, windowId: issue.windowId, level: issue.level, predictedProbability: issue.predictedProbability,
-              components: toJson(issue.components), exDate: issue.exDate, exDateStatus: issue.exDateStatus, entryDate: issue.entryDate,
-              plannedExitDate: issue.plannedExitDate, issuedAt: now,
-            },
+          trackOut.push({
+            id: issue.id, ticker, windowId: issue.windowId, level: issue.level, predictedProbability: issue.predictedProbability,
+            components: toJson(issue.components), exDate: issue.exDate, exDateStatus: issue.exDateStatus, entryDate: issue.entryDate,
+            plannedExitDate: issue.plannedExitDate, issuedAt: now, outcome: null, realizedCar: null, exitDate: null, outcomeRecordedAt: null,
           });
           issuedCount++;
         }
@@ -213,19 +220,26 @@ export async function GET(req: Request) {
         ticker, action: "NO_DATE", tdToEx: null, windowEntryFrom: null, windowEntryTo: null, windowExitOffset: null,
         expectedNetReturn: null, nEvents: null, fdrQValue: null, confidence: null, generatedAt: now,
       };
-      await prisma.timingSignalCache.upsert({ where: { ticker }, create: row, update: row });
+      timingOut.push(row);
     }
+
+    // Ghi gom (kho Cổ tức trên Gateway). meta.universe: danh mục + ngành để Gateway tự dựng Timeline giống route Project A (B3).
+    wrote = true; // từ đây có thể đã ghi một phần -> lỗi vẫn phải tăng phiên bản dữ liệu
+    await storeUpsert("timing", timingOut);
+    await storeUpsert("decision", decisionOut);
+    if (trackOut.length) await storeUpsert("track", trackOut);
+    await storeUpsert("meta", [{ key: "universe", tickers: universe.tickers.map((t) => [t.ticker, t.sector]), source: universe.source, at: now }]);
 
     const nextOffset = offset + limit >= allTickers.length ? 0 : offset + limit;
     await bumpCotucDataVersion(); // N2: phía đọc Cổ tức thấy dữ liệu mới, tính lại đúng một lần
-    return NextResponse.json({
+    return NextResponse.json({ store: "gateway",
       savedCount, skippedCount, noDividendHistory: noHistory.length, decisionCount, levels, regime: regime.regime, issuedCount, resolvedCount, errors,
       processedInThisCall: tickers.length, offset, limit, nextOffset, totalTickers: allTickers.length, universeSource: universe.source,
       intraday: { quotes: liveQuotes.size, index: liveIndex }, today,
     });
   } catch (err) {
     console.error("[api/cron/timing-signals-scan] Lỗi:", err);
-    await bumpCotucDataVersion(); // có thể đã ghi một phần
-    return NextResponse.json({ error: "Không quét được Timing Signals." }, { status: 500 });
+    if (wrote) await bumpCotucDataVersion(); // chỉ khi đã bắt đầu ghi — lỗi trước đó (VD giá, kho) không làm mất bộ đệm đọc
+    return NextResponse.json({ error: "Không quét được Timing Signals.", detail: err instanceof Error ? err.message.slice(0, 200) : null }, { status: 500 });
   }
 }

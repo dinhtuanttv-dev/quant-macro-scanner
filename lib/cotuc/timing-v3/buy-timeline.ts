@@ -92,7 +92,7 @@ function firstTradingOnOrAfter(iso: ISODate, cal: HolidayCalendar): ISODate {
   return dayNumberToIso(d);
 }
 
-function sessionsBetween(from: ISODate, to: ISODate, cal: HolidayCalendar): number {
+export function sessionsBetween(from: ISODate, to: ISODate, cal: HolidayCalendar): number {
   const a = toDayNumber(from)!;
   const b = toDayNumber(to)!;
   if (a === b) return 0;
@@ -169,4 +169,29 @@ export function buildBuyTimeline(input: BuildTimelineInput): TimelineRow[] {
     || a.entryFromDate.localeCompare(b.entryFromDate)
     || (a.tier === b.tier ? 0 : a.tier === "VALIDATED" ? -1 : 1)
     || b.netExpectancyLcb - a.netExpectancyLcb);
+}
+
+/**
+ * B1 (25/10/2026): dựng lại một Timeline ĐÃ LƯU cho ngày `today` — bỏ dòng đã qua ngày thoát, tính lại trạng thái / số phiên tới
+ * vùng mua và bộ đếm. Thống kê từng dòng giữ nguyên (cùng dữ liệu nguồn lúc lưu). Dùng khi kho dữ liệu tạm không đọc được.
+ */
+export function rebaseTimeline<T extends { today: ISODate; rows: TimelineRow[]; counts: Record<string, number> }>(body: T, today: ISODate, cal: HolidayCalendar): T {
+  const order: Record<TimelineStatus, number> = { IN_WINDOW: 0, UPCOMING: 1, PASSED: 2 };
+  const rows = body.rows
+    .filter((r) => r.exitDate >= today)
+    .map((r) => {
+      const status: TimelineStatus = today < r.entryFromDate ? "UPCOMING" : today <= r.entryToDate ? "IN_WINDOW" : "PASSED";
+      return { ...r, status, sessionsToEntry: sessionsBetween(today, r.entryFromDate, cal) };
+    })
+    .sort((a, b) => order[a.status] - order[b.status]
+      || a.entryFromDate.localeCompare(b.entryFromDate)
+      || (a.tier === b.tier ? 0 : a.tier === "VALIDATED" ? -1 : 1)
+      || b.netExpectancyLcb - a.netExpectancyLcb);
+  return {
+    ...body, today, rows,
+    counts: {
+      validated: rows.filter((r) => r.tier === "VALIDATED").length, near: rows.filter((r) => r.tier === "NEAR").length,
+      inWindow: rows.filter((r) => r.status === "IN_WINDOW").length, upcoming: rows.filter((r) => r.status === "UPCOMING").length,
+    },
+  };
 }

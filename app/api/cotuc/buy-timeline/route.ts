@@ -1,15 +1,19 @@
 import { NextResponse } from "next/server";
 import { createHash } from "node:crypto";
-import { prisma } from "@/lib/prisma";
-import { readThroughByVersion } from "@/lib/cotuc/data-version";
+import { readLastGood, readThroughByVersion, saveLastGood } from "@/lib/cotuc/data-version";
+import { cotucErrorCode, storeList } from "@/lib/cotuc/store/gateway-store";
 import { getCotucUniverse } from "@/lib/cotuc/cotuc-universe";
 import { refreshVnHolidayCalendar, vnHolidayCalendar, vnHolidayCalendarVersion } from "@/lib/cotuc/timing-v3/vn-holidays";
 import { cotucSourceStamp, loadDecisionForTimeline, memoByStamp } from "@/lib/cotuc/decision-state-lite";
-import { buildBuyTimeline, type DecisionInput, type SeasonInput, type StoredWindow } from "@/lib/cotuc/timing-v3/buy-timeline";
+import { buildBuyTimeline, rebaseTimeline, sessionsBetween, type DecisionInput, type SeasonInput, type StoredWindow, type TimelineRow } from "@/lib/cotuc/timing-v3/buy-timeline";
 import type { EarningsCycleStatsV3, EarningsSignal } from "@/lib/cotuc/timing-v3/timing-types";
 
 // GET /api/cotuc/buy-timeline -> Timeline điểm mua tối ưu (chu kỳ cổ tức + mùa vụ KQKD) cho cả danh mục, sắp theo ngày.
 // CHỈ ĐỌC CotucDecisionState + EarningsSeasonalityCache (Gateway quét liên tục cập nhật hai bảng này).
+// B2 (25/10/2026): hai bảng nằm trong kho Cổ tức trên Gateway (Railway) thay Neon.
+// B1: LUÔN CÓ DỰ PHÒNG — mỗi lần tính được thì lưu bản tốt gần nhất vào Upstash (khi nội dung đổi); kho lỗi -> trả bản đó DỰNG LẠI
+// THEO HÔM NAY (trạng thái, số phiên, bỏ dòng đã qua ngày thoát) kèm `stale: true`, `servedFrom: "LAST_GOOD"`, `ageSessions`.
+// Bản lưu cũ hơn MAX_AGE_SESSIONS phiên -> 503 (không hiện vùng mua đã lỗi thời).
 export const dynamic = "force-dynamic";
 
 const vnToday = () => new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 10);
@@ -40,13 +44,40 @@ const timelineCached = memoByStamp(async () => {
   return readThroughByVersion(`buy-timeline:${createHash("sha1").update(lastInputs).digest("hex").slice(0, 16)}`, () => buildBody(universe));
 });
 
+const MAX_AGE_SESSIONS = 10;
+type Body = Awaited<ReturnType<typeof buildBody>>;
+
+/** Số phiên từ ngày tính quyết định gần nhất (giờ VN) tới hôm nay. */
+const ageOf = (body: Body, today: string) => {
+  const d = body.asOf.decisions ? new Date(Date.parse(body.asOf.decisions) + 7 * 3_600_000).toISOString().slice(0, 10) : null;
+  return d ? sessionsBetween(d, today, vnHolidayCalendar) : null;
+};
+
 export async function GET() {
   try {
-    return NextResponse.json(await timelineCached(), { headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=3600" } });
+    const body = await timelineCached();
+    const hash = createHash("sha1").update(JSON.stringify(body.rows)).digest("hex");
+    await saveLastGood("buy-timeline", hash, body);
+    const ageSessions = ageOf(body, body.today);
+    return NextResponse.json({ ...body, stale: (ageSessions ?? 0) > 1, servedFrom: "LIVE", ageSessions }, { headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=3600" } });
   } catch (e) {
-    // N4: không trả nguyên văn lỗi Prisma/CSDL ra trình duyệt — ghi log phía máy chủ.
+    // N4: không trả nguyên văn lỗi CSDL / kho ra trình duyệt — ghi log phía máy chủ.
     console.error("[api/cotuc/buy-timeline] Lỗi:", e);
-    return NextResponse.json({ error: "Không tải được Timeline điểm mua lúc này." }, { status: 500 });
+    const code = cotucErrorCode(e);
+    const last = await readLastGood<Body>("buy-timeline");
+    if (last) {
+      try { await refreshVnHolidayCalendar(); } catch { /* lịch quy tắc vẫn dùng được */ }
+      const today = vnToday();
+      const ageSessions = ageOf(last.value, today);
+      if (ageSessions == null || ageSessions <= MAX_AGE_SESSIONS) {
+        const body = rebaseTimeline(last.value as Body & { rows: TimelineRow[] }, today, vnHolidayCalendar);
+        // CDN ngắn (60 s): nguồn vừa phục hồi thì bản thật xuất hiện ngay.
+        return NextResponse.json({ ...body, stale: true, servedFrom: "LAST_GOOD", savedAt: last.savedAt, ageSessions, code },
+          { headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300" } });
+      }
+      return NextResponse.json({ error: `Timeline điểm mua tạm không có: bản lưu gần nhất đã cũ ${ageSessions} phiên.`, code: "STALE" }, { status: 503 });
+    }
+    return NextResponse.json({ error: "Không tải được Timeline điểm mua lúc này.", code }, { status: 500 });
   }
 }
 
@@ -54,7 +85,8 @@ async function buildBody(universe: Universe) {
   {
     const [decisionRows, seasonRows] = await Promise.all([
       loadDecisionForTimeline(),
-      prisma.earningsSeasonalityCache.findMany({ select: { ticker: true, earningsSignal: true, stats: true, finalizedAt: true } }),
+      storeList<{ ticker: string; earningsSignal: unknown; stats: unknown; finalizedAt: string | null }>("season", { fields: ["ticker", "earningsSignal", "stats", "finalizedAt"] })
+        .then((rs) => rs.map((r) => ({ ...r, finalizedAt: r.finalizedAt ? new Date(r.finalizedAt) : null }))),
     ]);
     const decisions: DecisionInput[] = decisionRows.map((r) => {
       const s = (r.snapshot ?? {}) as Snap;

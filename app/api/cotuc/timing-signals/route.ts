@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { storeList, withDates, cotucErrorCode } from "@/lib/cotuc/store/gateway-store";
 import { loadDecisionFlags } from "@/lib/cotuc/decision-state-lite";
 import { readThroughByVersion } from "@/lib/cotuc/data-version";
 
@@ -30,15 +30,21 @@ export async function GET() {
     return NextResponse.json(body, { headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=3600" } });
   } catch (err) {
     console.error("[api/cotuc/timing-signals] Lỗi:", err);
-    return NextResponse.json({ error: "Không đọc được Timing Signals." }, { status: 500 });
+    return NextResponse.json({ error: "Không đọc được Timing Signals.", code: cotucErrorCode(err) }, { status: 500 });
   }
 }
+
+type TimingRow = {
+  ticker: string; action: string; tdToEx: number | null; windowEntryFrom: number | null; windowEntryTo: number | null; windowExitOffset: number | null;
+  expectedNetReturn: number | null; nEvents: number | null; fdrQValue: number | null; confidence: string | null; generatedAt: unknown;
+};
 
 async function buildBody() {
   {
     const [rows, seasonRows, decisionRows] = await Promise.all([
-      prisma.timingSignalCache.findMany(),
-      prisma.earningsSeasonalityCache.findMany({ select: { ticker: true, earningsSignal: true } }),
+      // B2: kho Cổ tức trên Gateway (thay Neon) — cùng cột, cùng giá trị.
+      storeList<TimingRow>("timing").then((rs) => rs.map((r) => withDates(r, ["generatedAt"] as const) as TimingRow & { generatedAt: Date })),
+      storeList<{ ticker: string; earningsSignal: unknown }>("season", { fields: ["ticker", "earningsSignal"] }),
       loadDecisionFlags(), // chỉ exDate.status + recommendation.earningsImpact.conflict (cắt trong Postgres) — cùng giá trị
     ]);
     // Cột "KQKD" của Screener: tăng trưởng LNST/doanh thu kỳ vừa công bố (EarningsSeasonalityCache, VNDirect) +

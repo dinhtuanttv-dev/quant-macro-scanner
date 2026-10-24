@@ -70,3 +70,29 @@ export async function readThroughByVersion<T>(name: string, compute: () => Promi
   } catch { /* quá giới hạn kích thước / KV lỗi -> bỏ qua đệm */ }
   return value;
 }
+
+// B1 (25/10/2026) — BẢN TỐT GẦN NHẤT (không hết hạn) cho các route quan trọng: lưu khi nội dung đổi, đọc khi nguồn dữ liệu tạm lỗi.
+// Là bản sao thứ hai, độc lập với kho Cổ tức trên Gateway (Railway): Gateway sập vẫn còn bản trong Upstash.
+const LAST_GOOD = (name: string) => `cotuc:lastgood:${name}`;
+const savedHash = new Map<string, string>();
+
+export async function saveLastGood(name: string, hash: string, value: unknown, now = Date.now()): Promise<boolean> {
+  const c = kv();
+  if (!c || savedHash.get(name) === hash) return false;
+  try {
+    await c.set(LAST_GOOD(name), { hash, savedAt: new Date(now).toISOString(), value });
+    savedHash.set(name, hash);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function readLastGood<T>(name: string): Promise<{ hash: string; savedAt: string; value: T } | null> {
+  try {
+    const v = await kv()?.get<{ hash: string; savedAt: string; value: T }>(LAST_GOOD(name));
+    return v && typeof v === "object" && v.value ? v : null;
+  } catch {
+    return null;
+  }
+}
