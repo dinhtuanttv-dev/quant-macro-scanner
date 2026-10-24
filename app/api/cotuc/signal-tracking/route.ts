@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { storeList, withDates, cotucErrorCode } from "@/lib/cotuc/store/gateway-store";
 import { readThroughByVersion } from "@/lib/cotuc/data-version";
 // Gateway quét theo đợt (N1) + đọc qua KV theo phiên bản dữ liệu (N2) -> CDN 5 phút.
 const CACHE_HEADERS = { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=3600" };
@@ -13,7 +13,11 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const body = await readThroughByVersion("signal-tracking", async () => {
-      const rows = await prisma.cotucSignalTrack.findMany({ orderBy: { issuedAt: "desc" } });
+      // B2: kho Cổ tức trên Gateway (thay Neon); sắp issuedAt giảm dần như orderBy cũ.
+      const rows = (await storeList<Record<string, unknown>>("track")).map((r) => withDates(r, ["issuedAt", "outcomeRecordedAt"] as const) as unknown as {
+        id: string; ticker: string; windowId: string; level: string; predictedProbability: number; components: unknown; exDate: string; exDateStatus: string;
+        entryDate: string; plannedExitDate: string; issuedAt: Date; outcome: number | null; realizedCar: number | null; exitDate: string | null; outcomeRecordedAt: Date | null;
+      }).sort((a, b) => b.issuedAt.getTime() - a.issuedAt.getTime());
       const tracks: TrackRow[] = rows.map((r) => ({
         ...r, level: r.level as DecisionLevel, components: (r.components ?? []) as TrackRow["components"], issuedAt: r.issuedAt.toISOString(),
         outcome: r.outcome === null ? null : r.outcome ? 1 : 0, outcomeRecordedAt: r.outcomeRecordedAt?.toISOString() ?? null,
@@ -24,6 +28,6 @@ export async function GET() {
     return NextResponse.json(body, { headers: CACHE_HEADERS });
   } catch (e) {
     console.error("[api/cotuc/signal-tracking] Lỗi:", e);
-    return NextResponse.json({ error: "Không tải được theo dõi tín hiệu lúc này." }, { status: 500 });
+    return NextResponse.json({ error: "Không tải được theo dõi tín hiệu lúc này.", code: cotucErrorCode(e) }, { status: 500 });
   }
 }

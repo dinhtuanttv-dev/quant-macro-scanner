@@ -11,7 +11,7 @@
  * tinh lai tu dau qua computeCyclePaths(). Van tai su dung DANH SACH
  * exDate lich su da co trong DB (khong goi lai VCI).
  */
-import { prisma, withPrismaTimeout } from "@/lib/prisma";
+import { storeList } from "@/lib/cotuc/store/gateway-store";
 import { loadBenchmarkPrices, loadStockPrices, type PriceSourceTag } from "./price-source";
 import { computeCyclePaths, toCyclePathsV3 } from "./compute-cycle-paths";
 import { computeCycleStats, type WindowCandidate, type EventSample } from "./compute-cycle-stats";
@@ -19,6 +19,22 @@ import { makeTradingCalendarFromPrices } from "./date-utils";
 import { CANDIDATE_WINDOWS, buildRequiredOffsets } from "./candidate-windows";
 import type { CyclePathsV3, CycleStatsV3 } from "./timing-types";
 
+
+/**
+ * B2: ngày GDKHQ lịch sử (DividendCycleWindow) từ kho Cổ tức trên Gateway (thay Neon), mới nhất trước như orderBy cũ.
+ * Chỉ là nguồn DỰ PHÒNG khi VNDirect không có đợt tiền mặt nào; bảng nhỏ -> đọc cả bảng một lần / 10 phút.
+ */
+let cycleMemo: { at: number; byTicker: Map<string, { exDate: Date }[]> } | null = null;
+async function cycleHistory(ticker: string): Promise<{ exDate: Date }[]> {
+  if (!cycleMemo || Date.now() - cycleMemo.at > 10 * 60_000) {
+    const rows = await storeList<{ ticker: string; exDate: string }>("cycle", { fields: ["ticker", "exDate"] });
+    const byTicker = new Map<string, { exDate: Date }[]>();
+    for (const r of rows) byTicker.set(r.ticker, [...(byTicker.get(r.ticker) ?? []), { exDate: new Date(r.exDate) }]);
+    for (const list of byTicker.values()) list.sort((a, b) => b.exDate.getTime() - a.exDate.getTime());
+    cycleMemo = { at: Date.now(), byTicker };
+  }
+  return cycleMemo.byTicker.get(ticker) ?? [];
+}
 
 /** Số năm lịch sử cho backtest chu kỳ cổ tức: 10 năm (SSI có từ 10/2016) — 5 năm chỉ cho 2–5 đợt/mã, dưới ngưỡng 8 đợt
  * của cổng thống kê; cùng độ dài với mùa vụ KQKD (SEASONALITY_YEARS). */
@@ -93,11 +109,7 @@ export async function buildCycleContext(
   ticker: string,
   preloadedBenchmark?: { date: string; adjClose: number }[],
 ): Promise<CycleComputeContext | CycleContextFailure> {
-  const historyRows = await withPrismaTimeout<{ exDate: Date }[]>(
-    prisma.dividendCycleWindow.findMany({ where: { ticker }, orderBy: { exDate: "desc" } }),
-    10_000,
-    `dividendCycleWindow.findMany(${ticker})`,
-  );
+  const historyRows = await cycleHistory(ticker);
   // Giá mã: SSI + cổ tức tiền mặt sau thuế (chuỗi tổng lợi suất); dự phòng Yahoo (price-source.ts).
   const stockRes = await loadStockPrices(ticker, CYCLE_YEARS);
 

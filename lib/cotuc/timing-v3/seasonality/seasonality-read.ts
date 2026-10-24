@@ -1,7 +1,7 @@
 // Đọc kết quả Mùa vụ KQKD đã tính sẵn (EarningsSeasonalityCache) cho các route /api/cotuc/* — không tính toán ở đây.
 // Hợp đồng lỗi khớp tầng fetch của frontend (seasonality.api.ts): 400 tham số sai, 404 = chưa có dữ liệu (client coi là null).
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { storeList, withDates } from "@/lib/cotuc/store/gateway-store";
 
 const TICKER_RE = /^[A-Z0-9]{3,10}$/;
 
@@ -15,9 +15,16 @@ export function parseTickerQuarter(req: Request, needQuarter: boolean): { ticker
   return { ticker, quarter: q };
 }
 
+/** B2: một dòng EarningsSeasonalityCache đầy đủ (cả cột nặng) từ kho Cổ tức trên Gateway; không có -> null (như findUnique). */
 export async function readCache(ticker: string) {
-  return prisma.earningsSeasonalityCache.findUnique({ where: { ticker } });
+  const [row] = await storeList<Record<string, unknown>>("season", { tickers: [ticker] });
+  return row ? (withDates(row, ["collectedAt", "finalizedAt"] as const) as unknown as SeasonRow) : null;
 }
+
+type SeasonRow = {
+  ticker: string; sector: string | null; announceDates: unknown; samples: unknown; paths: unknown; stats: unknown; calendar: unknown;
+  earningsSignal: unknown; priceSource: string | null; notes: unknown; collectedAt: Date; finalizedAt: Date | null;
+};
 
 export const notFound = (detail: string) => NextResponse.json({ error: "Chưa có dữ liệu mùa vụ KQKD.", detail }, { status: 404 });
 
