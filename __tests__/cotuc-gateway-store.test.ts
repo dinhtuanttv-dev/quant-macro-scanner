@@ -121,3 +121,40 @@ describe("GET /api/cotuc/buy-timeline — luôn có dự phòng", () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe("MV0: cửa sổ v3 trả số thắng / thua nguyên", () => {
+  it("wins + losses = nEvents và winRate = wins / nEvents (đếm gốc, không suy từ tỷ lệ)", async () => {
+    const { computeWindowStat } = await import("@/lib/cotuc/timing-v3/compute-cycle-stats");
+    const nets = [0.05, 0.02, -0.03, -0.01, 0.04, 0.025, -0.002];
+    const w = computeWindowStat({
+      id: "w", label: "w", entryFrom: -5, entryTo: -2, exitOffset: 3, holdsThroughEx: false,
+      samples: nets.map((x, i) => ({ exDate: `20${10 + i}-06-01`, carAtEntry: 0, carAtExit: Math.log(1 + x + 0.0035 + 0.0015 + 0.001), netDividendYield: 0, year: 2010 + i })),
+    }).window;
+    expect(w.nEvents).toBe(7);
+    expect(w.wins).toBe(4);
+    expect(w.losses).toBe(3);
+    expect(w.winRate).toBe(4 / 7);
+  });
+});
+
+describe("MV0: sổ theo dõi tín hiệu ngành đọc từ kho Gateway", () => {
+  afterEach(() => { vi.resetModules(); vi.unstubAllGlobals(); });
+  it("kho lỗi -> 503 có mã (không còn nuốt lỗi thành '0 tín hiệu'); kho có dữ liệu -> tóm tắt + sắp mới nhất trước", async () => {
+    process.env.CRON_SECRET = "s";
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 503 })));
+    let { GET } = await import("@/app/api/locnganh/signal-tracking/route");
+    let res = await GET();
+    expect(res.status).toBe(503);
+    expect((await res.json()).code).toBe("STORE_UNAVAILABLE");
+    vi.resetModules();
+    const row = (id: string, issuedAt: string, outcome: number | null) => ({ id, sectorCode: "8300", windowId: "E1-3_X10", level: "WATCH", predictedProbability: 0.55, components: [],
+      transitionDate: "2026-10-01", entryDate: "2026-10-02", plannedExitDate: "2026-10-16", issuedAt, outcome, realizedCar: outcome == null ? null : 0.01, exitDate: null, outcomeRecordedAt: null });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ rows: [row("a", "2026-10-02T08:00:00.000Z", 1), row("b", "2026-10-20T08:00:00.000Z", null)] }), { status: 200 })));
+    ({ GET } = await import("@/app/api/locnganh/signal-tracking/route"));
+    res = await GET();
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.summary.totalSignals).toBe(2);
+    expect(body.recent.map((r: { id: string }) => r.id)).toEqual(["b", "a"]);
+  });
+});

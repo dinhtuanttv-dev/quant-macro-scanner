@@ -168,7 +168,7 @@ export async function GET(req: Request) {
           ...snap,
           backtest: stats.windows.map((w) => ({
             id: w.id, label: w.label, entryFrom: w.entryFrom, entryTo: w.entryTo, exitOffset: w.exitOffset, nEvents: w.nEvents,
-            winRate: w.winRate, netExpectancy: w.netExpectancy, netExpectancyLcb: w.netExpectancyLcb, fdrQValue: w.fdrQValue,
+            winRate: w.winRate, wins: w.wins, losses: w.losses, netExpectancy: w.netExpectancy, netExpectancyLcb: w.netExpectancyLcb, fdrQValue: w.fdrQValue,
             oosMeanNet: w.oosMeanNet, selected: w.selected && w.id === stats.selectedWindowId,
           })),
         };

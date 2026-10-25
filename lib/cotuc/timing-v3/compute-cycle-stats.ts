@@ -328,7 +328,9 @@ export function computeWindowStat(candidate: WindowCandidate, opts: ComputeWindo
   const shrunkOf = (xs: number[]) =>
     shrinkMean(xs.reduce((a, b) => a + b, 0) / xs.length, xs.length, priorMean, sampleVariance(xs), betweenVar).shrunkMean;
   const netExpectancyLcb = n > 0 ? bootstrapLowerBoundOf(nets, shrunkOf, gating.confidenceLevel, bootstrap) : Number.NaN;
-  const winRate = n > 0 ? nets.filter((x) => x > 0).length / n : 0;
+  // MV0 (25/10/2026): số thắng / thua NGUYÊN (lợi suất ròng > 0) đi kèm winRate — xác suất hậu nghiệm cần đếm gốc, không suy từ tỷ lệ.
+  const wins = nets.filter((x) => x > 0).length;
+  const winRate = n > 0 ? wins / n : 0;
   const sd = Math.sqrt(withinVar);
   const pValue = oneSidedPValue(n ? nets.reduce((a, b) => a + b, 0) / n : 0, sd, n);
   const wf = walkForward(candidate.samples, costs, gating.minYearsForOos);
@@ -359,6 +361,8 @@ export function computeWindowStat(candidate: WindowCandidate, opts: ComputeWindo
     netExpectancy,
     netExpectancyLcb: Number.isFinite(netExpectancyLcb) ? netExpectancyLcb : 0,
     winRate,
+    wins,
+    losses: n - wins,
     oosHitRate: wf.oosHitRate,
     oosMeanNet: wf.oosMeanNet,
     fdrQValue: pValue, // tạm thời; computeFdrAcrossWindows sẽ ghi đè bằng q thật

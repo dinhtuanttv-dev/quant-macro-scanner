@@ -33,6 +33,9 @@ export interface BacktestWindow {
   netExpectancy: number;
   netExpectancyLcb: number;
   winRate: number;
+  /** MV0: số sự kiện lợi suất ròng > 0 / ≤ 0 (đếm gốc của winRate). Tuỳ chọn để tương thích dữ liệu cũ đã lưu. */
+  wins?: number;
+  losses?: number;
   oosHitRate: number | null;
   oosMeanNet: number | null;
   fdrQValue: number;
