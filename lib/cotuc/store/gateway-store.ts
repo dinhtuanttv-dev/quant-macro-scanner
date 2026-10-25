@@ -7,7 +7,7 @@
 // Ghi = gộp theo cột (giống Prisma upsert/update). Cột thời gian về dạng chuỗi ISO -> các hàm `as*` đổi lại Date cho nơi dùng.
 import { MARKET_GATEWAY_URL } from "@/lib/market-data/ssi-gateway-adapter";
 
-export type CotucTable = "decision" | "timing" | "season" | "track" | "cycle" | "meta";
+export type CotucTable = "decision" | "timing" | "season" | "track" | "cycle" | "meta" | "sectortrack";
 
 export class CotucStoreError extends Error {
   constructor(message: string, readonly status: number | null) { super(message); this.name = "CotucStoreError"; }

@@ -3,14 +3,14 @@
 //   npx tsx scripts/migrate-cotuc-neon-to-gateway.ts --write    (ghi)
 // Quy tắc KHÔNG ĐÈ dữ liệu mới: decision / timing / season chỉ nhập mã CHƯA có trên Gateway (Gateway đã tính lại từ nguồn);
 // track (sổ theo dõi tín hiệu — không tính lại được) nhập mọi id chưa có, id trùng thì giữ bản đã có kết quả / ghi kết quả muộn hơn;
-// cycle (lịch sử GDKHQ) nhập dòng chưa có. Cần DATABASE_URL (Neon) + CRON_SECRET + MARKET_GATEWAY_URL trong môi trường.
+// cycle (lịch sử GDKHQ) và sectortrack (Lọc ngành) nhập dòng chưa có. Cần DATABASE_URL (Neon) + CRON_SECRET + MARKET_GATEWAY_URL trong môi trường.
 import { prisma } from "@/lib/prisma";
 import { storeList, storeUpsert, type CotucTable } from "@/lib/cotuc/store/gateway-store";
 
 const WRITE = process.argv.includes("--write");
 
 async function have(table: CotucTable, key: string): Promise<Map<string, Record<string, unknown>>> {
-  const rows = await storeList<Record<string, unknown>>(table, { fields: table === "track" ? ["id", "outcome", "outcomeRecordedAt"] : table === "cycle" ? ["ticker", "exDate"] : [key] });
+  const rows = await storeList<Record<string, unknown>>(table, { fields: table === "track" || table === "sectortrack" ? ["id", "outcome", "outcomeRecordedAt"] : table === "cycle" ? ["ticker", "exDate"] : [key] });
   return new Map(rows.map((r) => [table === "cycle" ? `${r.ticker}:${String(r.exDate).slice(0, 10)}` : String(r[key]), r]));
 }
 
@@ -33,6 +33,9 @@ async function main() {
     if (g.outcome == null && n.outcome != null) return true; // Neon có kết quả, Gateway chưa
     return false;
   });
+  // MV0: sổ theo dõi tín hiệu ngành (Lọc ngành) — bảng có thể chưa từng được tạo trên Neon.
+  const sectorRows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(`SELECT * FROM "SectorSignalTrack"`).catch(() => []);
+  await add("sectortrack", "id", sectorRows, (n, g) => !g || (g.outcome == null && n.outcome != null));
   await add("cycle", "id", (await prisma.dividendCycleWindow.findMany()).map(({ id: _id, ...r }) => r), (_n, g) => !g,
     (r) => `${r.ticker}:${(r.exDate as Date).toISOString().slice(0, 10)}`);
 
