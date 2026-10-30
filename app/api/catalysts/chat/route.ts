@@ -1,4 +1,4 @@
-// X4 — POST /api/catalysts/chat: "Hỏi đáp vĩ mô & thị trường" (Claude hoặc Gemini + công cụ vĩ mô/thế giới), trả về luồng SSE.
+// X4 — POST /api/catalysts/chat: "Hỏi đáp xúc tác" (Claude hoặc Gemini + công cụ vĩ mô/xúc tác/thế giới), trả về luồng SSE.
 // Z2 (2026-10-17): body.provider = "claude" (mặc định) | "gemini" — cùng bộ công cụ, cùng kiểm tra con số.
 // Bảo vệ chi phí: cần đăng nhập (token Gateway ĐINH TUẤN, kiểm qua JWKS — lib/catalyst/chat/gqAuth.ts) + hạn mức theo người dùng/ngày
 // (Upstash). Không lưu nội dung hội thoại; log chỉ ghi tên công cụ, thời gian, ok.
@@ -8,8 +8,11 @@ import Anthropic from "@anthropic-ai/sdk";
 import { FunctionCallingMode, GoogleGenerativeAI } from "@google/generative-ai";
 import { GEMINI_CHAT_MODEL, runChatGemini, type GeminiChatLike, type GeminiModelFactory } from "@/lib/catalyst/chat/geminiEngine";
 import { Redis } from "@upstash/redis";
+import { readSnapshotWithStaleness } from "@/lib/catalyst/engine/SnapshotStore";
+import { sanitizeLegacySnapshot } from "@/lib/catalyst/provenance";
 import { runChat, type ChatEvent } from "@/lib/catalyst/chat/chatEngine";
 import { buildSystemPrompt, buildToolList, createToolExecutor, fetchEliteToolSpecs, fetchMacroToolSpecs, fetchWorldToolSpecs, fetchWsToolSpecs, type ChatRole } from "@/lib/catalyst/chat/chatTools";
+import type { CatalystSnapshotLike } from "@/lib/catalyst/chat/catalystTools";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -94,7 +97,12 @@ export async function POST(request: Request) {
 
   const [macro, world, ws, elite] = await Promise.all([fetchMacroToolSpecs(), fetchWorldToolSpecs(), fetchWsToolSpecs(), fetchEliteToolSpecs()]);
   const tools = buildToolList(macro, world, ws, elite);
-  const execTool = createToolExecutor();
+  const execTool = createToolExecutor({
+    getSnapshot: async () => {
+      const r = await readSnapshotWithStaleness<CatalystSnapshotLike>(redis);
+      return r.snapshot ? { ...sanitizeLegacySnapshot(r.snapshot as Parameters<typeof sanitizeLegacySnapshot>[0]), isStale: r.isStale, ageMinutes: r.ageMinutes ?? undefined } as CatalystSnapshotLike : null;
+    },
+  });
 
   const enc = new TextEncoder();
   const body = new ReadableStream<Uint8Array>({
