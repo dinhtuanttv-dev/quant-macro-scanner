@@ -1,7 +1,6 @@
 // X4 — Bộ công cụ của "Hỏi đáp xúc tác":
 //   - 6 công cụ vĩ mô (macro_*) của gói MacroCenter — đặc tả + thực thi trên Gateway (/api/macro/tools[/:name]);
 //   - macro_catalyst_calendar — lịch vĩ mô hợp nhất trên Gateway (X3);
-//   - 3 công cụ xúc tác (catalyst_*) — đọc snapshot engine Chất xúc tác;
 //   - 5 công cụ Kết nối thế giới (world_*) của gói macro-center 1.2 — đặc tả + thực thi trên Gateway (/api/world/tools[/:name]),
 //     số liệu thật (thị trường, rổ ngành, yếu tố tháng, sự kiện đã kiểm duyệt);
 //   - 5 công cụ ngành thế giới → ngành ICB VN (ws_*) — chiến lược ngành, ngành, hàng hoá, phơi nhiễm cổ phiếu (Gateway
@@ -11,7 +10,7 @@
 // Mọi công cụ CHỈ ĐỌC.
 import type { BetaTool } from "@anthropic-ai/sdk/resources/beta/messages/messages";
 import { MARKET_GATEWAY_URL } from "@/lib/market-data/ssi-gateway-adapter";
-import { CATALYST_TOOL_SPECS, runCatalystTool, type CatalystSnapshotLike, type ChatToolResult } from "./catalystTools";
+import type { ChatToolResult } from "./catalystTools";
 
 interface GatewayToolSpecs {
   anthropic: { name: string; description: string; input_schema: Record<string, unknown> }[];
@@ -66,17 +65,12 @@ export function buildToolList(macro: GatewayToolSpecs | null, world: WorldToolSp
   const toTool = (t: { name: string; description: string; input_schema: Record<string, unknown> }): BetaTool => ({ name: t.name, description: t.description, input_schema: t.input_schema as BetaTool["input_schema"] });
   const macroTools: BetaTool[] = [...(elite?.anthropic ?? []), ...(ws?.anthropic ?? []), ...(macro?.anthropic ?? []), ...(world?.anthropic ?? [])].map(toTool);
   // eager_input_streaming: tham số công cụ stream ngay khi sinh; server không còn kiểm tra -> mọi tham số đều được kiểm tra lại
-  // (công cụ vĩ mô: validateArgs trên Gateway; công cụ xúc tác: runCatalystTool).
-  return [...macroTools, CALENDAR_TOOL, ...CATALYST_TOOL_SPECS].map((t) => ({ ...t, eager_input_streaming: true }));
+  // (công cụ vĩ mô: validateArgs trên Gateway).
+  return [...macroTools, CALENDAR_TOOL].map((t) => ({ ...t, eager_input_streaming: true }));
 }
 
-export function createToolExecutor({ getSnapshot, fetchImpl = fetch }: { getSnapshot: () => Promise<CatalystSnapshotLike | null>; fetchImpl?: typeof fetch }) {
-  let snap: Promise<CatalystSnapshotLike | null> | null = null;
+export function createToolExecutor({ fetchImpl = fetch }: { fetchImpl?: typeof fetch } = {}) {
   return async (name: string, input: unknown): Promise<ChatToolResult> => {
-    if (name.startsWith("catalyst_")) {
-      snap ??= getSnapshot().catch(() => null);
-      return runCatalystTool(name, input, await snap);
-    }
     if (name === "macro_catalyst_calendar") {
       const h = (input as { horizonDays?: unknown })?.horizonDays;
       const horizonDays = Number.isInteger(h) && (h as number) >= 1 && (h as number) <= 180 ? (h as number) : 45;
@@ -101,10 +95,10 @@ export function createToolExecutor({ getSnapshot, fetchImpl = fetch }: { getSnap
 export function buildSystemPrompt(macro: GatewayToolSpecs | null, todayVn: string, world: WorldToolSpecs | null = null, ws: WorldToolSpecs | null = null, elite: WorldToolSpecs | null = null, role: ChatRole | null = null): string {
   return [
     ...(role ? [ROLE_PROMPTS[role], ""] : []),
-    `Bạn là trợ lý "Hỏi đáp xúc tác" trong ứng dụng phân tích chứng khoán Việt Nam. Hôm nay là ${todayVn} (giờ Việt Nam).`,
-    "Nhiệm vụ: trả lời câu hỏi về chất xúc tác (tin tức, sự kiện, chính sách tác động tới ngành/mã), bối cảnh vĩ mô và tác động của thế giới tới ngành/cổ phiếu Việt Nam, CHỈ dựa trên kết quả công cụ.",
+    `Bạn là trợ lý "Hỏi đáp vĩ mô & thị trường" trong ứng dụng phân tích chứng khoán Việt Nam. Hôm nay là ${todayVn} (giờ Việt Nam).`,
+    "Nhiệm vụ: trả lời câu hỏi về bối cảnh vĩ mô và tác động của thế giới tới ngành/cổ phiếu Việt Nam, CHỈ dựa trên kết quả công cụ.",
     "Khi hỏi về danh mục Elite 10, Điểm Elite, độ tin cậy của tín hiệu hay hồ sơ định lượng của một mã: dùng elite_decision / elite_ticker / elite_evidence trước.",
-    "Cách phân tích một ngành hoặc một mã: (1) ws_stock / ws_sector để biết ngành ICB, tư thế ngắn hạn, bối cảnh trung hạn, hàng hoá dẫn dắt; (2) catalyst_* để xem tin/sự kiện tác động; (3) macro_* / world_* khi cần bối cảnh vĩ mô hay truyền dẫn. Kết luận theo thứ tự: tác động ngành -> tác động mã -> rủi ro / độ tin cậy.",
+    "Cách phân tích một ngành hoặc một mã: (1) ws_stock / ws_sector để biết ngành ICB, tư thế ngắn hạn, bối cảnh trung hạn, hàng hoá dẫn dắt; (2) macro_* / world_* khi cần bối cảnh vĩ mô hay truyền dẫn. Kết luận theo thứ tự: tác động ngành -> tác động mã -> rủi ro / độ tin cậy.",
     "",
     "Quy tắc chung (bắt buộc):",
     "- Gọi công cụ trước khi nêu bất kỳ con số, ngành, mã hay sự kiện cụ thể nào. Không có kết quả công cụ thì không có số liệu — nói rõ là chưa có dữ liệu.",

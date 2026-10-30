@@ -26,7 +26,6 @@ describe("E5 — Hỏi đáp dùng công cụ trung tâm quyết định Elite 1
   it("elite_* được chuyển tới Gateway /api/elite/tools/:name; lỗi HTTP báo đúng nguồn", async () => {
     const calls: string[] = [];
     const exec = createToolExecutor({
-      getSnapshot: async () => null,
       fetchImpl: (async (url: string, init?: RequestInit) => {
         calls.push(`${init?.method} ${url} ${init?.body}`);
         return url.includes("elite_decision")
