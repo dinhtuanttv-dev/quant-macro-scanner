@@ -33,6 +33,7 @@ const redis = new Redis({
 const UNMAPPED_REGISTRY_KEY = "catalyst:unmapped_sectors";
 
 // Lop 1: bang anh xa tinh, tu classifier.ts sang ten chuan he thong dang dung
+export const STANDARD_SECTORS = new Set<string>(); // điền bên dưới: tên ngành chuẩn của engine
 const RAW_SECTOR_MAP: Record<string, string> = {
   banking: "Ngan hang",
   realestate: "Bat dong san",
@@ -92,6 +93,8 @@ function getNormalizedMap(): Map<string, string> {
   }
   return normalizedMapCache;
 }
+
+for (const name of Object.values(RAW_SECTOR_MAP)) STANDARD_SECTORS.add(name);
 
 export interface SectorResolution {
   displayName: string | null; // null = khong nen tao sector-edge cho tin nay

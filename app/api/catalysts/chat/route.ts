@@ -8,8 +8,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { FunctionCallingMode, GoogleGenerativeAI } from "@google/generative-ai";
 import { GEMINI_CHAT_MODEL, runChatGemini, type GeminiChatLike, type GeminiModelFactory } from "@/lib/catalyst/chat/geminiEngine";
 import { Redis } from "@upstash/redis";
-import { readSnapshotWithStaleness } from "@/lib/catalyst/engine/SnapshotStore";
-import { sanitizeLegacySnapshot } from "@/lib/catalyst/provenance";
+import { MARKET_GATEWAY_URL } from "@/lib/market-data/ssi-gateway-adapter";
 import { runChat, type ChatEvent } from "@/lib/catalyst/chat/chatEngine";
 import { buildSystemPrompt, buildToolList, createToolExecutor, fetchEliteToolSpecs, fetchMacroToolSpecs, fetchWorldToolSpecs, fetchWsToolSpecs, type ChatRole } from "@/lib/catalyst/chat/chatTools";
 import type { CatalystSnapshotLike } from "@/lib/catalyst/chat/catalystTools";
@@ -98,9 +97,11 @@ export async function POST(request: Request) {
   const [macro, world, ws, elite] = await Promise.all([fetchMacroToolSpecs(), fetchWorldToolSpecs(), fetchWsToolSpecs(), fetchEliteToolSpecs()]);
   const tools = buildToolList(macro, world, ws, elite);
   const execTool = createToolExecutor({
+    // 31/10/2026: snapshot nằm trên Market Gateway. Chưa có dữ liệu / lỗi -> null, công cụ báo thẳng là không có dữ liệu.
     getSnapshot: async () => {
-      const r = await readSnapshotWithStaleness<CatalystSnapshotLike>(redis);
-      return r.snapshot ? { ...sanitizeLegacySnapshot(r.snapshot as Parameters<typeof sanitizeLegacySnapshot>[0]), isStale: r.isStale, ageMinutes: r.ageMinutes ?? undefined } as CatalystSnapshotLike : null;
+      const res = await fetch(`${MARKET_GATEWAY_URL}/api/catalysts/latest`, { signal: AbortSignal.timeout(15_000) });
+      const body = (await res.json()) as CatalystSnapshotLike & { error?: string };
+      return res.ok && !body.error ? body : null;
     },
   });
 
