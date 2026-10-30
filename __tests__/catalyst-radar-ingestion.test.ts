@@ -19,7 +19,32 @@ describe("Chiều tác động", () => {
   });
 });
 
+describe("KQKD và giao dịch nội bộ theo tiêu đề (tiêu đề thật 29–30/10/2026)", () => {
+  it("KQKD: không bị chữ 'giảm' đánh lừa; bài tổng hợp là trung lập", () => {
+    expect(directionOf("Giảm dự phòng rủi ro, BIDV tăng 39% lợi nhuận trước thuế", -0.67, "EARNINGS")).toBe("benefit");
+    expect(directionOf("REE báo lãi quý 3 tăng 17% nhờ mảng cơ điện lạnh", 0.67, "EARNINGS")).toBe("benefit");
+    expect(directionOf("Công ty X lợi nhuận giảm 30% so với cùng kỳ", 0.2, "EARNINGS")).toBe("harm");
+    expect(directionOf("Công ty Y báo lỗ 50 tỷ đồng quý 3", 0, "EARNINGS")).toBe("harm");
+    expect(directionOf("Công ty Z giảm lỗ mạnh trong quý 3", -0.3, "EARNINGS")).toBe("benefit");
+    expect(directionOf("Cập nhật lợi nhuận 18 ngân hàng đến sáng 29/10", 0.67, "EARNINGS")).toBeNull();
+  });
+  it("Xếp hạng theo chiều nâng/hạ; pháp lý chỉ tiêu cực khi có chế tài thật", () => {
+    expect(directionOf("Fitch nâng xếp hạng tín nhiệm của Techcombank lên BB", -0.5, "RATING")).toBe("benefit");
+    expect(directionOf("Moody's hạ xếp hạng ngân hàng X", 0.5, "RATING")).toBe("harm");
+    expect(directionOf("Khởi tố Tổng giám đốc Tổng công ty Khoáng sản TKV", 0, "LEGAL")).toBe("harm");
+    expect(directionOf("ACB cảnh báo nguy cơ mã độc trên iPhone", -0.67, "LEGAL")).toBeNull();
+  });
+  it("Nội bộ: mua tích cực, bán tiêu cực, không rõ thì trung lập", () => {
+    expect(directionOf("BCB: Kế toán trưởng đăng ký bán 10.000 cổ phiếu", 0, "INSIDER")).toBe("harm");
+    expect(directionOf("ABC: Chủ tịch đăng ký mua 1 triệu cổ phiếu", 0, "INSIDER")).toBe("benefit");
+    expect(directionOf("CAR: Báo cáo thay đổi sở hữu cổ phiếu của cổ đông lớn", 0.67, "INSIDER")).toBeNull();
+  });
+});
+
 describe("Sự kiện Radar -> đồ thị tác động", () => {
+  it("bài nêu quá 3 mã không gán cho từng mã", () => {
+    expect(radarEventsToGraph([ev({ titleTickers: ["VCB", "BID", "CTG", "MBB"], title: "Lợi nhuận ngân hàng tăng mạnh" })]).sources).toEqual([]);
+  });
   it("chỉ mã trong tiêu đề; một báo đơn lẻ là rumor, từ 2 nguồn là confirmed; có ngành suy từ mã bước 2", () => {
     const g = radarEventsToGraph([ev({})], (t) => (t === "FPT" ? "Cong nghe" : null));
     expect(g.sources[0]).toMatchObject({ id: "e1", category: "earnings", sourceCredibility: "rumor", sourceUrl: "https://vietstock.vn/a" });
@@ -34,7 +59,7 @@ describe("Sự kiện Radar -> đồ thị tác động", () => {
   });
   it("bỏ: tin trung lập, loại không phải chất xúc tác (cổ tức, nhân sự…), tin doanh nghiệp không có mã, tin vĩ mô không chỉ ra được ngành/mã", () => {
     const g = radarEventsToGraph([
-      ev({ eventId: "a", sentiment: 0 }), ev({ eventId: "b", eventType: "DIVIDEND" }), ev({ eventId: "c", eventType: "PERSONNEL" }),
+      ev({ eventId: "a", eventType: "CONTRACT", title: "FPT ký hợp đồng mới", sentiment: 0 }), ev({ eventId: "b", eventType: "DIVIDEND" }), ev({ eventId: "c", eventType: "PERSONNEL" }),
       ev({ eventId: "d", titleTickers: [] }), ev({ eventId: "e", eventType: "MACRO_NEWS", title: "Việt Nam và Ba Lan đạt thành tựu tích cực", titleTickers: [] }),
     ]);
     expect(g.sources).toEqual([]);

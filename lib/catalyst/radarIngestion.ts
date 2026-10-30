@@ -4,7 +4,9 @@
 // Chiều tác động (benefit/harm) — quy tắc đặt trước, CHƯA kiểm chứng (nhãn THỬ NGHIỆM của tab vẫn giữ):
 //   1. Bảng chính sách: "giảm lãi suất", "giảm thuế"… là tích cực; "tăng lãi suất", "siết"… là tiêu cực. Bộ phân loại cũ coi mọi chữ
 //      "giảm" là xấu, nên chính sách nới lỏng bị chấm ngược chiều.
-//   2. Còn lại: điểm cảm xúc có xử lý phủ định của Radar; |điểm| < MIN_SENTIMENT là trung lập -> không tạo tác động (X1).
+//   2. KQKD, giao dịch nội bộ, xếp hạng, pháp lý: chỉ theo TIÊU ĐỀ. "Fitch nâng xếp hạng" tích cực; "khởi tố" tiêu cực, "cảnh báo mã độc" không phải chế tài; "Giảm dự phòng, BIDV tăng 39% lợi nhuận" là tích cực; "đăng ký mua" tích cực, "đăng ký bán"
+//      tiêu cực; không nói rõ (VD "báo cáo thay đổi sở hữu", "cập nhật lợi nhuận 18 ngân hàng") -> trung lập.
+//   3. Còn lại: điểm cảm xúc có xử lý phủ định của Radar; |điểm| < MIN_SENTIMENT là trung lập -> không tạo tác động (X1).
 // Mã ghép: chỉ mã nêu NGAY TRONG TIÊU ĐỀ, hoặc mã do nguồn công bố gắn sẵn; mã chỉ được nhắc trong tóm tắt không tính.
 // Độ tin cậy: công bố gắn mã hoặc từ 2 nguồn trở lên là "confirmed"; một báo đơn lẻ là "rumor" (trọng số 0,5 theo computeCredibilityWeight).
 import { classifyImpact, classifySectors, toSeverity } from "@/lib/macro/classifier";
@@ -19,6 +21,7 @@ export interface RadarEventLike {
 
 export const MIN_SENTIMENT = 0.3;
 export const GRAPH_RETENTION_DAYS = 120;
+const MAX_COMPANY_TICKERS = 3;
 
 /** Loại tin có hướng tác động. Cổ tức, phát hành, ĐHĐCĐ, nhân sự, diễn biến giá: trung lập hoặc không phải chất xúc tác -> bỏ. */
 const CATEGORY: Record<string, CatalystCategory> = {
@@ -34,8 +37,31 @@ const fold = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/
 const POLICY_POSITIVE = /(giam lai suat|ha lai suat|giam thue|mien thue|gian thue|giam phi|bom rong|bom tien|noi long|ho tro thanh khoan|nang hang thi truong|nang hang chung khoan|tang room tin dung|mo room)/;
 const POLICY_NEGATIVE = /(tang lai suat|tang thue|thue doi ung|thue quan|siet|that chat|hut rong|cam van|vo no|khung hoang|chien tranh|thien tai|dong dat)/;
 
-export function directionOf(title: string, sentiment: number | null | undefined): ImpactDirection | null {
+const EARN_NEG = /(bao lo|lo rong|thua lo|lo quy|lo \d|lo sau thue|lo truoc thue|(loi nhuan|lai rong|lai truoc thue|lai sau thue|doanh thu)[^,:.]{0,20}(giam|sut|lao doc|di lui)|(giam|sut)[^,:.]{0,15}(loi nhuan|lai rong|doanh thu))/;
+const EARN_POS = /(giam lo|co lai tro lai|bao lai|lap dinh|ky luc|vuot ke hoach|(loi nhuan|lai rong|lai truoc thue|lai sau thue|doanh thu|\blai\b)[^,:.]{0,30}(tang|vuot|gap|dot bien)|(tang|vuot)[^,:.]{0,25}(loi nhuan|lai rong|lai truoc thue|lai sau thue|doanh thu))/;
+const RATING_POS = /(nang xep hang|nang hang|nang muc tin nhiem|khuyen nghi mua|outperform|tang gia muc tieu)/;
+const RATING_NEG = /(ha xep hang|ha hang|ha muc tin nhiem|khuyen nghi ban|underperform|giam gia muc tieu)/;
+const LEGAL_NEG = /(xu phat|bi phat|phat tien|khoi to|bat giu|bat tam giam|dieu tra|thanh tra|cuong che|huy niem yet|dien canh bao|dien kiem soat|dinh chi|tam ngung giao dich|truy thu|cham nop|no xau)/;
+const INSIDER_BUY = /(dang ky mua|da mua|mua vao|gom them|mua them|tro thanh co dong)/;
+const INSIDER_SELL = /(dang ky ban|da ban|ban ra|ban bot|thoai von)/;
+
+export function directionOf(title: string, sentiment: number | null | undefined, eventType?: string): ImpactDirection | null {
   const t = fold(title);
+  if (eventType === "EARNINGS") {
+    if (/\bcap nhat\b/.test(t)) return null; // bài tổng hợp nhiều doanh nghiệp
+    if (/giam lo/.test(t)) return "benefit";
+    const p = EARN_POS.test(t), n = EARN_NEG.test(t);
+    return p === n ? null : p ? "benefit" : "harm";
+  }
+  if (eventType === "RATING") {
+    const p = RATING_POS.test(t), n = RATING_NEG.test(t);
+    return p === n ? null : p ? "benefit" : "harm";
+  }
+  if (eventType === "LEGAL") return LEGAL_NEG.test(t) ? "harm" : null;
+  if (eventType === "INSIDER") {
+    const b = INSIDER_BUY.test(t), s = INSIDER_SELL.test(t);
+    return b === s ? null : b ? "benefit" : "harm";
+  }
   const pos = POLICY_POSITIVE.test(t), neg = POLICY_NEGATIVE.test(t);
   if (pos !== neg) return pos ? "benefit" : "harm";
   if (pos && neg) return null; // hai chiều trong cùng tiêu đề: không đoán
@@ -63,10 +89,11 @@ export function radarEventsToGraph(events: RadarEventLike[], sectorOf: (ticker: 
   let skippedCount = 0, unmappedSectorCount = 0;
   for (const e of events) {
     const category = CATEGORY[e.eventType];
-    const direction = category ? directionOf(e.title, e.sentiment) : null;
+    const direction = category ? directionOf(e.title, e.sentiment, e.eventType) : null;
     if (!category || !direction) { skippedCount++; continue; }
     const disclosure = e.sourceAuthority === "disclosure_tagged_aggregator" || e.sourceAuthority === "configured_official_feed";
     const tickers = [...new Set(disclosure ? e.tickers ?? [] : e.titleTickers ?? [])];
+    if (COMPANY_TYPES.has(e.eventType) && tickers.length > MAX_COMPANY_TICKERS) { skippedCount++; continue; } // bài tổng hợp, không phải tin của từng mã
     const titleSectors: string[] = [];
     for (const raw of classifySectors(e.title)) {
       const name = resolveSectorNameSync(raw);
