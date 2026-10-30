@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+import { withCdnCache } from "@/lib/http/cdnCache";
 // SIEU QUET AI - danh sach candidate DANG CHO xac nhan (tu Discovery).
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+async function getUncached() {
   try {
     const candidates = await prisma.sieuQuetEventCandidate.findMany({
       where: { decision: null },
@@ -16,3 +17,6 @@ export async function GET() {
     return NextResponse.json({ error: "Không thể tải danh sách candidate." }, { status: 500 });
   }
 }
+
+/** CDN của Vercel trả lượt gọi lặp lại trong 600 giây (giảm CPU Fluid Active — hạn mức miễn phí). */
+export const GET = withCdnCache(getUncached, 600);

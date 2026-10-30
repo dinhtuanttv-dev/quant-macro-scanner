@@ -6,6 +6,7 @@ import { backtestWithTripleBarrier } from "@/lib/elite10/triple-barrier";
 import { computeTimeSeriesStability } from "@/lib/elite10/pbo-stability";
 import { calculateAtrSeries } from "@/lib/market-data/technical-indicators";
 
+import { withCdnCache } from "@/lib/http/cdnCache";
 // Elite 10 - SMC THAT (Giai doan 1: FVG + BOS/CHoCH), ROUTE HOAN TOAN
 // MOI, KHONG dung chung/khong sua route /api/ta-vn-index/analyze dang
 // hoat dong (mock SMC van giu nguyen o do). Frontend se GOI THEM route
@@ -14,7 +15,7 @@ import { calculateAtrSeries } from "@/lib/market-data/technical-indicators";
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-export async function GET(_req: Request, { params }: { params: Promise<{ ticker: string }> }) {
+async function getUncached(_req: Request, { params }: { params: Promise<{ ticker: string }> }) {
   try {
     const { ticker: tickerParam } = await params;
     const ticker = tickerParam.toUpperCase();
@@ -157,3 +158,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ ticker:
     return NextResponse.json({ error: "Không thể phân tích SMC lúc này." }, { status: 500 });
   }
 }
+
+/** CDN của Vercel trả lượt gọi lặp lại trong 900 giây (giảm CPU Fluid Active — hạn mức miễn phí). */
+export const GET = withCdnCache(getUncached, 900);

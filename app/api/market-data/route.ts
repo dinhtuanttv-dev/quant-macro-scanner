@@ -6,6 +6,7 @@ import {
 } from "@/lib/market-data/technical-indicators";
 import { stockUniverse } from "@/lib/quant-data";
 
+import { withCdnCache } from "@/lib/http/cdnCache";
 // Next.js API Route (Serverless Function) - tuan thu nguyen tac Vercel:
 // - Tap trung goi Yahoo Finance tai server, tra ve ket qua da tinh san
 //   (TA indicators) cho client.
@@ -67,7 +68,7 @@ async function fetchOneTicker(ticker: string, vnIndexCloses: number[]): Promise<
   };
 }
 
-export async function GET(request: Request) {
+async function getUncached(request: Request) {
   const { searchParams } = new URL(request.url);
   const limitParam = searchParams.get("limit");
   const limit = limitParam ? Math.min(Number(limitParam), stockUniverse.length) : stockUniverse.length;
@@ -108,3 +109,6 @@ export async function GET(request: Request) {
     );
   }
 }
+
+/** CDN của Vercel trả lượt gọi lặp lại trong 60 giây (giảm CPU Fluid Active — hạn mức miễn phí). */
+export const GET = withCdnCache(getUncached, 60);

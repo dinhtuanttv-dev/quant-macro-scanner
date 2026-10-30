@@ -1,7 +1,8 @@
 ﻿import { NextResponse } from "next/server";
 import { getUnmappedSectors } from "@/lib/catalyst/engine/SectorRegistry";
 
-export async function GET() {
+import { withCdnCache } from "@/lib/http/cdnCache";
+async function getUncached() {
   try {
     const data = await getUnmappedSectors();
     const items = Object.entries(data)
@@ -13,3 +14,6 @@ export async function GET() {
     return NextResponse.json({ error: "Khong doc duoc danh sach nganh chua anh xa." }, { status: 500 });
   }
 }
+
+/** CDN của Vercel trả lượt gọi lặp lại trong 900 giây (giảm CPU Fluid Active — hạn mức miễn phí). */
+export const GET = withCdnCache(getUncached, 900);

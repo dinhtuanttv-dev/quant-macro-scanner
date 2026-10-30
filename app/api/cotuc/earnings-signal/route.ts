@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { buildEarningsSignalForTicker } from "@/lib/cotuc/timing-v3/earnings-signal-io";
 import { stockUniverse } from "@/lib/quant-data";
 
+import { withCdnCache } from "@/lib/http/cdnCache";
 // Tich hop Timing Engine v3 - Giai doan 3 (Earnings Engine): endpoint
 // MOI, cho 1 ma cu the - dung cho OptimalTimingTab (khac han
 // /api/cotuc/earnings hien co, chuyen xep hang tang truong TOAN THI
@@ -10,7 +11,7 @@ import { stockUniverse } from "@/lib/quant-data";
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-export async function GET(req: Request) {
+async function getUncached(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const ticker = searchParams.get("ticker")?.toUpperCase();
@@ -33,3 +34,6 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Không thể tính Earnings Signal lúc này." }, { status: 500 });
   }
 }
+
+/** CDN của Vercel trả lượt gọi lặp lại trong 300 giây (giảm CPU Fluid Active — hạn mức miễn phí). */
+export const GET = withCdnCache(getUncached, 300);

@@ -6,10 +6,6 @@
       "schedule": "0 23 * * 1-5"
     },
     {
-      "path": "/api/cron/refresh-macro",
-      "schedule": "0 6 * * 1-5"
-    },
-    {
       "path": "/api/cron/dividend-universe-scan",
       "schedule": "0 22 * * *"
     },
@@ -51,31 +47,31 @@
     },
     {
       "path": "/api/cron/earnings-seasonality-scan?phase=collect&offset=0&limit=3",
-      "schedule": "5 23 * * *"
+      "schedule": "5 23 * * 0"
     },
     {
       "path": "/api/cron/earnings-seasonality-scan?phase=collect&offset=3&limit=3",
-      "schedule": "10 23 * * *"
+      "schedule": "10 23 * * 0"
     },
     {
       "path": "/api/cron/earnings-seasonality-scan?phase=collect&offset=6&limit=3",
-      "schedule": "15 23 * * *"
+      "schedule": "15 23 * * 0"
     },
     {
       "path": "/api/cron/earnings-seasonality-scan?phase=collect&offset=9&limit=3",
-      "schedule": "20 23 * * *"
+      "schedule": "20 23 * * 0"
     },
     {
       "path": "/api/cron/earnings-seasonality-scan?phase=collect&offset=12&limit=3",
-      "schedule": "25 23 * * *"
+      "schedule": "25 23 * * 0"
     },
     {
       "path": "/api/cron/earnings-seasonality-scan?phase=collect&offset=15&limit=3",
-      "schedule": "35 23 * * *"
+      "schedule": "35 23 * * 0"
     },
     {
       "path": "/api/cron/earnings-seasonality-scan?phase=finalize",
-      "schedule": "45 23 * * *"
+      "schedule": "45 23 * * 0"
     },
     {
       "path": "/api/cron/elite10-agm-cycle-scan",
@@ -84,14 +80,6 @@
     {
       "path": "/api/cron/sieu-quet-event-discover",
       "schedule": "0 1 * * *"
-    },
-    {
-      "path": "/api/cron/sieu-quet-event-discover",
-      "schedule": "0 6 * * *"
-    },
-    {
-      "path": "/api/cron/sieu-quet-event-discover",
-      "schedule": "0 13 * * *"
     },
     {
       "path": "/api/cron/sieu-quet-universe-sync",

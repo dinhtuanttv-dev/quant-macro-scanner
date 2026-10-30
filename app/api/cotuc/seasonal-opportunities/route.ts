@@ -4,11 +4,12 @@ import { CACHE_HEADERS } from "@/lib/cotuc/timing-v3/seasonality/seasonality-rea
 import { buildSeasonalOpportunities } from "@/lib/cotuc/timing-v3/seasonality/opportunities";
 import type { EarningsCycleStatsV3 } from "@/lib/cotuc/timing-v3/timing-types";
 
+import { withCdnCache } from "@/lib/http/cdnCache";
 // GET /api/cotuc/seasonal-opportunities -> cơ hội mùa vụ KQKD toàn danh mục (đã đạt kiểm định, xếp theo cận dưới CI)
 // + ứng viên gần đạt (ghi rõ còn thiếu gì). Đọc EarningsSeasonalityCache (cron earnings-seasonality-scan).
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+async function getUncached() {
   try {
     // B2: kho Cổ tức trên Gateway (thay Neon).
     const rows = (await storeList<{ ticker: string; stats: unknown; finalizedAt: string | null }>("season", { fields: ["ticker", "stats", "finalizedAt"] }))
@@ -20,3 +21,6 @@ export async function GET() {
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }
 }
+
+/** CDN của Vercel trả lượt gọi lặp lại trong 300 giây (giảm CPU Fluid Active — hạn mức miễn phí). */
+export const GET = withCdnCache(getUncached, 300);

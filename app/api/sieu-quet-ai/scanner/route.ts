@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+import { withCdnCache } from "@/lib/http/cdnCache";
 // SIEU QUET AI - route doc: tra ve Index State + toan bo StockScanItem
 // DA QUET SAN tu Database (Cron Job sieu-quet-scan cap nhat dinh ky).
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+async function getUncached() {
   try {
     const [indexState, items] = await Promise.all([
       prisma.sieuQuetIndexState.findUnique({ where: { id: "singleton" } }),
@@ -33,3 +34,6 @@ export async function GET() {
     return NextResponse.json({ error: "Không thể tải dữ liệu Siêu Quét AI lúc này." }, { status: 500 });
   }
 }
+
+/** CDN của Vercel trả lượt gọi lặp lại trong 600 giây (giảm CPU Fluid Active — hạn mức miễn phí). */
+export const GET = withCdnCache(getUncached, 600);

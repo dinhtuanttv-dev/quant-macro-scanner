@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { buildCycleContext, buildCyclePathsV3 } from "@/lib/cotuc/timing-v3/compute-cycle-io";
 
+import { withCdnCache } from "@/lib/http/cdnCache";
 // Tich hop Timing Engine v3 - Giai doan 2: endpoint MOI (chua ton tai
 // truoc do), tra ve duong CAR (market-adjusted) theo tung dot lich su +
 // dot hien tai, dung cho CycleTimeline.tsx ve bieu do.
@@ -10,7 +11,7 @@ export const dynamic = "force-dynamic";
 // gay 504). Tang len 60s, du du.
 export const maxDuration = 60;
 
-export async function GET(req: Request) {
+async function getUncached(req: Request) {
   const t0 = Date.now();
   try {
     const { searchParams } = new URL(req.url);
@@ -38,3 +39,6 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Không thể tính đường CAR lúc này." }, { status: 500 });
   }
 }
+
+/** CDN của Vercel trả lượt gọi lặp lại trong 300 giây (giảm CPU Fluid Active — hạn mức miễn phí). */
+export const GET = withCdnCache(getUncached, 300);

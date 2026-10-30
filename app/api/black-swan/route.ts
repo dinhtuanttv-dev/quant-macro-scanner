@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+import { withCdnCache } from "@/lib/http/cdnCache";
 export const maxDuration = 10;
 
 export interface BlackSwanScenario {
@@ -47,7 +48,7 @@ const FALLBACK_SCENARIOS: BlackSwanScenario[] = [
   },
 ];
 
-export async function GET() {
+async function getUncached() {
   const apiKey = process.env.ANTHROPIC_API_KEY;
 
   try {
@@ -154,3 +155,6 @@ Chi tao 3 kich ban, xep tu nghiem trong nhat den it nghiem trong nhat.`;
     } as BlackSwanResponse);
   }
 }
+
+/** CDN của Vercel trả lượt gọi lặp lại trong 900 giây (giảm CPU Fluid Active — hạn mức miễn phí). */
+export const GET = withCdnCache(getUncached, 900);

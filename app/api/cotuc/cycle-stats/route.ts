@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { computeWindowStats, type WindowReturns } from "@/lib/cotuc/dividend-cycle-engine";
 
+import { withCdnCache } from "@/lib/http/cdnCache";
 // Timing Engine (P3) - doc du lieu DA QUET SAN (Cron Job dividend-cycle-
 // scan) va tinh bootstrap + xep hang REAL-TIME (nhanh, du lieu da co san
 // trong DB, khong can goi VCI/Yahoo). Ho tro 2 che do:
@@ -15,7 +16,7 @@ interface CycleWindowRow {
   wPostEx: number | null; wPostCredit: number | null;
 }
 
-export async function GET(req: Request) {
+async function getUncached(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const ticker = searchParams.get("ticker")?.toUpperCase() ?? null;
@@ -74,3 +75,6 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Không thể tính Timing Engine lúc này." }, { status: 500 });
   }
 }
+
+/** CDN của Vercel trả lượt gọi lặp lại trong 300 giây (giảm CPU Fluid Active — hạn mức miễn phí). */
+export const GET = withCdnCache(getUncached, 300);

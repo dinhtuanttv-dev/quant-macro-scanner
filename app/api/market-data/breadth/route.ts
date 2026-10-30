@@ -2,12 +2,13 @@
 import { fetchQuoteBatch } from "@/lib/market-data/yahoo-finance-adapter";
 import { stockUniverse } from "@/lib/quant-data";
 
+import { withCdnCache } from "@/lib/http/cdnCache";
 // Vercel Hobby gioi han 10s - fetchQuoteBatch da tu chia BATCH_SIZE=15 va
 // goi Promise.all song song trong tung batch, phu hop voi so luong ma
 // trong stockUniverse (thuong duoi 60 ma).
 export const maxDuration = 10;
 
-export async function GET() {
+async function getUncached() {
   try {
     const tickers = stockUniverse.map((s) => s.ticker);
     const quotes = await fetchQuoteBatch(tickers);
@@ -44,3 +45,6 @@ export async function GET() {
     );
   }
 }
+
+/** CDN của Vercel trả lượt gọi lặp lại trong 60 giây (giảm CPU Fluid Active — hạn mức miễn phí). */
+export const GET = withCdnCache(getUncached, 60);

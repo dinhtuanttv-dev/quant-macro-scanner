@@ -6,6 +6,7 @@ import { riskFlagsFor } from "@/lib/elite10/trap-detector";
 import { runAiPipeline } from "@/lib/elite10/ai-pipeline";
 import { buildWindowStats, DIVIDEND_TEMPLATE, AGM_TEMPLATE, findCurrentWindow } from "@/lib/elite10/time-engine";
 
+import { withCdnCache } from "@/lib/http/cdnCache";
 // Elite 10 - TICH HOP Time Engine + Confluence Engine LEN CHART GIA (yeu
 // cau nguoi dung 2026-09-17): tra ve 4 nhom du lieu de MainChart.tsx ve
 // truc tiep len bieu do, thay vi chi hien thi rieng biet o cac panel:
@@ -16,7 +17,7 @@ import { buildWindowStats, DIVIDEND_TEMPLATE, AGM_TEMPLATE, findCurrentWindow } 
 //   4. riskFlags: canh bao (marker tai nen hien tai)
 export const dynamic = "force-dynamic";
 
-export async function GET(req: Request, { params }: { params: Promise<{ ticker: string }> }) {
+async function getUncached(req: Request, { params }: { params: Promise<{ ticker: string }> }) {
   try {
     const { ticker: tickerParam } = await params;
     const ticker = tickerParam.toUpperCase();
@@ -88,3 +89,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ ticker: 
     return NextResponse.json({ error: "Không thể tải dữ liệu overlay lúc này." }, { status: 500 });
   }
 }
+
+/** CDN của Vercel trả lượt gọi lặp lại trong 900 giây (giảm CPU Fluid Active — hạn mức miễn phí). */
+export const GET = withCdnCache(getUncached, 900);

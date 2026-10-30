@@ -2,9 +2,10 @@
 import { stockUniverse } from "@/lib/quant-data";
 import { computeTang1, computeTang2, computeTang3, computeTang4, computeConfluence } from "@/lib/quant-funnel";
 
+import { withCdnCache } from "@/lib/http/cdnCache";
 // Gop ca 4 tang + Elite 10 trong 1 lan goi - dung lai nguyen ven
 // computeTang1..4/computeConfluence that tu lib/quant-funnel.ts, khong sua logic.
-export async function GET() {
+async function getUncached() {
   try {
     const tang1 = computeTang1(stockUniverse);
     const tang2 = computeTang2(tang1, stockUniverse);
@@ -24,3 +25,6 @@ export async function GET() {
     return NextResponse.json({ error: "Khong tinh duoc pheu loc luc nay." }, { status: 500 });
   }
 }
+
+/** CDN của Vercel trả lượt gọi lặp lại trong 900 giây (giảm CPU Fluid Active — hạn mức miễn phí). */
+export const GET = withCdnCache(getUncached, 900);

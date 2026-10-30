@@ -1,6 +1,7 @@
 ﻿import { NextResponse } from "next/server";
 import { fetchIntradayBars } from "@/lib/market-data/vndirect-adapter";
 
+import { withCdnCache } from "@/lib/http/cdnCache";
 export const maxDuration = 15;
 
 // Gio VN (ICT, UTC+7): phien sang 09:00-10:30. Timestamp tra ve tu
@@ -24,7 +25,7 @@ function isMorningSession(hour: number): boolean {
   return hour >= 9;
 }
 
-export async function GET() {
+async function getUncached() {
   try {
     const bars = await fetchIntradayBars("VNINDEX", 12, "15");
     if (bars.length === 0) {
@@ -71,3 +72,6 @@ export async function GET() {
     return NextResponse.json({ error: "Khong tinh duoc thanh khoan 10:30." }, { status: 500 });
   }
 }
+
+/** CDN của Vercel trả lượt gọi lặp lại trong 60 giây (giảm CPU Fluid Active — hạn mức miễn phí). */
+export const GET = withCdnCache(getUncached, 60);

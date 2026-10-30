@@ -11,12 +11,13 @@ import {
 } from "@/lib/cotuc/dividend-quality-score";
 import { DIVIDEND_STOCKS } from "@/lib/quant-cotuc";
 
+import { withCdnCache } from "@/lib/http/cdnCache";
 // P2: Dividend Quality Score - Tang 1-3 (Tang 4 tinh o frontend vi RS
 // da co san client-side, xem ghi chu trong dividend-quality-score.ts).
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+async function getUncached() {
   const tickers = DIVIDEND_STOCKS.map((s) => s.ticker);
   const sectorByTicker = new Map(DIVIDEND_STOCKS.map((s) => [s.ticker, s.sector]));
 
@@ -183,3 +184,6 @@ export async function GET() {
     return NextResponse.json({ error: "Không thể tính Dividend Quality Score lúc này." }, { status: 500 });
   }
 }
+
+/** CDN của Vercel trả lượt gọi lặp lại trong 300 giây (giảm CPU Fluid Active — hạn mức miễn phí). */
+export const GET = withCdnCache(getUncached, 300);

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { buildCycleContext, buildCycleStatsV3 } from "@/lib/cotuc/timing-v3/compute-cycle-io";
 
+import { withCdnCache } from "@/lib/http/cdnCache";
 // Tich hop Timing Engine v3 - Giai doan 2: endpoint MOI (song song voi
 // /api/cotuc/cycle-stats cu, KHONG thay the - route cu van phuc vu
 // CycleRankingPanel/CycleTimingPanel hien co, dung % loi nhuan tho).
@@ -13,7 +14,7 @@ export const dynamic = "force-dynamic";
 // gay 504). Tang len 60s, du du.
 export const maxDuration = 60;
 
-export async function GET(req: Request) {
+async function getUncached(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const ticker = searchParams.get("ticker")?.toUpperCase();
@@ -34,3 +35,6 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Không thể tính Backtest Service (v3) lúc này." }, { status: 500 });
   }
 }
+
+/** CDN của Vercel trả lượt gọi lặp lại trong 300 giây (giảm CPU Fluid Active — hạn mức miễn phí). */
+export const GET = withCdnCache(getUncached, 300);
