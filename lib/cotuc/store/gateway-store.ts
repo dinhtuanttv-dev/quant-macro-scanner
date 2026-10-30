@@ -37,6 +37,20 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
   return body;
 }
 
+/**
+ * Dấu ghi của kho (mỗi bảng: lần ghi cuối, lưu bền trên Volume) — đổi mỗi khi BẤT KỲ bên nào ghi (route Vercel hay job chạy trên
+ * Gateway). Dùng làm một phần phiên bản dữ liệu Cổ tức (data-version.ts). Lỗi -> null.
+ */
+export async function storeWriteStamp(): Promise<string | null> {
+  try {
+    const t: Record<string, { updatedAt?: string | null }> = (await storeStatus()).tables ?? {};
+    const names = Object.keys(t).sort();
+    return names.length ? names.map((n) => `${n}:${t[n]?.updatedAt ?? "-"}`).join(",") : null;
+  } catch {
+    return null;
+  }
+}
+
 export interface ListOptions { tickers?: string[]; keys?: string[]; fields?: string[] }
 
 /** Đọc bảng (lọc theo mã / khoá, chiếu trường theo đường dẫn chấm — VD "snapshot.decision.level"). */

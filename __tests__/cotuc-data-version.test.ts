@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { __setCotucKv, bumpCotucDataVersion, COTUC_VERSION_KEY, getCotucDataVersion, readThroughByVersion } from "@/lib/cotuc/data-version";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { __setCotucKv, __setCotucStoreStamp, bumpCotucDataVersion, COTUC_VERSION_KEY, getCotucDataVersion, readThroughByVersion } from "@/lib/cotuc/data-version";
 
 function memKv() {
   const m = new Map<string, unknown>();
@@ -11,7 +11,9 @@ function memKv() {
   return { kv, m };
 }
 
-afterEach(() => __setCotucKv(undefined));
+let stamp: string | null = "decision:2026-10-30T00:00:00Z";
+beforeEach(() => { stamp = "decision:2026-10-30T00:00:00Z"; __setCotucStoreStamp(async () => stamp); });
+afterEach(() => { __setCotucKv(undefined); __setCotucStoreStamp(undefined); });
 
 describe("N2 — đọc Cổ tức qua KV theo phiên bản dữ liệu", () => {
   it("cùng phiên bản -> chỉ tính (đọc Neon) một lần; phiên bản mới -> tính lại; kết quả giống hệt", async () => {
@@ -47,6 +49,26 @@ describe("N2 — đọc Cổ tức qua KV theo phiên bản dữ liệu", () => 
     __setCotucKv({ get: async () => { throw new Error("down"); }, set: async () => { throw new Error("down"); } } as never);
     expect(await getCotucDataVersion()).toBeNull();
     expect(await readThroughByVersion("x", compute)).toBe(4);
+  });
+
+  it("Vercel CPU giai đoạn 2: job trên Gateway ghi kho (không tăng KV) -> dấu ghi đổi -> tính lại; không đọc được dấu ghi -> tính trực tiếp", async () => {
+    const { kv } = memKv();
+    __setCotucKv(kv as never);
+    await bumpCotucDataVersion(1);
+    let calls = 0;
+    const compute = async () => ++calls;
+    await readThroughByVersion("timing-signals", compute);
+    await readThroughByVersion("timing-signals", compute);
+    expect(calls).toBe(1);
+    stamp = "decision:2026-10-30T09:00:00Z"; // Gateway vừa ghi
+    __setCotucStoreStamp(async () => stamp); // bỏ đệm 10 giây của dấu ghi
+    await readThroughByVersion("timing-signals", compute);
+    expect(calls).toBe(2);
+    __setCotucStoreStamp(async () => null);
+    await readThroughByVersion("timing-signals", compute);
+    await readThroughByVersion("timing-signals", compute);
+    expect(calls).toBe(4);
+    expect(await getCotucDataVersion()).toBeNull();
   });
 
   it("khoá phiên bản dùng chung một tên cố định", () => {

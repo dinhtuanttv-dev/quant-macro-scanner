@@ -8,7 +8,13 @@
 // bumpCotucDataVersion() sau mỗi lô. Route ĐỌC dùng readThroughByVersion(): cùng phiên bản -> trả kết quả đã tính lưu trong KV
 // (giống hệt, vì cùng dữ liệu nguồn và cùng hàm tính); phiên bản mới -> tính lại từ Neon đúng một lần rồi lưu.
 // Thiếu KV hoặc chưa có phiên bản -> tính trực tiếp như cũ (không bao giờ trả dữ liệu sai phiên bản).
+//
+// 30/10/2026 (Vercel CPU giai đoạn 2): các job GHI nay chạy trên Market Gateway (không có KV Upstash -> không tăng được phiên bản
+// trong KV). Phiên bản dữ liệu = phiên bản KV + DẤU GHI của kho Cổ tức trên Gateway (lần ghi cuối từng bảng) -> ai ghi cũng làm
+// đổi phiên bản. Không đọc được dấu ghi -> null -> tính trực tiếp (an toàn, không trả kết quả cũ).
+import { createHash } from "node:crypto";
 import { Redis } from "@upstash/redis";
+import { storeWriteStamp } from "@/lib/cotuc/store/gateway-store";
 
 export const COTUC_VERSION_KEY = "cotuc:data-version";
 const TTL_SEC = 2 * 24 * 3600;
@@ -29,6 +35,22 @@ export function __setCotucKv(c: Kv | null | undefined) {
   client = c;
 }
 
+type StampFn = () => Promise<string | null>;
+let stampFn: StampFn = storeWriteStamp;
+let stampMemo: { at: number; value: Promise<string | null> } | null = null;
+const STAMP_MEMO_MS = 10_000; // một loạt route đọc cùng lúc dùng chung một lần hỏi kho
+
+/** Chỉ dùng trong test. */
+export function __setCotucStoreStamp(fn: StampFn | undefined) {
+  stampFn = fn ?? storeWriteStamp;
+  stampMemo = null;
+}
+
+function storeStamp(now = Date.now()): Promise<string | null> {
+  if (!stampMemo || now - stampMemo.at > STAMP_MEMO_MS) stampMemo = { at: now, value: stampFn().catch(() => null) };
+  return stampMemo.value;
+}
+
 /** Gọi sau mỗi lô ghi dữ liệu Cổ tức (kể cả lô lỗi giữa chừng — có thể đã ghi một phần). Lỗi KV không làm hỏng cron. */
 export async function bumpCotucDataVersion(now = Date.now()): Promise<string | null> {
   const c = kv();
@@ -43,12 +65,16 @@ export async function bumpCotucDataVersion(now = Date.now()): Promise<string | n
 }
 
 export async function getCotucDataVersion(): Promise<string | null> {
+  let v: unknown;
   try {
-    const v = await kv()?.get<string>(COTUC_VERSION_KEY);
-    return typeof v === "string" && v ? v : null;
+    v = await kv()?.get<string>(COTUC_VERSION_KEY);
   } catch {
     return null;
   }
+  if (typeof v !== "string" || !v) return null;
+  const stamp = await storeStamp();
+  if (!stamp) return null;
+  return `${v}|${createHash("sha1").update(stamp).digest("hex").slice(0, 12)}`;
 }
 
 /**
