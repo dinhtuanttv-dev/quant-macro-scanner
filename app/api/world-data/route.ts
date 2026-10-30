@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { fetchOhlcvHistory } from "@/lib/market-data/yahoo-finance-adapter";
 
+import { withCdnCache } from "@/lib/http/cdnCache";
 export const maxDuration = 10;
 
 // Danh sach chi so the gioi va hang hoa co the lay tu Yahoo Finance
@@ -39,7 +40,7 @@ export interface WorldDataResponse {
   items: WorldDataItem[];
 }
 
-export async function GET() {
+async function getUncached() {
   // Goi song song tat ca (it symbol, moi symbol lay 5d nen rat nhanh)
   const results = await Promise.all(
     WORLD_SYMBOLS.map(async (sym) => {
@@ -84,3 +85,6 @@ export async function GET() {
     items: results,
   } as WorldDataResponse);
 }
+
+/** CDN của Vercel trả lượt gọi lặp lại trong 300 giây (giảm CPU Fluid Active — hạn mức miễn phí). */
+export const GET = withCdnCache(getUncached, 300);

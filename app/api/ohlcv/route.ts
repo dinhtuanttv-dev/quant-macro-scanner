@@ -2,11 +2,12 @@ import { NextResponse } from "next/server";
 import { fetchOhlcvHistory } from "@/lib/market-data/yahoo-finance-adapter";
 import { fetchIndexOhlcvHistory } from "@/lib/market-data/vndirect-adapter";
 
+import { withCdnCache } from "@/lib/http/cdnCache";
 export const maxDuration = 10;
 
 const INDEX_TICKERS = new Set(["VNINDEX", "VN-INDEX", "HNXINDEX", "HNX-INDEX"]);
 
-export async function GET(request: Request) {
+async function getUncached(request: Request) {
   const { searchParams } = new URL(request.url);
   const ticker = searchParams.get("ticker");
   const range = searchParams.get("range") ?? "3mo";
@@ -33,3 +34,6 @@ export async function GET(request: Request) {
   const recentBars = result.data.slice(-limit);
   return NextResponse.json({ ticker, bars: recentBars });
 }
+
+/** CDN của Vercel trả lượt gọi lặp lại trong 60 giây (giảm CPU Fluid Active — hạn mức miễn phí). */
+export const GET = withCdnCache(getUncached, 60);

@@ -4,6 +4,7 @@ import { runHamiltonFilter } from "@/lib/elite10/ms-garch-hamilton-filter";
 import { estimateMsGarchParams } from "@/lib/elite10/ms-garch-estimator";
 import { runMonteCarloSimulation } from "@/lib/elite10/ms-garch-monte-carlo";
 
+import { withCdnCache } from "@/lib/http/cdnCache";
 // Elite 10 - Muc F (Tech Spec v2) Giai doan 4/5: ket noi 3 module da co
 // (Hamilton Filter, Estimator, Monte Carlo) thanh 1 route hoan chinh
 // chay tren du lieu gia THAT. On-demand (nguoi dung bam nut, giong
@@ -15,7 +16,7 @@ export const maxDuration = 60;
 const HORIZON_DAYS = 20;
 const N_SIMULATIONS = 3000;
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ ticker: string }> }) {
+async function getUncached(_req: NextRequest, { params }: { params: Promise<{ ticker: string }> }) {
   try {
     const { ticker: tickerParam } = await params;
     const ticker = tickerParam.toUpperCase();
@@ -82,3 +83,6 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tic
     return NextResponse.json({ error: "Không thể chạy MS-GARCH lúc này." }, { status: 500 });
   }
 }
+
+/** CDN của Vercel trả lượt gọi lặp lại trong 900 giây (giảm CPU Fluid Active — hạn mức miễn phí). */
+export const GET = withCdnCache(getUncached, 900);

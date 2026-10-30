@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { CACHE_HEADERS, notFound, parseTickerQuarter, readCache } from "@/lib/cotuc/timing-v3/seasonality/seasonality-read";
 
+import { withCdnCache } from "@/lib/http/cdnCache";
 // GET /api/cotuc/earnings-cycle-paths?ticker=&quarter=1..4 -> CyclePathsV3 quanh NGÀY CÔNG BỐ BCTC của quý đó
 // (computeCyclePaths tái dùng, ngày công bố thay cho GDKHQ; giá SSI tổng lợi suất sau thuế).
 export const dynamic = "force-dynamic";
 
-export async function GET(req: Request) {
+async function getUncached(req: Request) {
   const p = parseTickerQuarter(req, true);
   if (p instanceof NextResponse) return p;
   try {
@@ -17,3 +18,6 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }
 }
+
+/** CDN của Vercel trả lượt gọi lặp lại trong 300 giây (giảm CPU Fluid Active — hạn mức miễn phí). */
+export const GET = withCdnCache(getUncached, 300);

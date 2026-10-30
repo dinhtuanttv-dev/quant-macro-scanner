@@ -1,6 +1,7 @@
 ﻿import { NextResponse } from "next/server";
 import { fetchIntradayBars } from "@/lib/market-data/vndirect-adapter";
 
+import { withCdnCache } from "@/lib/http/cdnCache";
 export const maxDuration = 15;
 
 function getVnDateKey(unixSec: number): string {
@@ -8,7 +9,7 @@ function getVnDateKey(unixSec: number): string {
   return new Date(vnMs).toISOString().slice(0, 10);
 }
 
-export async function GET() {
+async function getUncached() {
   try {
     const bars = await fetchIntradayBars("VNINDEX", 3, "15");
     if (bars.length === 0) {
@@ -34,3 +35,6 @@ export async function GET() {
     return NextResponse.json({ error: "Khong uoc tinh duoc GTGD." }, { status: 500 });
   }
 }
+
+/** CDN của Vercel trả lượt gọi lặp lại trong 300 giây (giảm CPU Fluid Active — hạn mức miễn phí). */
+export const GET = withCdnCache(getUncached, 300);

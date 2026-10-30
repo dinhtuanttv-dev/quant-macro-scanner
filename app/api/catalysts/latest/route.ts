@@ -9,12 +9,13 @@ import { Redis } from "@upstash/redis";
 import { readSnapshotWithStaleness } from "@/lib/catalyst/engine/SnapshotStore";
 import { sanitizeLegacySnapshot } from "@/lib/catalyst/provenance";
 
+import { withCdnCache } from "@/lib/http/cdnCache";
 const redis = new Redis({
   url: process.env.KV_REST_API_URL!,
   token: process.env.KV_REST_API_TOKEN!,
 });
 
-export async function GET() {
+async function getUncached() {
   try {
     const { snapshot, isStale, ageMinutes } = await readSnapshotWithStaleness(redis);
     if (!snapshot) {
@@ -30,3 +31,6 @@ export async function GET() {
     );
   }
 }
+
+/** CDN của Vercel trả lượt gọi lặp lại trong 900 giây (giảm CPU Fluid Active — hạn mức miễn phí). */
+export const GET = withCdnCache(getUncached, 900);

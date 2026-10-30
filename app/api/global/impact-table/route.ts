@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/client";
 
+import { withCdnCache } from "@/lib/http/cdnCache";
 // NANG CAP (2026-09-11): tu "lay 20 dong gan nhat khong phan biet lan
 // chay nao" (co the tron lan nhieu lan bam nut khac nhau) sang "nhom theo
 // analysis_run_id, mac dinh tra ve LAN CHAY MOI NHAT, kem danh sach toi
 // da 3 lan chay gan nhat de frontend lam bo chon lich su".
 //
 // Ho tro ?runId=xxx de xem lai 1 trong 3 lan chay gan nhat.
-export async function GET(request: Request) {
+async function getUncached(request: Request) {
   const { searchParams } = new URL(request.url);
   const requestedRunId = searchParams.get("runId");
 
@@ -74,3 +75,6 @@ export async function GET(request: Request) {
     availableRuns,
   });
 }
+
+/** CDN của Vercel trả lượt gọi lặp lại trong 900 giây (giảm CPU Fluid Active — hạn mức miễn phí). */
+export const GET = withCdnCache(getUncached, 900);

@@ -1,6 +1,7 @@
 ﻿import { NextResponse } from "next/server";
 import { fetchIndicesLatest } from "@/lib/market-data/vndirect-adapter";
 
+import { withCdnCache } from "@/lib/http/cdnCache";
 export const maxDuration = 10;
 
 const INDEX_LABELS: Record<string, string> = {
@@ -9,7 +10,7 @@ const INDEX_LABELS: Record<string, string> = {
   UPCOM: "UPCOM",
 };
 
-export async function GET() {
+async function getUncached() {
   try {
     const quotes = await fetchIndicesLatest(["VN30", "HNX", "UPCOM"]);
 
@@ -33,3 +34,6 @@ export async function GET() {
     );
   }
 }
+
+/** CDN của Vercel trả lượt gọi lặp lại trong 60 giây (giảm CPU Fluid Active — hạn mức miễn phí). */
+export const GET = withCdnCache(getUncached, 60);

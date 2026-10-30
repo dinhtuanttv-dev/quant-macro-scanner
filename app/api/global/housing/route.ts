@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/client";
 
+import { withCdnCache } from "@/lib/http/cdnCache";
 // Du lieu quy/thang - khong can real-time, dung GET thuong (Project B se
 // cache qua SWR voi refreshInterval dai, khong qua SSE).
-export async function GET() {
+async function getUncached() {
   const supabase = createServiceClient();
   const { data, error } = await supabase
     .from("world_housing_prices")
@@ -23,3 +24,6 @@ export async function GET() {
 
   return NextResponse.json({ countries: Array.from(latestPerCountry.values()) });
 }
+
+/** CDN của Vercel trả lượt gọi lặp lại trong 900 giây (giảm CPU Fluid Active — hạn mức miễn phí). */
+export const GET = withCdnCache(getUncached, 900);

@@ -1,6 +1,7 @@
 ﻿import { NextResponse } from "next/server";
 import { fetchQuoteBatch } from "@/lib/market-data/yahoo-finance-adapter";
 
+import { withCdnCache } from "@/lib/http/cdnCache";
 export const maxDuration = 10;
 
 const CORS_HEADERS = {
@@ -9,7 +10,7 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
-export async function GET(request: Request) {
+async function getUncached(request: Request) {
   const { searchParams } = new URL(request.url);
   const symbolsParam = searchParams.get("symbols");
 
@@ -29,3 +30,6 @@ export async function GET(request: Request) {
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
 }
+
+/** CDN của Vercel trả lượt gọi lặp lại trong 60 giây (giảm CPU Fluid Active — hạn mức miễn phí). */
+export const GET = withCdnCache(getUncached, 60);

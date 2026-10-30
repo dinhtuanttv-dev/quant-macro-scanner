@@ -2,12 +2,13 @@
 import { fetchVN30VN100Universe } from "@/lib/market-data/vci-listing-adapter";
 import { stockUniverse } from "@/lib/quant-data";
 
+import { withCdnCache } from "@/lib/http/cdnCache";
 const sectorMap: Record<string, string> = {};
 stockUniverse.forEach((s) => { sectorMap[s.ticker] = s.sector; });
 
 // Route nhe - chi tra danh sach ma + nganh de tim kiem/them vao Watchlist,
 // KHONG goi Yahoo Finance nen tra ve gan nhu tuc thi.
-export async function GET() {
+async function getUncached() {
   try {
     const universeResult = await fetchVN30VN100Universe();
     const tickers = universeResult.success && universeResult.data
@@ -26,3 +27,6 @@ export async function GET() {
     return NextResponse.json({ error: "Khong lay duoc danh sach ma." }, { status: 500 });
   }
 }
+
+/** CDN của Vercel trả lượt gọi lặp lại trong 900 giây (giảm CPU Fluid Active — hạn mức miễn phí). */
+export const GET = withCdnCache(getUncached, 900);

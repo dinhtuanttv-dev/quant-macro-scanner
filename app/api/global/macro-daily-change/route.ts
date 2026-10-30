@@ -1,10 +1,11 @@
 ﻿import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/client";
 
+import { withCdnCache } from "@/lib/http/cdnCache";
 // Tra ve gia macro moi nhat KEM % thay doi so voi ban ghi gan nhat
 // cach day ~24h (khong phai so voi lan fetch SSE truoc do vai giay).
 // Day la chuan tinh % thay doi dung nganh tai chinh cho cac chi so vi mo.
-export async function GET() {
+async function getUncached() {
   const supabase = createServiceClient();
 
   const { data: latest, error: latestErr } = await supabase
@@ -45,3 +46,6 @@ export async function GET() {
     riskOnScore: latest.risk_on_score,
   });
 }
+
+/** CDN của Vercel trả lượt gọi lặp lại trong 300 giây (giảm CPU Fluid Active — hạn mức miễn phí). */
+export const GET = withCdnCache(getUncached, 300);

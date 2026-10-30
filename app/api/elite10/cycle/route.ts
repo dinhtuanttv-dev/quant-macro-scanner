@@ -6,12 +6,13 @@ import {
   buildWindowStats, computeSeasonalStats, timeConfluenceVerdict,
 } from "@/lib/elite10/time-engine";
 
+import { withCdnCache } from "@/lib/http/cdnCache";
 // Elite 10 - Vung 2.5 Time Engine: tong hop Dividend + AGM + Seasonal
 // (that) + placeholder minh bach cho Earnings/Wyckoff (chua co nguon),
 // tra ve Timing Verdict day du cho 1 ma.
 export const dynamic = "force-dynamic";
 
-export async function GET(req: Request) {
+async function getUncached(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const ticker = searchParams.get("ticker")?.toUpperCase();
@@ -61,3 +62,6 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Không thể tính Timing Verdict lúc này." }, { status: 500 });
   }
 }
+
+/** CDN của Vercel trả lượt gọi lặp lại trong 900 giây (giảm CPU Fluid Active — hạn mức miễn phí). */
+export const GET = withCdnCache(getUncached, 900);

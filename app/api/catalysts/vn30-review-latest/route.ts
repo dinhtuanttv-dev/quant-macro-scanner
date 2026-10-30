@@ -1,6 +1,7 @@
 ﻿import { NextResponse } from "next/server";
 import { Redis } from "@upstash/redis";
 
+import { withCdnCache } from "@/lib/http/cdnCache";
 const redis = new Redis({ url: process.env.KV_REST_API_URL!, token: process.env.KV_REST_API_TOKEN! });
 
 const KEYS = {
@@ -9,7 +10,7 @@ const KEYS = {
   sbv: "catalyst:sbv-rate-watch",
 } as const;
 
-export async function GET() {
+async function getUncached() {
   try {
     const [vn30, msci, sbv] = await Promise.all([
       redis.get(KEYS.vn30),
@@ -28,3 +29,6 @@ export async function GET() {
     return NextResponse.json({ error: "Khong doc duoc ket qua." }, { status: 500 });
   }
 }
+
+/** CDN của Vercel trả lượt gọi lặp lại trong 900 giây (giảm CPU Fluid Active — hạn mức miễn phí). */
+export const GET = withCdnCache(getUncached, 900);

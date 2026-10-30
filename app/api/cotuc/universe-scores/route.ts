@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+import { withCdnCache } from "@/lib/http/cdnCache";
 // P2 (Bo Loc toan thi truong) - BUOC 3/4: Frontend doc KET QUA DA QUET
 // SAN tu Database (nhanh, KHONG goi VCI/Yahoo truc tiep). Du lieu duoc
 // Cron Job 1 (loc su kien) + Cron Job 2 (tinh Quality Score, vong xoay
@@ -11,7 +12,7 @@ interface UniverseEntryFull {
   overallScoreTier123: number | null;
 }
 
-export async function GET() {
+async function getUncached() {
   try {
     const entries = await prisma.dividendUniverseEntry.findMany({
       orderBy: { overallScoreTier123: { sort: "desc", nulls: "last" } },
@@ -30,3 +31,6 @@ export async function GET() {
     return NextResponse.json({ error: "Không thể tải dữ liệu universe lúc này." }, { status: 500 });
   }
 }
+
+/** CDN của Vercel trả lượt gọi lặp lại trong 300 giây (giảm CPU Fluid Active — hạn mức miễn phí). */
+export const GET = withCdnCache(getUncached, 300);

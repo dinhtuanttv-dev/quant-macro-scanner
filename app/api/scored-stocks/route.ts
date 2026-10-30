@@ -3,6 +3,7 @@ import { fetchOhlcvHistory } from "@/lib/market-data/yahoo-finance-adapter";
 import { extractCloses, calculateSMA, classifyMa50Status, calculateRelativeStrength, calculateVolumeSpikeRatio, computeScoredStock } from "@/lib/market-data/technical-indicators";
 import { stockUniverse } from "@/lib/quant-data";
 
+import { withCdnCache } from "@/lib/http/cdnCache";
 // ============================================================
 // SCORED STOCKS API ROUTE
 // Scoring Algorithm: 30% Pattern + 20% Volume + 20% RS + 30% Momentum
@@ -18,7 +19,7 @@ const BATCH_DELAY_MS = 200;
 const MAX_PER_SECTOR = 4; // Stress Test: toi da 4 ma / nganh
 const MIN_CONFLUENCE = 2; // Confluence Check: can >= 2 dieu kien
 
-export async function GET(request: Request) {
+async function getUncached(request: Request) {
   const { searchParams } = new URL(request.url);
   const topN = Math.min(Number(searchParams.get("top") ?? "20"), 30);
 
@@ -110,3 +111,6 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Khong the tinh scored stocks" }, { status: 500 });
   }
 }
+
+/** CDN của Vercel trả lượt gọi lặp lại trong 900 giây (giảm CPU Fluid Active — hạn mức miễn phí). */
+export const GET = withCdnCache(getUncached, 900);

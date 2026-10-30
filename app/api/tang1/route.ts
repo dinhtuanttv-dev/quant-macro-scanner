@@ -4,6 +4,7 @@ import { computeTang1 } from "@/lib/quant-funnel";
 import { computeTang1WithScenario } from "@/lib/quant-funnel/computeTang1WithScenario";
 import type { Scenario } from "@/lib/types/siu-quet-ai";
 
+import { withCdnCache } from "@/lib/http/cdnCache";
 const VALID_SCENARIOS: Scenario[] = ["growth", "cautious", "defensive"];
 
 const corsHeaders = {
@@ -16,7 +17,7 @@ export async function OPTIONS() {
   return NextResponse.json(null, { status: 200, headers: corsHeaders });
 }
 
-export async function GET(req: NextRequest) {
+async function getUncached(req: NextRequest) {
   try {
     console.log("[tang1] Request received", {
       url: req.url,
@@ -57,3 +58,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: errorMsg }, { status: 500, headers: corsHeaders });
   }
 }
+
+/** CDN của Vercel trả lượt gọi lặp lại trong 300 giây (giảm CPU Fluid Active — hạn mức miễn phí). */
+export const GET = withCdnCache(getUncached, 300);

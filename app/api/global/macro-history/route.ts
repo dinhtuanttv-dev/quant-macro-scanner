@@ -1,7 +1,8 @@
 ﻿import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/client";
 
-export async function GET() {
+import { withCdnCache } from "@/lib/http/cdnCache";
+async function getUncached() {
   const supabase = createServiceClient();
   const { data, error } = await supabase
     .from("world_macro_trends")
@@ -23,3 +24,6 @@ export async function GET() {
     points: chronological.length,
   });
 }
+
+/** CDN của Vercel trả lượt gọi lặp lại trong 900 giây (giảm CPU Fluid Active — hạn mức miễn phí). */
+export const GET = withCdnCache(getUncached, 900);

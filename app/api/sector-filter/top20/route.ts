@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { computeSectorTop20 } from "@/lib/sector-filter/compute-top20";
 
+import { withCdnCache } from "@/lib/http/cdnCache";
 // FIX RELIABILITY (2026-09-11): 10s qua thap - route nay xu ly 61+ ma qua
 // Yahoo Finance, truoc day CON tu goi HTTP sang route /rrg (da loai bo,
 // RRG Yahoo cũ đã gỡ 2026-10-10 — góc phần tư lấy từ RRG ngành ICB của Gateway). Tang len 60s giong cac route
@@ -12,9 +13,12 @@ import { computeSectorTop20 } from "@/lib/sector-filter/compute-top20";
 // (tra ve realtime khi nguoi dung goi truc tiep tu Tab Loc Nganh).
 export const maxDuration = 60;
 
-export async function GET(request: Request) {
+async function getUncached(request: Request) {
   const { searchParams } = new URL(request.url);
   const filterSectorKey = searchParams.get("sectorKey");
   const result = await computeSectorTop20(filterSectorKey);
   return NextResponse.json(result);
 }
+
+/** CDN của Vercel trả lượt gọi lặp lại trong 900 giây (giảm CPU Fluid Active — hạn mức miễn phí). */
+export const GET = withCdnCache(getUncached, 900);

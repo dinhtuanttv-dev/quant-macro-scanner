@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+import { withCdnCache } from "@/lib/http/cdnCache";
 // SIEU QUET AI - Phuong an B: nhap su kien THU CONG (khong ton quota
 // AI). Nguoi nhap TU CHIU TRACH NHIEM ve tinh chinh xac - verifiedStatus
 // = "user_confirmed" NGAY (giong create_manual_event trong events.py goc).
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+async function getUncached() {
   try {
     const events = await prisma.sieuQuetEvent.findMany({
       where: { verifiedStatus: "user_confirmed" },
@@ -47,3 +48,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Không thể tạo sự kiện." }, { status: 500 });
   }
 }
+
+/** CDN của Vercel trả lượt gọi lặp lại trong 600 giây (giảm CPU Fluid Active — hạn mức miễn phí). */
+export const GET = withCdnCache(getUncached, 600);
