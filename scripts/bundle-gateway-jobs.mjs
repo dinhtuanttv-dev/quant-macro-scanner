@@ -1,7 +1,7 @@
 // Đóng gói job nền nặng (lib/jobs) thành một tệp ESM cho Market Gateway (Railway, Node thuần) — Vercel CPU giai đoạn 2 (30/10/2026).
 // Dùng: node scripts/bundle-gateway-jobs.mjs <đường dẫn ra, VD ../gq/global-quanta/backend/src/market/vendor/qmsJobs.mjs>
 // Không đưa vào gói:
-//   - @/lib/prisma (Neon): thay bằng mô-đun ném lỗi -> chỗ import lười (Confluence của Lọc ngành) đi nhánh dự phòng có sẵn,
+//   - @/lib/prisma (Neon): thay bằng đối tượng ném lỗi khi dùng -> chỗ import lười (Confluence của Lọc ngành) đi nhánh dự phòng có sẵn,
 //     đúng như khi Neon hết hạn mức.
 //   - next/server: chỉ đệm truy vấn dùng after() -> thay bằng after() ném lỗi, đệm tự đi nhánh "ngoài request" có sẵn.
 //   - @/lib/supabase/client: Gateway không giữ khoá Supabase -> client ném lỗi, Risk-On (chỉ để hiển thị, ngoài quyết định) đi nhánh
@@ -21,7 +21,8 @@ let sha = "unknown";
 try { sha = execSync("git rev-parse --short HEAD", { cwd: root }).toString().trim(); } catch { /* ngoài git */ }
 
 const STUBS = {
-  "no-prisma": 'throw new Error("Prisma/Neon không có trên Market Gateway");',
+  // Proxy thay vì ném lỗi khi nạp: tệp import tĩnh @/lib/prisma (marketSignals) vẫn nạp được; truy vấn thì ném, nơi gọi đi nhánh dự phòng có sẵn.
+  "no-prisma": 'const no = () => { throw new Error("Prisma/Neon không có trên Market Gateway"); }; export const prisma = new Proxy({}, { get: no });',
   "next-server": 'export function after() { throw new Error("Ngoài request Next.js"); }',
   "no-supabase": 'const no = () => { throw new Error("Supabase không có trên Market Gateway"); }; export const createServiceClient = no; export const createBrowserClient = no;',
 };

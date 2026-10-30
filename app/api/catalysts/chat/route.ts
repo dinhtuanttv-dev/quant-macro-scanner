@@ -1,4 +1,4 @@
-// X4 — POST /api/catalysts/chat: "Hỏi đáp vĩ mô & thị trường" (Claude hoặc Gemini + công cụ vĩ mô/thế giới), trả về luồng SSE.
+// X4 — POST /api/catalysts/chat: "Hỏi đáp xúc tác" (Claude hoặc Gemini + công cụ vĩ mô/xúc tác/thế giới), trả về luồng SSE.
 // Z2 (2026-10-17): body.provider = "claude" (mặc định) | "gemini" — cùng bộ công cụ, cùng kiểm tra con số.
 // Bảo vệ chi phí: cần đăng nhập (token Gateway ĐINH TUẤN, kiểm qua JWKS — lib/catalyst/chat/gqAuth.ts) + hạn mức theo người dùng/ngày
 // (Upstash). Không lưu nội dung hội thoại; log chỉ ghi tên công cụ, thời gian, ok.
@@ -8,8 +8,10 @@ import Anthropic from "@anthropic-ai/sdk";
 import { FunctionCallingMode, GoogleGenerativeAI } from "@google/generative-ai";
 import { GEMINI_CHAT_MODEL, runChatGemini, type GeminiChatLike, type GeminiModelFactory } from "@/lib/catalyst/chat/geminiEngine";
 import { Redis } from "@upstash/redis";
+import { MARKET_GATEWAY_URL } from "@/lib/market-data/ssi-gateway-adapter";
 import { runChat, type ChatEvent } from "@/lib/catalyst/chat/chatEngine";
 import { buildSystemPrompt, buildToolList, createToolExecutor, fetchEliteToolSpecs, fetchMacroToolSpecs, fetchWorldToolSpecs, fetchWsToolSpecs, type ChatRole } from "@/lib/catalyst/chat/chatTools";
+import type { CatalystSnapshotLike } from "@/lib/catalyst/chat/catalystTools";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -94,7 +96,14 @@ export async function POST(request: Request) {
 
   const [macro, world, ws, elite] = await Promise.all([fetchMacroToolSpecs(), fetchWorldToolSpecs(), fetchWsToolSpecs(), fetchEliteToolSpecs()]);
   const tools = buildToolList(macro, world, ws, elite);
-  const execTool = createToolExecutor();
+  const execTool = createToolExecutor({
+    // 31/10/2026: snapshot nằm trên Market Gateway. Chưa có dữ liệu / lỗi -> null, công cụ báo thẳng là không có dữ liệu.
+    getSnapshot: async () => {
+      const res = await fetch(`${MARKET_GATEWAY_URL}/api/catalysts/latest`, { signal: AbortSignal.timeout(15_000) });
+      const body = (await res.json()) as CatalystSnapshotLike & { error?: string };
+      return res.ok && !body.error ? body : null;
+    },
+  });
 
   const enc = new TextEncoder();
   const body = new ReadableStream<Uint8Array>({

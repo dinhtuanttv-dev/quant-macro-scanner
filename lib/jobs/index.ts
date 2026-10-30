@@ -4,4 +4,5 @@
 export { runTimingSignalsScan } from "./timing-signals-scan";
 export { runEarningsSeasonalityScan, type SeasonalityPhase } from "./earnings-seasonality-scan";
 export { runSectorTimingScan } from "./sector-timing-scan";
+export { runCatalystScan } from "./catalyst-scan";
 export type { JobResult } from "./job-result";

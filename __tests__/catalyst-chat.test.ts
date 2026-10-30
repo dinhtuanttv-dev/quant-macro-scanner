@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/prisma", () => ({ prisma: {} }));
 
 import { runChat, type ChatEvent, type StreamingMessages } from "@/lib/catalyst/chat/chatEngine";
+import { runCatalystTool, type CatalystSnapshotLike } from "@/lib/catalyst/chat/catalystTools";
 import { auditNumbers, readings } from "@/lib/catalyst/chat/numberAudit";
 import { buildToolList, buildSystemPrompt, createToolExecutor } from "@/lib/catalyst/chat/chatTools";
 
@@ -76,7 +77,7 @@ describe("X4 — vòng lặp chat (model giả có kịch bản)", () => {
   });
 
   it("giới hạn 4 vòng công cụ: vòng thứ 5 bị ép tool_choice none", async () => {
-    const loop: Turn = { tools: [{ name: "macro_overview", input: {} }] };
+    const loop: Turn = { tools: [{ name: "catalyst_overview", input: {} }] };
     const { calls, events } = await run([loop, loop, loop, loop, { text: "Tóm tắt." }], async () => ({ ok: true, data: {} }));
     expect(calls).toHaveLength(5);
     expect(calls[4]).toMatchObject({ tool_choice: { type: "none" } });
@@ -104,10 +105,38 @@ describe("X4 — kiểm toán con số", () => {
   });
 });
 
-describe("X4 — danh sách công cụ", () => {
-  it("danh sách công cụ: có lịch, không còn catalyst_*, eager_input_streaming; system prompt cấm khuyến nghị", () => {
+const card = { ticker: "KDH", sourceTitle: "Luật Đất đai sửa đổi", direction: "benefit" as const, netSignedImpact: 4.123, propagationDistance: "direct", horizon: "long", daysRemaining: null, corroborationCount: 2, historicalWinRate: 31, priceInStatus: "not_reflected", volumeFlag: "none", foreignFlowDirection: "none", compositeScore: 55.5, trustScore: 0.7, isConflicted: false };
+const snap: CatalystSnapshotLike = {
+  scannedAt: "2026-10-10T22:56:00Z", isStale: true, ageMinutes: 7200,
+  sectors: [
+    { sector: "Bat dong san", netScore: 7.2, tickerCount: 3, primaryCards: [card], cascadeCards: [] },
+    { sector: "Ngan hang", netScore: -2, tickerCount: 1, primaryCards: [], cascadeCards: [] },
+  ],
+  upMovers: [{ rank: 1, ticker: "KDH", label: "x", compositeScore: 55.5 }],
+  tickerImpacts: { KDH: { direction: "benefit", compositeScore: 55.5 } },
+};
+
+describe("X4 — công cụ xúc tác", () => {
+  it("snapshot cũ -> notice; ngành tìm không dấu/có dấu; mã đọc thẻ", () => {
+    const o = runCatalystTool("catalyst_overview", { topN: 3 }, snap);
+    expect(o.ok).toBe(true);
+    expect(o.notice).toMatch(/CŨ/);
+    const s = runCatalystTool("catalyst_sector", { sector: "Bất động sản" }, snap);
+    expect(s).toMatchObject({ ok: true, data: { sector: "Bat dong san" } });
+    const t = runCatalystTool("catalyst_ticker", { ticker: "kdh" }, snap);
+    expect(t).toMatchObject({ ok: true, data: { ticker: "KDH", found: true } });
+    expect((t.data as { cards: { historicalWinRatePct: number }[] }).cards[0].historicalWinRatePct).toBe(31);
+  });
+  it("tham số sai / không có dữ liệu -> ok:false kèm danh sách hợp lệ", () => {
+    expect(runCatalystTool("catalyst_ticker", { ticker: "!!" }, snap).ok).toBe(false);
+    const bad = runCatalystTool("catalyst_sector", { sector: "Hàng không vũ trụ" }, snap);
+    expect(bad.ok).toBe(false);
+    expect(bad.error).toMatch(/Bat dong san/);
+    expect(runCatalystTool("catalyst_overview", {}, null).ok).toBe(false);
+  });
+  it("danh sách công cụ: có catalyst + lịch, eager_input_streaming; system prompt cấm khuyến nghị", () => {
     const tools = buildToolList(null);
-    expect(tools.map((t) => t.name)).toEqual(["macro_catalyst_calendar"]);
+    expect(tools.map((t) => t.name)).toEqual(["macro_catalyst_calendar", "catalyst_overview", "catalyst_ticker", "catalyst_sector"]);
     expect(tools.every((t) => t.eager_input_streaming === true)).toBe(true);
     const sp = buildSystemPrompt(null, "2026-10-16");
     expect(sp).toMatch(/Không đưa khuyến nghị mua\/bán/);
@@ -123,7 +152,7 @@ describe("X4 — công cụ Kết nối thế giới (world_*)", () => {
   };
   it("danh sách công cụ + system prompt có quy tắc bậc A/B/C và yếu tố chưa có nguồn", () => {
     const tools = buildToolList(null, world);
-    expect(tools.map((t) => t.name)).toEqual(["world_links", "world_events", "macro_catalyst_calendar"]);
+    expect(tools.map((t) => t.name)).toEqual(["world_links", "world_events", "macro_catalyst_calendar", "catalyst_overview", "catalyst_ticker", "catalyst_sector"]);
     const sp = buildSystemPrompt(null, "2026-10-16", world);
     expect(sp).toMatch(/không gọi bậc C/);
     expect(sp).toMatch(/pending/);
@@ -138,7 +167,7 @@ describe("X4 — công cụ Kết nối thế giới (world_*)", () => {
       urls.push(url);
       return url.includes("world_events") ? new Response(JSON.stringify({ ok: true, data: { events: [{ id: "fomc-2025-09-17", tier: "C" }] } })) : new Response("x", { status: 503 });
     }) as unknown as typeof fetch;
-    const exec = createToolExecutor({ fetchImpl });
+    const exec = createToolExecutor({ getSnapshot: async () => null, fetchImpl });
     const ok = await exec("world_events", {});
     expect(ok).toMatchObject({ ok: true, data: { events: [{ tier: "C" }] } });
     expect(urls[0]).toMatch(/\/api\/world\/tools\/world_events$/);

@@ -1,34 +1,16 @@
-// app/api/catalysts/latest/route.ts — PHASE 2 UPGRADE + resilience fix
-// Da tich hop readSnapshotWithStaleness - client gio nhan them isStale + ageMinutes
-// thay vi chi "co du lieu / khong co du lieu". UI co the hien "Du lieu cu (45 phut)"
-// thay vi bien mat hoan toan khi scan that bai lien tuc.
-// FIX: bao try/catch quanh Redis - phan biet "chua co du lieu" (binh thuong)
-// voi "Redis loi tam thoi" (that su bat thuong, tra ve 503 rieng, khong crash 500 mo ho).
+// 31/10/2026: snapshot Chất xúc tác nằm trên Market Gateway (GET /api/catalysts/latest). Route này chuyển tiếp cho trang scanner của Project A;
+// giữ hợp đồng cũ: { error } khi chưa có dữ liệu, 503 + transient khi nguồn tạm lỗi.
 import { NextResponse } from "next/server";
-import { Redis } from "@upstash/redis";
-import { readSnapshotWithStaleness } from "@/lib/catalyst/engine/SnapshotStore";
-import { sanitizeLegacySnapshot } from "@/lib/catalyst/provenance";
-
+import { MARKET_GATEWAY_URL } from "@/lib/market-data/ssi-gateway-adapter";
 import { withCdnCache } from "@/lib/http/cdnCache";
-const redis = new Redis({
-  url: process.env.KV_REST_API_URL!,
-  token: process.env.KV_REST_API_TOKEN!,
-});
 
 async function getUncached() {
   try {
-    const { snapshot, isStale, ageMinutes } = await readSnapshotWithStaleness(redis);
-    if (!snapshot) {
-      return NextResponse.json({ error: "Chua co du lieu - cho lan quet dau tien" });
-    }
-    // snapshot quét trước bản sửa nguồn gốc/X1: ẩn dữ liệu mẫu + tin trung lập khi đọc (không ghi lại kho)
-    return NextResponse.json({ ...sanitizeLegacySnapshot(snapshot as Parameters<typeof sanitizeLegacySnapshot>[0]), isStale, ageMinutes });
+    const res = await fetch(`${MARKET_GATEWAY_URL}/api/catalysts/latest`, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
+    return NextResponse.json(await res.json(), { status: res.status });
   } catch (err) {
-    console.error("[api/catalysts/latest] Redis loi:", err);
-    return NextResponse.json(
-      { error: "Dich vu du lieu tam thoi gian doan - vui long thu lai sau it phut.", transient: true },
-      { status: 503 }
-    );
+    console.error("[api/catalysts/latest] Gateway loi:", err);
+    return NextResponse.json({ error: "Dich vu du lieu tam thoi gian doan - vui long thu lai sau it phut.", transient: true }, { status: 503 });
   }
 }
 

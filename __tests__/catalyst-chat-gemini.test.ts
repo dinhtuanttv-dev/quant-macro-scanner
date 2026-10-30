@@ -61,7 +61,7 @@ describe("Hỏi đáp xúc tác × Gemini (Z2)", () => {
     const ws = { anthropic: [{ name: "ws_stock", description: "x", input_schema: { type: "object", properties: {} } }], guidelines: "g", mode: "real" as const, notice: null };
     expect(buildToolList(null, null, ws).map((t) => t.name)).toContain("ws_stock");
     const urls: string[] = [];
-    const exec = createToolExecutor({ fetchImpl: (async (u: string) => { urls.push(u); return new Response(JSON.stringify({ ok: true, data: {} })); }) as unknown as typeof fetch });
+    const exec = createToolExecutor({ getSnapshot: async () => null, fetchImpl: (async (u: string) => { urls.push(u); return new Response(JSON.stringify({ ok: true, data: {} })); }) as unknown as typeof fetch });
     await exec("ws_stock", { ticker: "HPG" });
     expect(urls[0]).toMatch(/\/api\/world-sectors\/tools\/ws_stock$/);
   });
