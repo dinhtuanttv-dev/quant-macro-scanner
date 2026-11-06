@@ -1,5 +1,6 @@
 // Đóng gói job nền nặng (lib/jobs) thành một tệp ESM cho Market Gateway (Railway, Node thuần) — Vercel CPU giai đoạn 2 (30/10/2026).
-// Dùng: node scripts/bundle-gateway-jobs.mjs <đường dẫn ra, VD ../gq/global-quanta/backend/src/market/vendor/qmsJobs.mjs>
+// Dùng: node scripts/bundle-gateway-jobs.mjs <đường dẫn ra, VD ../gq/global-quanta/backend/src/market/vendor/qmsJobs.mjs> [điểm vào, mặc định lib/jobs/index.ts]
+//   VD gói Mùa vụ cho bản THĂM DÒ của Gateway: node scripts/bundle-gateway-jobs.mjs <ra>/seasonCore.mjs lib/jobs/season-core.ts
 // Không đưa vào gói:
 //   - @/lib/prisma (Neon): thay bằng đối tượng ném lỗi khi dùng -> chỗ import lười (Confluence của Lọc ngành) đi nhánh dự phòng có sẵn,
 //     đúng như khi Neon hết hạn mức.
@@ -15,6 +16,7 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const out = process.argv[2];
+const entry = process.argv[3] || "lib/jobs/index.ts";
 if (!out) { console.error("Thiếu đường dẫn ra."); process.exit(1); }
 
 let sha = "unknown";
@@ -37,9 +39,9 @@ const gatewayStubs = {
 };
 
 const r = await build({
-  entryPoints: [path.join(root, "lib/jobs/index.ts")], bundle: true, format: "esm", platform: "node", target: "node20",
+  entryPoints: [path.join(root, entry)], bundle: true, format: "esm", platform: "node", target: "node20",
   tsconfig: path.join(root, "tsconfig.json"), write: false, metafile: true, legalComments: "none", logLevel: "warning", plugins: [gatewayStubs],
-  banner: { js: `// FILE SINH TỰ ĐỘNG — KHÔNG SỬA TAY. Nguồn: quant-macro-scanner lib/jobs (commit ${sha}). Tạo lại: node scripts/bundle-gateway-jobs.mjs <ra>\nimport { createRequire as __qmsCreateRequire } from "node:module"; const require = __qmsCreateRequire(import.meta.url);` },
+  banner: { js: `// FILE SINH TỰ ĐỘNG — KHÔNG SỬA TAY. Nguồn: quant-macro-scanner ${entry} (commit ${sha}). Tạo lại: node scripts/bundle-gateway-jobs.mjs <ra> ${entry}\nimport { createRequire as __qmsCreateRequire } from "node:module"; const require = __qmsCreateRequire(import.meta.url);` },
 });
 const inputs = Object.keys(r.metafile.inputs);
 const bad = inputs.filter((i) => /node_modules[\\/](next|@prisma|@supabase)[\\/]/.test(i));
