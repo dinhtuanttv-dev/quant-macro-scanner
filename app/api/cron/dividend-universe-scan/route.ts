@@ -92,17 +92,29 @@ export async function GET() {
       });
     }
 
-    // Xoa ma KHONG CON thoi su (khong nam trong lan quet nay nua) - tranh
-    // du lieu "ma" ton dong vinh vien.
+    // Xoa ma KHONG CON thoi su - CHI trong so ma da quet THANH CONG o lan nay.
+    // (12/11/2026) Truoc day xoa moi ma "khong nam trong ket qua": khi nguon
+    // su kien loi (available = false cho ca lo) ket qua rong va lenh
+    // deleteMany xoa SACH bang; loi mot phan thi xoa nham cac ma bi loi.
+    // Ma quet loi duoc GIU NGUYEN ban ghi cu cho toi lan quet thanh cong.
     const relevantTickers = relevantEntries.map((e) => e.ticker);
-    await prisma.dividendUniverseEntry.deleteMany({
-      where: { ticker: { notIn: relevantTickers.length > 0 ? relevantTickers : ["__NONE__"] } },
-    });
+    const relevantSet = new Set(relevantTickers);
+    const scannedOk = eventsResults.filter((r) => r.available).map((r) => r.ticker);
+    const stale = scannedOk.filter((t) => !relevantSet.has(t));
+    const failedTickers = eventsResults.filter((r) => !r.available).map((r) => r.ticker);
+    let removed = 0;
+    if (stale.length > 0) {
+      removed = (await prisma.dividendUniverseEntry.deleteMany({ where: { ticker: { in: stale } } })).count;
+    }
 
     return NextResponse.json({
       scannedAt: new Date().toISOString(),
       totalUniverse: tickers.length,
       relevantCount: relevantEntries.length,
+      scannedOk: scannedOk.length,
+      failedCount: failedTickers.length,
+      failedTickers: failedTickers.slice(0, 30),
+      removed,
       relevantTickers,
     });
   } catch (err) {

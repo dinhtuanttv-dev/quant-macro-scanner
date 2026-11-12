@@ -15,6 +15,11 @@ export const maxDuration = 60;
 export async function GET() {
   try {
     const result = await computeSectorTop20();
+    // (12/11/2026) Ket qua rong = nguon loi, KHONG phai "khong co ma nao":
+    // giu bang cu thay vi xoa sach roi ghi 0 dong.
+    if (result.top20.length === 0) {
+      return NextResponse.json({ error: "Top 20 rỗng — giữ nguyên bảng cũ, không ghi đè.", totalAnalyzed: result.totalAnalyzed }, { status: 500 });
+    }
 
     await prisma.$transaction([
       prisma.sectorTop20Entry.deleteMany({}),
