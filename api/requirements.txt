@@ -37,6 +37,9 @@
 # muc api/_vendor/vnai_stub/, doi lai "vnstock==<ban moi>" (pip resolve
 # vnai tu dong theo dependency that cua vnstock).
 vnai @ file:///vercel/path0/api/_vendor/vnai_stub
+# (13/11/2026) vnstock_ezchart (phu thuoc bat buoc cua vnstock v4.0.4, chi de ve bieu do) da bi go khoi PyPI
+# -> stub rong, xem api/_vendor/ezchart_stub/vnstock_ezchart/__init__.py.
+vnstock_ezchart @ file:///vercel/path0/api/_vendor/ezchart_stub
 vnstock @ git+https://github.com/thinh-vu/vnstock.git@v4.0.4
 fastapi==0.117.1
 pandas==2.2.3
