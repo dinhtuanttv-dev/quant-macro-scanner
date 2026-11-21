@@ -7,19 +7,19 @@
     },
     {
       "path": "/api/cron/dividend-universe-scan",
-      "schedule": "0 22 * * *"
+      "schedule": "0 18 * * *"
     },
     {
       "path": "/api/cron/dividend-events-scan",
-      "schedule": "5 22 * * *"
+      "schedule": "0 19 * * *"
     },
     {
       "path": "/api/cron/dividend-universe-score",
-      "schedule": "15 22 * * *"
+      "schedule": "0 20 * * *"
     },
     {
       "path": "/api/cron/dividend-ai-analysis",
-      "schedule": "30 22 * * *"
+      "schedule": "0 21 * * *"
     },
     {
       "path": "/api/cron/dividend-cycle-scan",
@@ -27,7 +27,7 @@
     },
     {
       "path": "/api/cron/sieu-quet-scan",
-      "schedule": "45 22 * * *"
+      "schedule": "30 22 * * *"
     },
     {
       "path": "/api/cron/sector-top20-scan",
@@ -48,6 +48,10 @@
     {
       "path": "/api/cron/resolve-insight-outcomes",
       "schedule": "15 23 * * *"
+    },
+    {
+      "path": "/api/cron/refresh-lowfreq",
+      "schedule": "0 3 * * 1"
     }
   ],
   "functions": {

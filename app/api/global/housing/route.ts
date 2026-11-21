@@ -25,5 +25,5 @@ async function getUncached() {
   return NextResponse.json({ countries: Array.from(latestPerCountry.values()) });
 }
 
-/** CDN của Vercel trả lượt gọi lặp lại trong 900 giây (giảm CPU Fluid Active — hạn mức miễn phí). */
-export const GET = withCdnCache(getUncached, 900);
+/** Dữ liệu theo quý (cron refresh-lowfreq mỗi tuần): CDN của Vercel trả lượt gọi lặp lại trong 6 giờ. */
+export const GET = withCdnCache(getUncached, 21_600);

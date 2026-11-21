@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/client";
 import { fetchGlobalHousingPrices, fetchLatestRubberPrice, fetchLatestFertilizerPrices } from "@/lib/commodity/lowfreq-fetchers";
+import { planHousingWrites } from "@/lib/commodity/housing-writes";
 
 export const maxDuration = 60;
 
@@ -21,13 +22,23 @@ export async function GET(request: Request) {
   try {
     const housingData = await fetchGlobalHousingPrices(WATCHED_COUNTRIES);
     if (housingData.length > 0) {
-      const rows = housingData.map((h) => ({
-        country_code: h.countryCode, country_name: h.countryName, quarter_label: h.quarter,
-        real_index_value: h.realIndexValue, yoy_change_percent: h.yoyChangePercent,
-        source: "BIS (Bank for International Settlements)",
-      }));
-      const { error } = await supabase.from("world_housing_prices").insert(rows);
-      results.housing = error ? { success: false, error: error.message } : { success: true, count: rows.length };
+      // 21/11/2026: chỉ ghi khi có QUÝ MỚI (trước đây insert mỗi lần chạy -> trùng dòng / lỗi ràng buộc).
+      const { data: stored, error: readErr } = await supabase.from("world_housing_prices").select("country_code, quarter_label").in("country_code", WATCHED_COUNTRIES);
+      if (readErr) throw new Error(`Đọc bảng giá nhà: ${readErr.message}`);
+      const plan = planHousingWrites(stored ?? [], housingData);
+      const fetchedAt = new Date().toISOString();
+      const errors: string[] = [];
+      for (const row of plan.updates) {
+        const { error } = await supabase.from("world_housing_prices").update({ ...row, fetched_at: fetchedAt }).eq("country_code", row.country_code);
+        if (error) errors.push(`${row.country_code}: ${error.message}`);
+      }
+      if (plan.inserts.length) {
+        const { error } = await supabase.from("world_housing_prices").insert(plan.inserts.map((r) => ({ ...r, fetched_at: fetchedAt })));
+        if (error) errors.push(`thêm mới: ${error.message}`);
+      }
+      results.housing = errors.length
+        ? { success: false, error: errors.join("; "), updated: plan.updates.length, inserted: plan.inserts.length }
+        : { success: true, updated: plan.updates.length, inserted: plan.inserts.length, unchanged: plan.unchanged };
     } else {
       results.housing = { success: false, error: "Không lấy được dữ liệu BIS (0 dòng khớp)" };
     }
