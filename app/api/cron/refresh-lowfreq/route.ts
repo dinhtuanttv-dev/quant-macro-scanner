@@ -36,9 +36,8 @@ export async function GET(request: Request) {
         const { error } = await supabase.from("world_housing_prices").insert(plan.inserts.map((r) => ({ ...r, fetched_at: fetchedAt })));
         if (error) errors.push(`thêm mới: ${error.message}`);
       }
-      results.housing = errors.length
-        ? { success: false, error: errors.join("; "), updated: plan.updates.length, inserted: plan.inserts.length }
-        : { success: true, updated: plan.updates.length, inserted: plan.inserts.length, unchanged: plan.unchanged };
+      const detail = { fetched: housingData.map((h) => `${h.countryCode}:${h.quarter}`), updated: plan.updates.map((r) => r.country_code), inserted: plan.inserts.map((r) => r.country_code), unchanged: plan.unchanged };
+      results.housing = errors.length ? { success: false, error: errors.join("; "), ...detail } : { success: true, ...detail };
     } else {
       results.housing = { success: false, error: "Không lấy được dữ liệu BIS (0 dòng khớp)" };
     }
@@ -92,5 +91,9 @@ export async function GET(request: Request) {
     results.fertilizer = { success: false, error: err instanceof Error ? err.message : String(err) };
   }
 
+  // 21/11/2026: ghi kết quả từng phần vào log runtime (trước đây chỉ trả trong phản hồi cho bộ hẹn giờ cron, không ai xem được).
+  const failed = Object.entries(results).filter(([, v]) => (v as { success?: boolean })?.success === false).map(([k]) => k);
+  const line = `[refresh-lowfreq] ${JSON.stringify(results)}`;
+  if (failed.length) console.error(line); else console.log(line);
   return NextResponse.json({ generatedAt: new Date().toISOString(), results });
 }
