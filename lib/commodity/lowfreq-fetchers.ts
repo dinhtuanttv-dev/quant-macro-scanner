@@ -57,7 +57,18 @@ interface CommodityWorkbookContext {
   firstDataRowIndex: number;
 }
 
-async function loadCommodityWorkbookContext(): Promise<CommodityWorkbookContext | null> {
+// 21/11/2026: cao su và phân bón đọc CÙNG một file Pink Sheet — tải một lần cho mỗi lượt chạy (10 phút), không tải hai lần.
+// Lỗi (null) không được giữ lại, để lần gọi sau thử lại.
+const WORKBOOK_TTL_MS = 10 * 60_000;
+let workbookMemo: { at: number; promise: Promise<CommodityWorkbookContext | null> } | null = null;
+function loadCommodityWorkbookContext(): Promise<CommodityWorkbookContext | null> {
+  if (workbookMemo && Date.now() - workbookMemo.at < WORKBOOK_TTL_MS) return workbookMemo.promise;
+  const promise = loadCommodityWorkbookContextUncached().then((ctx) => { if (!ctx) workbookMemo = null; return ctx; });
+  workbookMemo = { at: Date.now(), promise };
+  return promise;
+}
+
+async function loadCommodityWorkbookContextUncached(): Promise<CommodityWorkbookContext | null> {
   const url = await discoverMonthlyPricesXlsxUrl();
   if (!url) return null;
 
